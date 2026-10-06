@@ -24,7 +24,6 @@ from typing import Callable, Dict, List, Optional
 
 from pivy import coin
 
-from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import units
 from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.ui import defaults

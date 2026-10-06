@@ -3,7 +3,6 @@
 # Run:  python tools/fc_rpc.py exec -f tools/snippets/demo_document.py
 import FreeCAD as App
 import FreeCADGui as Gui
-import Part
 
 doc = App.ActiveDocument or App.newDocument("Demo")
 if not doc.getObjectsByLabel("Plate"):

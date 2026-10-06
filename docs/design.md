@@ -1,6 +1,6 @@
 # BlocksCAD design
 
-Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction; its in-headset checks are listed in `verification.md`.
+Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction. The interface foundation is implemented and verified in the headset: grip navigation (U1), the palette carousel with panels, sliders and arrangement (U2) and the laser and tip pointer. U3, U4 and M1 are next. Open checks are listed in `verification.md`.
 Inspiration: Open Blocks' simple direct manipulation; substance: real parametric CAD in FreeCAD.
 
 ## Decisions (from the project owner, 2026-10-06)
@@ -65,7 +65,8 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 ## Tool roadmap (milestones)
 | M | Deliverable |
 |---|---|
-| U1 to U4 | **UX foundation** (before M1): world navigation, palette carousel with faces and panels, quick radial, layout customization, tool options. See `ux-design.md` |
+| U1, U2, pointer | **UX foundation, implemented**: world navigation, palette carousel with faces, panels and sliders, laser and tip pointer. See `ux-design.md` |
+| U3, U4 | **UX foundation, planned** (before M1): quick radial, moving single faces, hiding faces, tool options with readouts, undo/redo on `button2`, toasts, tooltips. See `ux-design.md` |
 | M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools |
 | M1 | Primitives (box, cylinder, cone, sphere, torus, wedge, prism) with snap grid, ghost preview, live dimension, undo/redo |
 | M2 | Selection/hover highlight (vertex/edge/face/object), Grab tool (move/rotate, two-hand scale -> parameters), world navigation |
@@ -88,3 +89,10 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 - FeaturePython `Block` objects need the addon to be installed to recompute on reopen (shape is cached; document remains viewable without it).
 - Controller models come from the runtime and are not bundled (`controller-models.md`); the repository contains no controller meshes.
 - Naming: see `licensing.md` (trademark and an existing product called "BlocksCAD").
+
+## Known limitations
+- `commonXR.py` still hosts the OpenXR session, the render loop and the inherited tool handlers in one module; the extraction into `rig.py` is open.
+- The preferences page (`Resources/Gui/Resources/preferences/XRPreferences.ui`, compiled into `XRWorkbench_rc.py`) still lists the locomotion options (movement mode, speeds, lock to floor); they have no effect, because the world is navigated with the grips.
+- The inherited tools (teleport, line and cube builders, select, drag, working plane), the Qt panel overlay and the edit menu shown after a selection are upstream code; they pick along a ray from the pointer pose (a ray of 3 cm from the tip in tip mode) and are replaced milestone by milestone.
+- Handedness is fixed: the left controller carries the carousel, the right controller is the tool hand.
+- Only the Steam Frame controllers are tested; the other profiles are bound but unverified (`verification.md`).

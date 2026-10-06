@@ -14,8 +14,8 @@ primitives, push/pull, booleans, moving points in space, sketches, constraints, 
 |---|---|
 | Version | 0.1.0 |
 | Verified on | FreeCAD 1.1.4, Windows 11, SteamVR OpenXR 2.17, Steam Frame (details: [docs/verification.md](docs/verification.md)) |
-| Capabilities | view documents in VR, locomotion, line and cube builders, select / pad / pocket, drag, Qt panel overlay (inherited controls, rated unintuitive); full action set per controller profile, runtime-provided controller models, tool registry, palette ring of faces and pages around the left controller, grip navigation (one grip drags, two grips move/rotate/scale), headless Sim backend with offscreen rendering |
-| Milestone | M0 platform implemented except the `rig.py` split; in-headset checks pending ([docs/verification.md](docs/verification.md)); next M1 primitives, see [docs/design.md](docs/design.md) |
+| Capabilities | view documents in VR; Open Brush style interface: palette carousel on the left controller (panels of faces, arranged in rows and columns by the user, with sliders), grip navigation (free orbit, level mode, 1 : 1 lock, home reset, scale ruler in the document unit), laser or tip pointer on both controllers; runtime-provided controller models; tool registry with the inherited tools (teleport, line and cube builders, select, drag, working plane, Qt panel overlay); full action set per controller profile; headless Sim backend with offscreen rendering |
+| Milestone | M0 platform and the interface foundation (U1, U2, pointer) implemented and owner-verified in the headset; open checks in [docs/verification.md](docs/verification.md); next U3 and U4, then M1 primitives, see [docs/design.md](docs/design.md) |
 
 ## Repository layout
 

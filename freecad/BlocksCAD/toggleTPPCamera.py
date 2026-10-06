@@ -20,7 +20,6 @@
 # *                                                                         *
 # ***************************************************************************
 
-import os
 
 import FreeCADGui as Gui
 from PySide.QtCore import QT_TRANSLATE_NOOP

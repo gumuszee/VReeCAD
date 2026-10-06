@@ -11,7 +11,6 @@ Examples:
   ... tools\\xr_probe_paths.py /interaction_profiles/oculus/touch_controller
   ... tools\\xr_probe_paths.py /interaction_profiles/meta/touch_plus_controller XR_META_touch_controller_plus
 """
-import ctypes
 import sys
 
 import xr

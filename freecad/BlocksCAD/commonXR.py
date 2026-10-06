@@ -33,9 +33,8 @@ from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.ui.controller import UiController
-from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core.navigation import WorldPose
-import freecad.BlocksCAD.tools.legacy  # registers the inherited tools
+import freecad.BlocksCAD.tools.legacy  # noqa: F401  (registers the inherited tools)
 from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
 from freecad.BlocksCAD.backends.openxr_models import RuntimeModels
 from freecad.BlocksCAD.render.gltf_coin import load_glb
@@ -44,7 +43,6 @@ from math import tan, pi
 import FreeCAD as App
 import FreeCADGui as Gui
 from pivy.coin import SoTransform
-from pivy.coin import SoTranslation
 from pivy.coin import SoGroup
 from pivy.coin import SbRotation
 from pivy.coin import SoEnvironment

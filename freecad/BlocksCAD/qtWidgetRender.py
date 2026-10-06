@@ -26,9 +26,8 @@ import FreeCADGui as Gui
 from freecad.BlocksCAD.controllerXR import AnInpEv  # trigger states enum
 
 from PySide.QtWidgets import QApplication, QDockWidget
-from PySide.QtGui import QImage, QPainter, qGray, qRed, qGreen, qBlue, qAlpha, QMouseEvent
+from PySide.QtGui import QImage, QPainter, QMouseEvent
 from PySide.QtCore import Qt, QPoint, QTimer, QObject, SIGNAL
-from math import pi
 import numpy as np
 
 from pivy.coin import SoSeparator

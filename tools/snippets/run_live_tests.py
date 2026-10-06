@@ -2,6 +2,7 @@
 # The pure unit tests run outside FreeCAD:  "%LOCALAPPDATA%\Programs\FreeCAD 1.1\bin\python.exe" -m unittest discover -s tests
 # Run:  python tools/fc_rpc.py exec -f tools/snippets/run_live_tests.py
 # Set LIVE_TESTS_DIR before exec to point at another checkout; the default is the addon repo of the installed addon.
+# The run reloads addon modules: stop the XR viewer first, otherwise a running viewer reports transient errors in the Report view until it is restarted (xr_restart.py).
 import importlib
 import os
 import sys

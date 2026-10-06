@@ -40,9 +40,20 @@ To unshallow any ref: `git -C refs/<x> fetch --unshallow`.
 8. PowerShell 5.1 wraps native stderr in ErrorRecords - avoid `2>&1` on git/uv in scripts; use `ForEach-Object { "$_" }`.
 9. `FreeCAD.exe --write-log <file>` writes a log, but with the MCP RPC the Report view snippet is usually more useful.
 10. The RPC `execute_code` shares **one persistent namespace** across calls and runs on the GUI thread (blocking calls freeze the UI).
-11. **pivy field names can be shadowed by node methods.** `SoDepthBuffer.write` is the `SoNode.write` method, so the field is set with `node.getField("write").setValue(False)`. `SoMFVec3f.setValues` does not shorten a field: call `setNum(n)` first when a shape is refilled with fewer entries.
-12. **Coin text fonts:** `SoFont.name = "Segoe UI:Bold"` selects a Windows system font for `SoText3`; the unset default is a serif face. Unicode text such as the micrometre sign renders.
-13. A fresh FreeCAD start has no document (gotcha 6); `tools/snippets/demo_document.py` creates one.
+
+11. **A session's working directory is locked** and cannot be renamed or moved while the session runs. `Move-Item` of a large tree
+    fails on locked files; `robocopy /E` copies reliably.
+12. The upstream action set contains only pose, thumbstick x/y and trigger (no grip, no face buttons). The Steam Frame profile
+    `valve/frame_controller_valve` is enabled only if the runtime offers `XR_VALVE_frame_controller_interaction`. The full action set is specified in `design.md`.
+13. PowerShell scripts are run as `powershell -NoProfile -ExecutionPolicy Bypass -File tools\<script>.ps1`; the default execution policy rejects unsigned scripts.
+14. `XR_EXT_render_model` requires `XR_EXT_uuid` on an OpenXR 1.0 instance; without it `xrCreateInstance` fails with a validation error.
+15. Runtime controller models exist only after the first successful `xrSyncActions`, and their spaces are locatable only while the session is `FOCUSED` (not `VISIBLE`). A controller that is asleep at the first enumeration gets its model from the periodic re-check. See `controller-models.md`.
+16. The pyopenxr 1.1.6302 wrappers for render models do not work as called (UUID default, missing two-call idiom, missing preallocated arrays); `controller-models.md` lists the workarounds.
+17. Text sent through the RPC `execute_code` is XML: a snippet file containing a NUL or another control character is rejected (`not well-formed (invalid token)`); runtime strings are printed with `ascii()`.
+18. The repo `.gitignore` excludes `__pycache__`, `refs/`, `tools/logs/` and `.mcp.json`; check `git status` before committing.
+19. **pivy field names can be shadowed by node methods.** `SoDepthBuffer.write` is the `SoNode.write` method, so the field is set with `node.getField("write").setValue(False)`. `SoMFVec3f.setValues` does not shorten a field: call `setNum(n)` first when a shape is refilled with fewer entries.
+20. **Coin text fonts:** `SoFont.name = "Segoe UI:Bold"` selects a Windows system font for `SoText3`; the unset default is a serif face. Unicode text such as the micrometre sign renders.
+21. A fresh FreeCAD start has no document (gotcha 6); `tools/snippets/demo_document.py` creates one.
 
 ## Reproducing from scratch
 
@@ -53,14 +64,3 @@ tools\start-freecad.ps1
 uv run --directory refs/freecad-mcp python ../../tools/mcp_smoke_test.py   # whole MCP chain
 & "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" tools\xr_probe.py # OpenXR runtime/HMD check
 ```
-
-11. **A session's working directory is locked** and cannot be renamed or moved while the session runs. `Move-Item` of a large tree
-    fails on locked files; `robocopy /E` copies reliably.
-12. The upstream action set contains only pose, thumbstick x/y and trigger (no grip, no face buttons). The Steam Frame profile
-    `valve/frame_controller_valve` is enabled only if the runtime offers `XR_VALVE_frame_controller_interaction`. The full action set is specified in `design.md`.
-13. PowerShell scripts are run as `powershell -NoProfile -ExecutionPolicy Bypass -File tools\<script>.ps1`; the default execution policy rejects unsigned scripts.
-14. `XR_EXT_render_model` requires `XR_EXT_uuid` on an OpenXR 1.0 instance; without it `xrCreateInstance` fails with a validation error.
-15. Runtime controller models exist only after the first successful `xrSyncActions`, and their spaces are locatable only while the session is `FOCUSED` (not `VISIBLE`). See `controller-models.md`.
-16. The pyopenxr 1.1.6302 wrappers for render models do not work as called (UUID default, missing two-call idiom, missing preallocated arrays); `controller-models.md` lists the workarounds.
-17. Text sent through the RPC `execute_code` is XML: a snippet file containing a NUL or another control character is rejected (`not well-formed (invalid token)`); runtime strings are printed with `ascii()`.
-18. The repo `.gitignore` excludes `__pycache__`, `refs/`, `tools/logs/` and `.mcp.json`; check `git status` before committing.

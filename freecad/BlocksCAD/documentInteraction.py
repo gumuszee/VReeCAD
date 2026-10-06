@@ -34,7 +34,6 @@ except ImportError:
     has_utils_assembly = False
 
 from enum import Enum
-import math
 from pivy.coin import SbVec3f, SbRotation
 
 

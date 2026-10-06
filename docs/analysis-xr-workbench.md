@@ -19,7 +19,7 @@ The controller tools (teleport, line, cube, select, drag, working plane), Qt ove
 | `input.py`, `profiles.py` | `InputFrame` / `HandInput` / `InputTracker` (hardware independent input with edge events) and the per-profile mapping of the abstract inputs to OpenXR paths |
 | `backends/` | `openxr_input.py` (action set, bindings, polling, haptics), `openxr_models.py` (runtime controller models), `sim.py` (scripted head and controllers) |
 | `render/` | `gltf_coin.py` (glTF to Coin3D), `controller_shape.py` (generated controller), `offscreen.py` (headless render to an image) |
-| `tools/`, `ui/` | Tool base class, registry, manager and the inherited modes as tools; palette ring logic, layout and view, the UI controller |
+| `tools/`, `ui/` | Tool base class, registry, manager and the inherited modes as tools; the interface: carousel logic and view, layout, sliders, ruler, laser and tip pointer, settings, the UI controller |
 | `gltf.py` | GLB reader (node tree, triangle meshes, materials, embedded images) |
 | `controllerXR.py` | `xrController`: Coin node for the controller (generated shape or runtime model) + picking ray; button state machine `AnInpEv` (JUST_PRESSED/PRESSED/JUST_RELEASED/RELEASED); `find_picked_coin_object` (ray pick on any Coin graph) |
 | `menuCoin.py` | Minimal in-world Coin widgets: `buttonWidget`, `sliderWidget`, `labelWidget`, `coinMenu`, `editCoinMenu` (shown near the right hand after selecting an object) |
@@ -30,12 +30,12 @@ The controller tools (teleport, line, cube, select, drag, working plane), Qt ove
 
 ### Control flow per frame
 `update_render` (timer) -> `poll_xr_events` -> `start_xr_frame` -> `update_xr_movement` (frame timing) -> `update_xr_views` (eye cameras, head pose) ->
-`update_xr_controls` (sync actions, `InputFrame`, controller models, `update_ui`: grip navigation and palette ring, controller poses) ->
+`update_xr_controls` (sync actions, `InputFrame`, controller models, `update_ui`: grip navigation, palette carousel, pointer poses, controller poses) ->
 `update_xr_interaction` (Qt widgets, `tools.update(frame)`) -> Coin render per eye -> `end_xr_frame`; `update_gui` (title bar) runs on its own timer.
 
 ### Interaction model
 - `InteractMode` enum: TELEPORT, LINE_BUILDER, CUBE_BUILDER, SELECT_MODE, DRAG_MODE, WORKING_PLANE; each names a registered tool, and `XRwidget.interact_mode` reads and writes the active tool of the `ToolManager`.
-- Left controller trigger = main menu (point + release to choose tool); the **secondary (right) controller is the tool hand**.
+- The left controller carries the palette carousel (`ux-design.md`); the **secondary (right) controller is the tool hand**. The upstream trigger menu and stick locomotion do not exist in this repository.
 - `interact_*` methods are state machines over the right controller's trigger (`grab_ev`) event.
 - Coordinates: controller pose is in XR space; `get_doc_transf()` / `get_xr_sbvec()` convert between XR (Coin) and document coordinates (m vs mm scaling, `world_transform`).
 - Edit tools (Pad/Pocket): `set_start_edit` -> `update_edit_transf` (distance along face normal from controller movement) -> `set_finish_edit`.

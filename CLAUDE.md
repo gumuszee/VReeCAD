@@ -24,7 +24,7 @@ direction `docs/design.md`; verification state `docs/verification.md`.
 - Windows quirks: avoid `2>&1` on native commands in PowerShell 5.1; Python console is cp1252 (force UTF-8); heredocs with apostrophes break the Bash tool - use the Write tool for docs. A session's working directory is locked and cannot be renamed while the session runs.
 
 ## Tests
-- Pure unit tests (no FreeCAD): `& "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" -m unittest discover -s tests`. GUI-dependent tests: `python tools\fc_rpc.py exec -f tools\snippets\run_live_tests.py`. Run both before committing addon changes.
+- Pure unit tests (no FreeCAD): `& "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" -m unittest discover -s tests`. GUI-dependent tests: `python tools\fc_rpc.py exec -f tools\snippets\run_live_tests.py`. Run both, and `tools\lint_imports.py`, before committing addon changes.
 - Tools are classes in `freecad/BlocksCAD/tools/` (registered with `@register`); they see only the `InputFrame`. Drive them headless with `backends/sim.py` (`tools/snippets/sim_demo.py`).
 
 ## Conventions
