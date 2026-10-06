@@ -16,7 +16,41 @@
 """Tool base class and the services a tool may use."""
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Tuple
+
+from freecad.BlocksCAD.core import units
+
+
+@dataclass(frozen=True)
+class ToolOption:
+    """One adjustable value of a tool, changed with the stick of the tool hand (docs/ux-design.md, Tool hand).
+
+    kind "number": `low` to `high` in steps of `step`, shown with `unit` ("" for none); kind "length": millimetres, shown in the
+    measurement system of the document; kind "choice": one of `choices`, cycled."""
+    name: str
+    label: str
+    kind: str = "number"
+    low: float = 0.0
+    high: float = 1.0
+    step: float = 1.0
+    default: Any = 0.0
+    unit: str = ""
+    choices: Tuple[str, ...] = ()
+
+    def clamp(self, value):
+        """The nearest allowed value: clamped and rounded to the step (numbers), or a valid choice."""
+        if self.kind == "choice":
+            return value if value in self.choices else self.default
+        value = min(max(value, self.low), self.high)
+        return round(self.low + round((value - self.low) / self.step) * self.step, 9)
+
+    def format(self, value, system=units.METRIC_MM):
+        if self.kind == "choice":
+            return str(value)
+        if self.kind == "length":
+            return units.format_length(value, system)
+        text = f"{value:.0f}" if float(value).is_integer() else f"{value:g}"
+        return f"{text} {self.unit}".strip()
 
 
 @dataclass
@@ -42,9 +76,18 @@ class Tool:
 
     name = ""
     label = ""
+    hint = ""        # one line shown as a toast when the tool is chosen and as the tooltip of its face
+    options = ()     # up to two `ToolOption`s: the first on the stick up and down, the second on the stick left and right
 
     def __init__(self, ctx: ToolContext):
         self.ctx = ctx
+        self.values = {option.name: option.default for option in self.options}
+
+    def set_option(self, name, value):
+        """Set an option (clamped to what it allows); returns the value that was stored."""
+        option = next(o for o in self.options if o.name == name)
+        self.values[name] = option.clamp(value)
+        return self.values[name]
 
     def activate(self):
         """Called when the tool becomes the active tool."""

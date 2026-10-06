@@ -118,11 +118,32 @@ Every controller has a pointer pose derived from its aim pose and three settings
 |---|---|
 | Trigger | primary action of the tool; press and release on a face when pointing (laser) or touching (tip) at the carousel to activate it; hold on a face to lift it, on a title bar to lift a panel |
 | Grip | grab the world or an object |
-| Stick up/down | tool option (size, segments, grid step) with a live readout |
-| Stick left/right | tool option 2 (cycle shape or mode) |
-| Stick click | confirm the pending value / reset the option |
+| Stick up/down | first option of the tool (size, segments, grid step), stepped, with a live readout (see Tool options) |
+| Stick left/right | second option of the tool (cycle shape or mode) |
+| Stick click | reset the option changed last to its default |
 | Button 1 | held while navigating (one or two grips): level rotation. Otherwise: hold for the quick radial (below) |
 | Button 2 | held while navigating: scale locked at 1 : 1. Otherwise: undo (tap), redo (hold) |
+
+### Tool options
+
+A tool declares up to two options (`ToolOption` in `tools/base.py`): a number with a range and a step, a length in millimetres (shown in the unit system of the document) or a choice from a list. While such a tool is active the stick of the tool hand belongs to its options:
+
+- **Stick up/down** changes the first option, **stick left/right** the second. A number steps once when the stick is pushed out and repeats (after 0.3 s, ten steps per second) while it is held; a choice steps once per push and wraps round. Every step gives a haptic tick.
+- **Stick click** puts the option changed last (the first when none was changed) back to its default.
+- **Readout:** a plate next to the pointer of the tool hand names the option and its value ("Grid: 10 mm") and stays for 1.5 s after the last change.
+- The options are inactive while a grip holds the world, while the quick radial is open and while the carousel is being used. A tool without options leaves the stick to the inherited code. The inherited tools declare no options.
+
+### Undo and redo
+
+`button2` of the tool hand outside navigation: a **tap** undoes (when the button is released within 0.4 s), a **hold** of 0.4 s redoes once while the button is still down. While a grip holds the world `button2` is the 1 : 1 lock, and a grip pressed while it is down cancels the undo. Both show a toast ("Undo", "Redo", "Nothing to undo", "Nothing to redo").
+
+### Toasts, tooltips and readouts
+
+All three are dark plates that fit their text, drawn over the model in the interface font.
+
+- **Toasts** stand 0.8 m in front of the head, 0.2 m below the line of sight, at 1.5 times the size of the labels. Up to three stand at once, the newest at the bottom; each stays for 2.2 s, grows in and shrinks away, and a message that is still there is renewed instead of repeated. Toasts report the result of an action: undo and redo, the tool chosen with its hint, the pointer mode, layout reset, hidden and shown faces, and the selection text of the inherited tools.
+- **Tooltips:** hovering one face for 0.5 s shows its description above it in the plane of its panel. Tool faces use the hint of the tool. The tooltip disappears when the pointer leaves the face and is not shown while something is lifted or pressed.
+- **Readout** of a tool option: see Tool options.
 
 ### Quick radial
 
@@ -146,7 +167,7 @@ A pin-cushion like Open Brush's: holding tool hand `button1` (outside navigation
 | `aux1` (Steam Frame: D-pad left) | undo |
 | `aux2` (Steam Frame: D-pad right) | redo |
 
-Controllers without `aux1` and `aux2` undo and redo through the Edit panel faces; the tool hand shortcuts on `button2` (U4) cover every profile.
+Controllers without `aux1` and `aux2` undo and redo through the Edit panel faces; the tool hand shortcuts on `button2` cover every profile.
 
 ## Visual style
 
@@ -156,13 +177,13 @@ The colours, the font and the text size are defined once in `ui/style.py`. Contr
 
 ## Implementation plan (UX milestones, before M1)
 
-U1, U2 and U3 are implemented (verification state in `verification.md`); U4 is planned.
+U1, U2, U3 and U4 are implemented (verification state in `verification.md`).
 
 | U | Deliverable |
 |---|---|
 | U1 | World navigation: one-grip drag, one-grip hold with rotation, two-grip move/rotate/scale, free orbit and the level modifier, held 1 : 1 lock, home reset, scale ruler with document units, haptics; `core/navigation.py` and `core/units.py` (pure math, unit tested); the stick locomotion and the quick menu are removed |
 | U2 | Panel system: `ui/` faces, panels, the carousel on the controller with every side visible, rows and columns of panels and rearranging, gaze visibility, laser, ray hover and press, haptics, undo and redo on `aux1` and `aux2`; inherited tools as faces; the first radial palette is removed |
 | U3 | Quick radial (`ui/radial.py`, `ui/radial_view.py`); moving single faces between slots and panels; hiding faces and showing them again; a face activates on release |
-| U4 | Tool hand options with readouts, undo/redo on `button2`, toasts, tooltips |
+| U4 | Tool options on the stick with a readout (`ui/options.py`, `tools/base.py`), undo and redo on `button2` (`ui/undo_button.py`), toasts and tooltips (`ui/toast.py`, `ui/feedback_view.py`) |
 
 Every U step is tested through the Sim backend (scripted hands, offscreen render) and then checked in the headset by the owner (`verification.md`).

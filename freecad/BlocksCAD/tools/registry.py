@@ -41,5 +41,9 @@ def label_of(name):
     return _TOOLS[name].label
 
 
+def hint_of(name):
+    return _TOOLS[name].hint
+
+
 def unregister(name):
     _TOOLS.pop(name, None)

@@ -1,6 +1,6 @@
 # BlocksCAD design
 
-Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction. The interface foundation is implemented: grip navigation (U1), the palette carousel with panels, sliders and arrangement (U2) and the laser and tip pointer are verified in the headset; the quick radial and the moving and hiding of single faces (U3) are tested in the Sim and wait for the headset. U4 and M1 are next. Open checks are listed in `verification.md`.
+Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction. The interface foundation is implemented: grip navigation (U1), the palette carousel with panels, sliders and arrangement (U2) and the laser and tip pointer are verified in the headset; the quick radial, the moving and hiding of single faces (U3), tool options, undo and redo on `button2`, toasts and tooltips (U4) are tested in the Sim and wait for the headset. M1 is next. Open checks are listed in `verification.md`.
 Inspiration: Open Blocks' simple direct manipulation; substance: real parametric CAD in FreeCAD.
 
 ## Decisions (from the project owner, 2026-10-06)
@@ -28,8 +28,8 @@ profiles.py abstract input -> OpenXR path per interaction profile (data, see inp
 gltf.py     GLB reader;  render/  gltf_coin.py (glTF -> Coin3D), controller_shape.py (generated), offscreen.py (image render)
 commonXR.py XRwidget: OpenXR session, swapchains, Coin scene, render loop, inherited interact_* handlers (to be split: rig*)
 core/       mathutil.py (vector/quaternion math), navigation.py (grip navigation, home pose), units.py (measurement systems, ruler ticks); snapping*, transactions*
-ui/         controller.py (navigation + carousel + ruler + actions), ring.py (carousel logic and geometry), ring_view.py, radial.py (quick radial logic and favourites), radial_view.py, ruler.py, pointer.py (laser and tip), pointing.py (pointer pose), settings.py (user settings), style.py (colours, font), layout.py (faces, panels, sides, hidden faces, JSON), defaults.py; numeric keypad*, tool tips*, toasts*
-tools/      base.py, registry.py, manager.py, legacy.py (the six inherited modes as tools); new tools: one module each
+ui/         controller.py (navigation + carousel + ruler + actions), ring.py (carousel logic and geometry), ring_view.py, radial.py (quick radial logic and favourites), radial_view.py, ruler.py, pointer.py (laser and tip), pointing.py (pointer pose), settings.py (user settings), style.py (colours, font), layout.py (faces, panels, sides, hidden faces, JSON), defaults.py; options.py (tool options on the stick), undo_button.py, toast.py (toasts, tooltip timing), feedback_view.py (toasts, tooltip, readout); numeric keypad*
+tools/      base.py (Tool, ToolOption, hint), registry.py, manager.py, legacy.py (the six inherited modes as tools); new tools: one module each
 core/*      picking/highlight, preview ghosts, transactions (undo), units, parameter binding (further modules)
 cad/*       thin wrappers creating/editing FreeCAD features (Part primitives, Sketcher, PartDesign, booleans, Attacher)
 ```
@@ -67,7 +67,7 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 |---|---|
 | U1, U2, pointer | **UX foundation, implemented**: world navigation, palette carousel with faces, panels and sliders, laser and tip pointer. See `ux-design.md` |
 | U3 | **UX foundation, implemented**: quick radial on `button1` of the tool hand, moving single faces between slots and panels, hiding faces and showing them again, faces activate on trigger release. See `ux-design.md` |
-| U4 | **UX foundation, planned** (before M1): tool options with readouts, undo/redo on `button2`, toasts, tooltips. See `ux-design.md` |
+| U4 | **UX foundation, implemented**: tool options on the stick with a readout, undo and redo on `button2`, toasts, tooltips. See `ux-design.md` |
 | M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools |
 | M1 | Primitives (box, cylinder, cone, sphere, torus, wedge, prism) with snap grid, ghost preview, live dimension, undo/redo |
 | M2 | Selection/hover highlight (vertex/edge/face/object), Grab tool (move/rotate, two-hand scale -> parameters), world navigation |
@@ -95,6 +95,6 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 - `commonXR.py` still hosts the OpenXR session, the render loop and the inherited tool handlers in one module; the extraction into `rig.py` is open.
 - The preferences page (`Resources/Gui/Resources/preferences/XRPreferences.ui`, compiled into `XRWorkbench_rc.py`) still lists the locomotion options (movement mode, speeds, lock to floor); they have no effect, because the world is navigated with the grips.
 - The inherited tools (teleport, line and cube builders, select, drag, working plane), the Qt panel overlay and the edit menu shown after a selection are upstream code; they pick along a ray from the pointer pose (a ray of 3 cm from the tip in tip mode) and are replaced milestone by milestone.
-- The inherited status text on the right controller (tool hints, selection label) is not drawn; the objects and their `set_text` calls remain in `commonXR.py` and the tool hints return as toasts and tooltips (U4).
+- The inherited status text on the right controller (tool hints, selection label) is not drawn; the objects and their `set_text` calls remain in `commonXR.py` and the tool hints are shown as toasts and tooltips.
 - Handedness is fixed: the left controller carries the carousel, the right controller is the tool hand.
 - Only the Steam Frame controllers are tested; the other profiles are bound but unverified (`verification.md`).

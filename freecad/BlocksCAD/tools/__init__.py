@@ -19,7 +19,7 @@ A tool sees only the `InputFrame` and the services in its `ToolContext`; it neve
 """
 
 from freecad.BlocksCAD.tools.base import Tool, ToolContext
-from freecad.BlocksCAD.tools.registry import register, create, names, label_of
+from freecad.BlocksCAD.tools.registry import register, create, names, label_of, hint_of
 from freecad.BlocksCAD.tools.manager import ToolManager
 
-__all__ = ["Tool", "ToolContext", "ToolManager", "register", "create", "names", "label_of"]
+__all__ = ["Tool", "ToolContext", "ToolManager", "register", "create", "names", "label_of", "hint_of"]

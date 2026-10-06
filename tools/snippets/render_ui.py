@@ -16,15 +16,23 @@ import freecad.BlocksCAD.ui.ring as _ring
 import freecad.BlocksCAD.ui.ring_view as _rv
 import freecad.BlocksCAD.ui.radial as _rd
 import freecad.BlocksCAD.ui.radial_view as _rdv
+import freecad.BlocksCAD.ui.toast as _ts
+import freecad.BlocksCAD.ui.undo_button as _ub
+import freecad.BlocksCAD.ui.options as _op
+import freecad.BlocksCAD.ui.feedback_view as _fv
 import freecad.BlocksCAD.ui.ruler as _ru
 import freecad.BlocksCAD.ui.settings as _cf
 import freecad.BlocksCAD.ui.pointing as _pg
 import freecad.BlocksCAD.ui.pointer as _pt
 import freecad.BlocksCAD.ui.defaults as _df
+import freecad.BlocksCAD.tools.base as _tb
+import freecad.BlocksCAD.tools.registry as _tr
+import freecad.BlocksCAD.tools as _tools
+import freecad.BlocksCAD.tools.legacy as _tl
 import freecad.BlocksCAD.ui.controller as _ctl
 import freecad.BlocksCAD.backends.sim as _sim
 import freecad.BlocksCAD.render.offscreen as _off
-for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
+for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _tb, _tr, _tools, _tl, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
     importlib.reload(_m)
 from pivy import coin as _coin
 
@@ -129,6 +137,41 @@ try:
     print("shown again:", _s.ui.layout.hidden, _s.ui.layout.pages[_tools_page].slots)
     _s.ui.settings.tip_angle = 15.0
     _s.input.set_hand(1, trigger=0.0, button1=False, position=(0.25, 1.3, -0.25), point_at=(0.0, 1.3, -1.0))
+    for _ in range(40):
+        _s.frame(0.02)
+
+    # toasts in front of the head, the tooltip of a hovered face and the readout of a tool option
+    _s.ui.settings.tip_angle = 0.0
+    _s.ui.ring.focus_side(_s.ui.layout.pages[_tools_page].side)
+    _s.ui.toast("Undo")
+    _s.ui.toast("Cube: Click and drag to build a cube")
+    _s.ui.toast("Hidden: Line")
+    for _ in range(10):
+        _s.frame(0.02)
+    _aim_slot(2, 0.0)
+    for _ in range(40):
+        _s.frame(0.02)
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_feedback.png"))
+    print("tooltip:", _s.ui.feedback._tooltip.label, "| toasts:", [t.text for t in _s.ui.toasts.items])
+
+    class _Sized(_tb.Tool):
+        name, label = "sized", "Sized"
+        options = (_tb.ToolOption("size", "Grid", "length", 1.0, 100.0, 1.0, 10.0),)
+
+    _s.ui.active_tool = _Sized(_tb.ToolContext())
+    _s.input.set_hand(1, stick=(0.0, 1.0))
+    for _ in range(12):
+        _s.frame(0.02)
+    _s.input.set_hand(1, stick=(0.0, 0.0), position=(0.2, 1.25, -0.5), point_at=(0.0, 1.25, -1.5))
+    for _ in range(3):
+        _s.frame(0.02)
+    _s.input.set_head(position=_head, look_at_point=(0.1, 1.25, -0.5))
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_readout.png"))
+    print("readout:", _s.ui.feedback._readout.label)
+    _s.ui.active_tool = None
+    _s.ui.settings.tip_angle = 15.0
+    _s.input.set_head(position=_head, look_at_point=_ctrl)
+    _s.input.set_hand(1, stick=(0.0, 0.0), position=(0.25, 1.3, -0.25), point_at=(0.0, 1.3, -1.0))
     for _ in range(40):
         _s.frame(0.02)
 

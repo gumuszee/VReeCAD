@@ -638,7 +638,7 @@ class XRwidget(QOpenGLWidget):
             "doc:delete": self.delete_selection,
             "app:close": lambda: QTimer.singleShot(0, close_xr_viewer),
         })
-        self.ui = UiController(tool_registry.names(), tool_registry.label_of, actions,
+        self.ui = UiController(tool_registry.names(), tool_registry.label_of, actions, tool_hint=tool_registry.hint_of,
                                palette_hand=self.primary_con, tool_hand=self.secondary_con)
         self.navigator = self.ui.navigator
 
@@ -647,16 +647,22 @@ class XRwidget(QOpenGLWidget):
             w.toggle_widget()
 
     def undo(self):
+        """Undo the last change; returns the text of the toast."""
         doc = App.ActiveDocument
         if doc is not None and doc.UndoCount:
             doc.undo()
             doc.recompute()
+            return "Undo"
+        return "Nothing to undo"
 
     def redo(self):
+        """Redo the last undone change; returns the text of the toast."""
         doc = App.ActiveDocument
         if doc is not None and doc.RedoCount:
             doc.redo()
             doc.recompute()
+            return "Redo"
+        return "Nothing to redo"
 
     def delete_selection(self):
         docInter.delete_sel_obj()
@@ -1099,7 +1105,9 @@ class XRwidget(QOpenGLWidget):
                 con.reach = TIP_REACH if tip_mode else None
                 if tip_mode:
                     con.hide_ray()
-                con.update_lever(h.stick[0], h.stick[1])
+                # the stick adjusts the options of the active tool when it has any
+                lever_owned = ui_update.owns_stick and hand == self.secondary_con
+                con.update_lever(0.0 if lever_owned else h.stick[0], 0.0 if lever_owned else h.stick[1])
                 # a trigger pressed on a face of the palette belongs to the palette, not to the active tool
                 owned = ui_update.consume_trigger and hand == self.secondary_con
                 con.update_grab(0.0 if owned else h.trigger)
@@ -1429,7 +1437,7 @@ class XRwidget(QOpenGLWidget):
                     # the newly showed menu is aligned to the controller which selected object
                     pos = con.get_global_transf().translation
                     rot = con.get_global_transf().rotation
-                    self.status_label.set_text(docInter.get_selection_label())
+                    self.show_selection_label()
                     self.edit_menu.update_location(pos, rot)
                     self.edit_menu.show_menu()
         else:
@@ -1537,18 +1545,19 @@ class XRwidget(QOpenGLWidget):
                 con.hide_ray()
                 self.geo_prev.make_plane_pickable(True)
 
+    def show_selection_label(self):
+        """The inherited selection text, as a toast."""
+        label = docInter.get_selection_label()
+        self.status_label.set_text(label)
+        self.ui.toast(label)
+
     def select_tool(self, name):
         """Activate a registered tool and apply the side effects the inherited modes need (status text, builder mode)."""
         self.tools.activate(name)
-        status = {
-            "teleport": "Pick teleport destination",
-            "working_plane": "Set working plane",
-            "line_builder": "Line/Face builder",
-            "cube_builder": "Click and drag for Cube building",
-            "select_mode": "Select/Edit mode",
-            "drag_mode": "Pick element for dragging",
-        }.get(name, tool_registry.label_of(name))
+        hint = tool_registry.hint_of(name)
+        status = f"{tool_registry.label_of(name)}: {hint}" if hint else tool_registry.label_of(name)
         self.status_label.set_text(status)
+        self.ui.toast(status)
         if name == "working_plane":
             self.geo_prev.show_working_plane()
         elif name == "line_builder":
@@ -1581,7 +1590,7 @@ class XRwidget(QOpenGLWidget):
         elif (name == "deselect_body_button"):
             docInter.deselect_body()
             self.edit_menu.deselect_body_button.select(False)
-        self.status_label.set_text(docInter.get_selection_label())
+        self.show_selection_label()
 
     def update_qt_widgets(self):
         # Qt widgets rendering and click simulation
@@ -1628,6 +1637,7 @@ class XRwidget(QOpenGLWidget):
     def update_ui(self, frame):
         """One frame of the user interface: grip navigation, palette ring, haptics, ray and trigger ownership."""
         self.ui.active_actions = {f"tool:{self.tools.active_name}"}
+        self.ui.active_tool = self.tools.active
         self.ui.mm_to_stage = self.doc_xr_transform.scaleFactor.getValue()[0]
         doc = App.ActiveDocument
         if doc is not None and self.navigator.state == "two":

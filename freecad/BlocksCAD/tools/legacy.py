@@ -34,6 +34,7 @@ class _HostMethodTool(Tool):
 class TeleportTool(_HostMethodTool):
     name = "teleport"
     label = "Teleport"
+    hint = "Pick a teleport destination"
     method = "check_teleport_jump"
 
 
@@ -41,6 +42,7 @@ class TeleportTool(_HostMethodTool):
 class LineBuilderTool(_HostMethodTool):
     name = "line_builder"
     label = "Line"
+    hint = "Draw lines and faces"
     method = "interact_line_builder"
 
 
@@ -48,6 +50,7 @@ class LineBuilderTool(_HostMethodTool):
 class CubeBuilderTool(_HostMethodTool):
     name = "cube_builder"
     label = "Cube"
+    hint = "Click and drag to build a cube"
     method = "interact_cube_builder"
 
 
@@ -55,6 +58,7 @@ class CubeBuilderTool(_HostMethodTool):
 class SelectTool(_HostMethodTool):
     name = "select_mode"
     label = "Select"
+    hint = "Select and edit"
     method = "interact_select_mode"
 
 
@@ -62,6 +66,7 @@ class SelectTool(_HostMethodTool):
 class DragTool(_HostMethodTool):
     name = "drag_mode"
     label = "Drag"
+    hint = "Pick an element to drag"
     method = "interact_drag_mode"
 
 
@@ -69,4 +74,5 @@ class DragTool(_HostMethodTool):
 class WorkingPlaneTool(_HostMethodTool):
     name = "working_plane"
     label = "Working plane"
+    hint = "Set the working plane"
     method = "interact_working_plane"

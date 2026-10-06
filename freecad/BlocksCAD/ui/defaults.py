@@ -47,23 +47,23 @@ SLIDERS = {
 }
 
 
-def build_faces(tool_names, tool_label):
-    """Map of face id to `Face` for every known face."""
-    faces = [Face(f"tool.{name}", tool_label(name), f"tool:{name}") for name in tool_names]
+def build_faces(tool_names, tool_label, tool_hint=None):
+    """Map of face id to `Face` for every known face; `tool_hint` maps a tool name to the tooltip of its face."""
+    faces = [Face(f"tool.{name}", tool_label(name), f"tool:{name}", tip=tool_hint(name) if tool_hint else "") for name in tool_names]
     faces += [
-        Face("view.reset", "Reset view", "view:reset"),
-        Face("view.overlay", "Overlays", "overlay:toggle"),
-        Face("view.reload", "Reload scene", "scene:reload"),
-        Face("view.plane", "Work plane", "plane:toggle"),
-        Face("view.layout", "Reset layout", "layout:reset"),
-        Face("view.hidden", "Show hidden", "layout:show_hidden"),
-        Face("doc.undo", "Undo", "doc:undo"),
-        Face("doc.redo", "Redo", "doc:redo"),
-        Face("doc.delete", "Delete", "doc:delete"),
-        Face("app.close", "Close VR", "app:close"),
-        Face("pointer.mode", "Pointer", "pointer:mode"),
-        Face("pointer.angle", "Angle", "slider:tip_angle", "slider"),
-        Face("pointer.length", "Length", "slider:tip_length", "slider"),
+        Face("view.reset", "Reset view", "view:reset", tip="Back to the home view at 1 : 1"),
+        Face("view.overlay", "Overlays", "overlay:toggle", tip="Show or hide the model tree and the tasks"),
+        Face("view.reload", "Reload scene", "scene:reload", tip="Rebuild the scene from the document"),
+        Face("view.plane", "Work plane", "plane:toggle", tip="Show or hide the working plane"),
+        Face("view.layout", "Reset layout", "layout:reset", tip="Restore the default panels and faces"),
+        Face("view.hidden", "Show hidden", "layout:show_hidden", tip="Put the hidden faces back on the panels"),
+        Face("doc.undo", "Undo", "doc:undo", tip="Undo the last change"),
+        Face("doc.redo", "Redo", "doc:redo", tip="Redo the last undone change"),
+        Face("doc.delete", "Delete", "doc:delete", tip="Delete the selection"),
+        Face("app.close", "Close VR", "app:close", tip="Close the VR viewer"),
+        Face("pointer.mode", "Pointer", "pointer:mode", tip="Switch between laser and tip"),
+        Face("pointer.angle", "Angle", "slider:tip_angle", "slider", "Hold the trigger and drag"),
+        Face("pointer.length", "Length", "slider:tip_length", "slider", "Hold the trigger and drag"),
     ]
     return {face.id: face for face in faces}
 

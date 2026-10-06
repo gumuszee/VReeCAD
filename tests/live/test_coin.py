@@ -331,6 +331,87 @@ class SimUiTest(unittest.TestCase):
         ui.show_hidden()
         self.assertEqual((ui.layout.hidden, ui.layout.face_at(tools, 0)), ([], face))
 
+    def test_button2_of_the_tool_hand_taps_to_undo_and_holds_to_redo_with_a_toast(self):
+        self.s.actions["doc:undo"] = lambda: self.calls.append("undo") or "Undo"
+        self.show_carousel()
+        self.s.input.set_hand(1, button2=True)
+        self.settle(3)
+        self.s.input.set_hand(1, button2=False)
+        self.s.frame(0.02)
+        self.assertEqual(self.calls, ["undo"])
+        self.assertEqual([t.text for t in self.s.ui.toasts.items], ["Undo"])
+        self.s.input.set_hand(1, button2=True)
+        self.settle(25)
+        self.assertEqual(self.calls, ["undo", "redo"])
+        self.s.input.set_hand(1, button2=False)
+        self.settle(2)
+        self.assertEqual(self.calls, ["undo", "redo"])
+
+    def test_button2_stays_the_scale_lock_while_a_grip_holds_the_world(self):
+        self.show_carousel()
+        self.s.input.set_hand(0, grip=1.0)
+        self.settle(2)
+        self.s.input.set_hand(1, button2=True)
+        self.settle(3)
+        self.s.input.set_hand(1, button2=False)
+        self.settle(2)
+        self.assertEqual(self.calls, [])
+
+    def test_toasts_are_drawn_in_front_of_the_head_and_expire(self):
+        from pivy import coin
+        self.show_carousel()
+        self.s.ui.toast("Hello")
+        self.settle(10)
+        shown = [p for p in self.s.ui.feedback._toasts if p.root.whichChild.getValue() == coin.SO_SWITCH_ALL]
+        self.assertEqual([p.label for p in shown], ["Hello"])
+        self.settle(int(3.0 / 0.02))
+        self.assertTrue(all(p.root.whichChild.getValue() == coin.SO_SWITCH_NONE for p in self.s.ui.feedback._toasts))
+
+    def test_layout_actions_toast(self):
+        self.show_carousel()
+        self.s.ui._run("layout:reset", self.s.ui_update)
+        self.s.ui._run("layout:show_hidden", self.s.ui_update)
+        self.assertEqual([t.text for t in self.s.ui.toasts.items], ["Layout reset", "No hidden faces"])
+
+    def test_hovering_a_face_shows_its_tooltip_after_a_moment(self):
+        from pivy import coin
+        self.show_carousel()
+        ui = self.s.ui
+        tools = [p.name for p in ui.layout.pages].index("Tools")
+        self.aim_at_slot(0, tools)
+        self.settle(5)
+        self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        self.settle(int(0.6 / 0.02))
+        self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.assertEqual(ui.feedback._tooltip.label, ui.faces[ui.layout.face_at(tools, 0)].tip)
+        self.assertNotEqual(ui.feedback._tooltip.label, "")
+        self.s.input.set_hand(1, position=(0.3, 1.0, -0.2), point_at=(0.3, 1.0, -2.0))      # point away
+        self.settle(3)
+        self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
+    def test_the_stick_of_the_tool_hand_adjusts_the_options_of_the_active_tool(self):
+        from pivy import coin
+        from freecad.BlocksCAD.tools import base
+
+        class Sized(base.Tool):
+            name, label = "sized", "Sized"
+            options = (base.ToolOption("size", "Size", "length", 1.0, 100.0, 1.0, 10.0),)
+
+        self.show_carousel()
+        ui = self.s.ui
+        self.settle(2)
+        self.assertFalse(self.s.ui_update.owns_stick)
+        ui.active_tool = Sized(base.ToolContext())
+        self.s.input.set_hand(1, stick=(0.0, 1.0))
+        self.settle(2)
+        self.assertTrue(self.s.ui_update.owns_stick)
+        self.assertEqual(ui.active_tool.values["size"], 11.0)
+        self.assertEqual(ui.feedback._readout.label, "Size: 11 mm")
+        self.assertEqual(ui.feedback._readout.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.s.input.set_hand(1, stick=(0.0, 0.0))
+        self.settle(int(2.0 / 0.02))
+        self.assertEqual(ui.feedback._readout.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
     def test_the_overlay_is_the_last_child_of_the_scene(self):
         self.assertEqual(self.s.scene.findChild(self.s.ui.overlay), self.s.scene.getNumChildren() - 1)
 

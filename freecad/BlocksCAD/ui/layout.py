@@ -36,6 +36,7 @@ class Face:
     label: str
     action: str
     kind: str = "button"   # "button" or "slider" (a slider takes a whole row of its panel)
+    tip: str = ""          # one line shown as a tooltip while the face is hovered
 
 
 @dataclass

@@ -88,7 +88,7 @@ class SimSession:
         self.last_frame = None
         self.ui_update = None
         self.actions = {} if actions is None else actions
-        self.ui = UiController(tools.names(), tools.label_of, self.actions, use_user_layout=False)
+        self.ui = UiController(tools.names(), tools.label_of, self.actions, use_user_layout=False, tool_hint=tools.hint_of)
         self.navigator = self.ui.navigator
         self.scene = coin.SoSeparator()
         self.scene.ref()

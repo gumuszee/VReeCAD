@@ -240,6 +240,16 @@ class PaletteRing:
             return row * COLS + col
         return None
 
+    def slot_centre(self, page, slot):
+        """(centre, u, v) of a slot of a panel in the room, or None when the panel is not drawn. A slider takes the whole row."""
+        pose = self.poses.get(page)
+        if pose is None:
+            return None
+        row = slot // COLS
+        x = 0.0 if row in self.slider_rows.get(page, ()) else (slot % COLS - (COLS - 1) / 2) * (CELL + GAP)
+        y = ((ROWS - 1) / 2 - row) * (CELL + GAP) + GRID_Y
+        return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.u, pose.v
+
     @staticmethod
     def _locate(pose, point):
         rel = mu.sub(point, pose.centre)
