@@ -48,23 +48,15 @@ class PointingTest(unittest.TestCase):
 
 
 class SettingsTest(unittest.TestCase):
-    def test_defaults_and_adjustments_are_clamped(self):
+    def test_defaults_toggle_and_clamping(self):
         s = cfg.Settings()
-        self.assertEqual((s.pointer_mode, s.tip_angle, s.tip_length), ("laser", 0.0, 0.10))
+        self.assertEqual((s.pointer_mode, s.tip_angle, s.tip_length), ("laser", 15.0, 0.04))
         s.toggle_mode()
         self.assertEqual(s.pointer_mode, "tip")
         s.toggle_mode()
         self.assertEqual(s.pointer_mode, "laser")
-        s.adjust_angle(3)
-        self.assertEqual(s.tip_angle, 15.0)
-        s.adjust_angle(-100)
-        self.assertEqual(s.tip_angle, -90.0)
-        s.adjust_length(-100)
-        self.assertEqual(s.tip_length, 0.0)
-        s.adjust_length(5)
-        self.assertAlmostEqual(s.tip_length, 0.05)
-        s.adjust_length(1000)
-        self.assertEqual(s.tip_length, 0.4)
+        self.assertEqual(cfg.Settings("tip", -500.0, -1.0).tip_angle, -90.0)
+        self.assertEqual(cfg.Settings("tip", 500.0, 9.0).tip_length, 0.4)
 
     def test_json_roundtrip_and_bad_files(self):
         s = cfg.Settings("tip", 20.0, 0.15)

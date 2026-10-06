@@ -7,6 +7,7 @@ import unittest
 import support  # noqa: F401
 from freecad.BlocksCAD.backends.sim import SimInput
 from freecad.BlocksCAD.core import mathutil as mu
+from freecad.BlocksCAD.ui import defaults
 from freecad.BlocksCAD.ui import layout as lay
 from freecad.BlocksCAD.ui import pointing
 from freecad.BlocksCAD.ui import ring as rg
@@ -328,6 +329,66 @@ class RingTest(unittest.TestCase):
         self.assertEqual(self.run_tip().dropped, (0, 0, 0, None, False))
 
 
+    def slider_setup(self):
+        """One panel with a slider in its middle row (face ids are irrelevant to the ring)."""
+        self.ring = rg.PaletteRing([[[0]], [[1]], [[2]]])
+        self.ring.slider_rows = {0: {1: "pointer.angle"}}
+        self.run_frames(30)
+
+    def slider_point(self, along):
+        pose = self.ring.poses[0]
+        x = -rg.GRID_W / 2 + rg.SLIDER_PAD + along * (rg.GRID_W - 2 * rg.SLIDER_PAD)
+        return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, rg.GRID_Y))), pose.n     # the middle row is at grid y 0
+
+    def test_a_slider_row_hovers_as_one_and_dragging_follows_the_ray(self):
+        self.slider_setup()
+        point, n = self.slider_point(0.25)
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertEqual(r.hover, (0, 4))                       # the first slot of the row, wherever on the row it is hit
+        self.assertTrue(r.consume_trigger)
+        self.assertIsNone(r.slider)
+        self.sim.set_hand(1, trigger=1.0)
+        r = self.run_frames(1)
+        self.assertAlmostEqual(r.slider[2], 0.25, places=4)
+        self.assertEqual(r.slider[:2], (0, 4))
+        point, n = self.slider_point(0.8)
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertAlmostEqual(r.slider[2], 0.8, places=4)
+        self.assertTrue(r.consume_trigger)
+        far = mu.add(point, mu.mul(self.ring.poses[0].u, 0.5))   # beyond the end of the panel: clamped, the drag continues
+        self.aim_at(far, n)
+        self.assertEqual(self.run_frames(1).slider[2], 1.0)
+        self.sim.set_hand(1, trigger=0.0)
+        r = self.run_frames(1)
+        self.assertEqual(r.slider_done, (0, 4))
+        self.assertIsNone(r.slider)
+        self.assertIsNone(self.ring.slider_drag)
+
+    def test_a_slider_is_dragged_with_the_tip_too(self):
+        self.slider_setup()
+        point, n = self.slider_point(0.5)
+        self.tip_at(point, n, 0.02)
+        self.run_tip()
+        self.sim.set_hand(1, trigger=1.0)
+        r = self.run_tip()
+        self.assertAlmostEqual(r.slider[2], 0.5, places=4)
+        point, n = self.slider_point(0.1)
+        self.tip_at(point, n, 0.1)          # the tip may leave the plate while dragging: it is projected onto it
+        self.assertAlmostEqual(self.run_tip().slider[2], 0.1, places=4)
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertEqual(self.run_tip().slider_done, (0, 4))
+
+    def test_the_other_rows_of_a_slider_panel_still_hold_faces(self):
+        self.slider_setup()
+        point, n = self.slot_point(0)
+        self.aim_at(point, n)
+        self.assertEqual(self.run_frames(1).hover, (0, 0))
+        self.sim.set_hand(1, trigger=1.0)
+        self.assertEqual(self.run_frames(1).activated, (0, 0))
+
+
 class LayoutTest(unittest.TestCase):
     def make(self):
         return lay.Layout([lay.Page("Tools", ["a", "b", None]), lay.Page("View", ["c"])])
@@ -418,6 +479,29 @@ class LayoutTest(unittest.TestCase):
         renamed = lay.Layout([lay.Page("Mine", ["a", "x"])])
         self.assertTrue(renamed.add_missing(default))                        # no page of that name: the first page with room
         self.assertEqual(renamed.pages[0].slots[:5], ["a", "x", "b", "y", "z"])
+
+    def test_a_slider_goes_to_a_free_row(self):
+        default = lay.Layout([lay.Page("Session", ["m", "c", None, None, "angle", None, None, None, "length"])])
+        saved = lay.Layout([lay.Page("Session", ["m", "c", "old"])])
+        self.assertTrue(saved.add_missing(default, wide={"angle", "length"}))
+        self.assertEqual(saved.pages[0].slots[4], "angle")                    # row 1 is free
+        self.assertEqual(saved.pages[0].slots[8], "length")                   # row 2 is free
+        crowded = lay.Layout([lay.Page("Session", ["m", "c", "x", "y", "z", "u", "v", "w", "q", "r", "s", "t"])])
+        self.assertFalse(crowded.add_missing(default, wide={"angle", "length"}))   # no free row: nothing is squeezed in
+
+    def test_slider_specs_quantize_and_clamp(self):
+        angle = defaults.SLIDERS["pointer.angle"]
+        self.assertEqual(angle.value(0.0), -30.0)
+        self.assertEqual(angle.value(1.0), 60.0)
+        self.assertEqual(angle.value(0.5), 15.0)
+        self.assertEqual(angle.value(0.5123), 16.0)                           # whole degrees
+        self.assertEqual(angle.value(-3.0), -30.0)
+        self.assertAlmostEqual(angle.fraction(15.0), 0.5)
+        length = defaults.SLIDERS["pointer.length"]
+        self.assertEqual(length.value(0.2), 0.04)
+        self.assertEqual(length.value(0.21), 0.04)                             # 5 mm steps: 0.042 rounds to 0.040
+        self.assertEqual(length.value(0.23), 0.045)
+        self.assertAlmostEqual(length.fraction(0.04), 0.2)
 
     def test_move_page_back_onto_its_own_empty_side_changes_nothing(self):
         layout = self.three()

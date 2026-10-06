@@ -105,6 +105,44 @@ class _Cell:
             self.text_color.rgb = coin.SbColor(*(style.TEXT_ON_ACTIVE if active else style.TEXT))
 
 
+class _SliderRow:
+    """A slider on a whole row of the grid: the label, the track and the handle."""
+    TRACK_H = 0.004
+    HANDLE = (0.009, 0.026)
+
+    def __init__(self, parent, y):
+        self.low, self.high = -rg.GRID_W / 2 + rg.SLIDER_PAD, rg.GRID_W / 2 - rg.SLIDER_PAD
+        self.sep = coin.SoSeparator()
+        self.sep.addChild(_at(0.0, y, 0.0))
+        self.plate_color = _plate(self.sep, rg.GRID_W, rg.CELL, style.FACE)
+        self.track_color = _plate(self.sep, self.high - self.low, self.TRACK_H, style.PLATE, 0.0, -0.013, DEPTH * 0.5)
+        handle = coin.SoSeparator()
+        self._handle_move = coin.SoTranslation()
+        handle.addChild(self._handle_move)
+        self.handle_color = style.color(style.TEXT)
+        handle.addChild(self.handle_color)
+        handle.addChild(_cube(self.HANDLE[0], self.HANDLE[1], DEPTH))
+        self.sep.addChild(handle)
+        label = coin.SoSeparator()
+        label.addChild(_at(-rg.GRID_W / 2 + 0.012, 0.011, DEPTH * 0.5 + 0.0005))
+        label.addChild(style.color(style.TEXT))
+        label.addChild(style.text_scale(1.1))
+        self.text = coin.SoText3()
+        self.text.justification = coin.SoText3.LEFT
+        label.addChild(self.text)
+        self.sep.addChild(label)
+        self.label = None
+        parent.addChild(self.sep)
+
+    def set(self, fraction, label, hovered, dragged):
+        self._handle_move.translation.setValue(self.low + fraction * (self.high - self.low), -0.013, DEPTH)
+        if label != self.label:
+            self.label = label
+            self.text.string = label
+        self.plate_color.rgb = coin.SbColor(*(style.HOVER if hovered else style.FACE))
+        self.handle_color.rgb = coin.SbColor(*(style.ACTIVE if dragged else style.TEXT))
+
+
 class _Panel:
     """One panel (page) in its own coordinates: x right, y up, z out of the panel."""
 
@@ -121,11 +159,20 @@ class _Panel:
         for i in (-1, 0, 1):   # grooves: the title bar is the handle for lifting the panel
             _plate(sep, 0.016, 0.0016, style.GROOVE, rg.GRID_W / 2 - 0.016, TITLE_CENTRE + i * 0.006, DEPTH * 0.5)
         self.cells = []
+        self.sliders = {}          # row of the grid -> (slider view, face id)
+        for row in range(lay.ROWS):
+            face = faces.get(page.slots[row * lay.COLS]) if page.slots[row * lay.COLS] else None
+            if face is not None and face.kind == "slider":
+                y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
+                self.sliders[row] = (_SliderRow(sep, y), face.id)
         for slot, face_id in enumerate(page.slots):
             col, row = slot % lay.COLS, slot // lay.COLS
             x = (col - (lay.COLS - 1) / 2) * (rg.CELL + rg.GAP)
             y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
             face = faces.get(face_id) if face_id else None
+            if row in self.sliders:                      # the row belongs to its slider
+                self.cells.append((None, None))
+                continue
             self.cells.append((_Cell(sep, x, y, face.label if face else None), face))
         self.switch.addChild(sep)
 
@@ -246,7 +293,7 @@ class RingView:
         s = 0.5 + 0.5 * fade
         transform.scaleFactor.setValue(s, s, s)
 
-    def update(self, ring, result, layout, faces, head, active_actions=(), labels=None):
+    def update(self, ring, result, layout, faces, head, active_actions=(), labels=None, sliders=None):
         if ring.fade <= 0.02:
             self.root.whichChild = coin.SO_SWITCH_NONE
             return
@@ -264,7 +311,13 @@ class RingView:
             view.title_color.rgb = coin.SbColor(*title)
             under_ray = result.drop_marker is not None and result.drop_marker[0] == index
             view.back_color.rgb = coin.SbColor(*(style.PLATE_LIT if under_ray else style.PLATE))
+            for row, (slider_view, face_id) in view.sliders.items():
+                fraction, text = (sliders or {}).get(face_id, (0.0, "-"))
+                hovered = result.hover == (index, row * lay.COLS)
+                slider_view.set(fraction, text, hovered, hovered and ring.slider_drag is not None)
             for slot, (cell, face) in enumerate(view.cells):
+                if cell is None:
+                    continue
                 hovered = result.hover == (index, slot)
                 active = face is not None and face.action in active_actions
                 if face is not None and labels and face.id in labels:

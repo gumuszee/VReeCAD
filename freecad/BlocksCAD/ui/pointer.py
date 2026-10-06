@@ -84,10 +84,10 @@ class Pointer:
 
 
 class TipMarker:
-    """The tip of a controller in tip mode (docs/ux-design.md, Pointer): a small sphere at the tip on a thin stem that joins it to the
-    controller, drawn on top of the scene. The sphere is highlighted while it touches something."""
-    STEM_RADIUS = 0.001
-    TIP_RADIUS = 0.006
+    """The tip of a controller in tip mode (docs/ux-design.md, Pointer): a thin cone that narrows from the controller to the tip and a
+    small sphere at the tip, drawn on top of the scene. The sphere is highlighted while it touches something."""
+    BASE_RADIUS = 0.004
+    TIP_RADIUS = 0.0035
 
     def __init__(self):
         self.root = coin.SoSwitch()
@@ -107,8 +107,8 @@ class TipMarker:
         stem.addChild(style.color((0.4, 0.5, 0.65)))
         self._stem_xf = coin.SoTransform()
         stem.addChild(self._stem_xf)
-        self._stem = coin.SoCylinder()
-        self._stem.radius = self.STEM_RADIUS
+        self._stem = coin.SoCone()           # the apex is at +Y: it is turned to point at the tip
+        self._stem.bottomRadius = self.BASE_RADIUS
         stem.addChild(self._stem)
         sep.addChild(stem)
         tip = coin.SoSeparator()
@@ -126,7 +126,7 @@ class TipMarker:
         self.root.whichChild = coin.SO_SWITCH_NONE
 
     def show(self, start, tip, touching=False):
-        """Draw the tip at `tip` with its stem from `start` (the controller)."""
+        """Draw the tip at `tip` with its cone from `start` (the controller)."""
         span = mu.sub(tip, start)
         length = mu.length(span)
         if length > 1e-3:

@@ -33,6 +33,7 @@ Derived from Open Brush's world transform, with a free orbit:
 - **Level (hold button1 of the tool hand, A on the Steam Frame):** the rotation is limited to the vertical axis (one grip: the yaw of the hand), so the bottom of the model stays down. Pressing or releasing the modifier mid gesture starts a new gesture from the current pose; nothing jumps. The mode is shown on the plate.
 - **Hold 1:1 (hold button2 of the tool hand, B on the Steam Frame, while gripping):** the scale animates to 1 : 1 about the hands (the world point between the hands stays between them) and stays at 1 : 1 for as long as the button is held, however the hands move; the world still follows them. Releasing the button lets the hand distance scale the world again, starting from 1 : 1.
 - **Reset (stick click of a gripping hand, or the Reset view face):** animates to the home pose: scale 1 : 1, the document origin 1 m in front of the head (horizontally), at 75 % of the head height above the floor (chest height when standing), turned so that the front view of the document (looking along the document Y axis) points away from the head.
+- **Tip mode:** the world is held with the tips instead of the grips. One grip pivots the world about the tip (the point under the tip stays under it while the hand turns), two grips scale and rotate about the midpoint between the tips, and the ruler runs between the tips, so the tips measure: touch two points of the model and read the distance.
 - **After a two-grip gesture** the grips rarely let go at the same moment. When one grip is released first, the other does nothing until both are released (the model does not drift while the hands let go one after the other); a new grip after both are released works as usual, and a second grip pressed while the first is still held resumes two-hand navigation.
 - While a grip navigates, the carousel hides and the tool is inactive. A haptic tick marks every doubling or halving of the scale.
 - A grip pressed on an object grabs that object instead (milestone M2).
@@ -64,9 +65,13 @@ The carousel is a prism around the long axis of the palette controller. It is at
 | Tools | Teleport, Line, Cube, Select, Drag, Working plane (the inherited tools, until replaced) |
 | Edit | Undo, Redo, Delete |
 | View | Reset view, Overlays (Model tree and Tasks), Work plane, Reload scene, Reset layout |
-| Session | Pointer (laser or tip), Angle + and Angle - (tip angle), Length + and Length - (tip length), Close VR |
+| Session | Pointer (laser or tip), Close VR, and the sliders Angle and Length (tip angle and tip length) |
 
 Planned: Create (primitives, milestone M1), Modify (push/pull, boolean, mirror, pattern), Values (numeric keypad, variables, milestone M3), Settings (handedness, comfort, snapping).
+
+### Sliders
+
+A slider is a face that takes a whole row of its panel: the label with the current value on the left, a track and a handle. Point at it (laser) or touch it (tip), **hold the trigger** and move the pointer along the track: the handle follows the pointer projected onto the panel, also beyond the ends of the panel (the value stops at the ends), and the value changes in steps with a small haptic tick on every step. Releasing the trigger ends the drag and saves the setting. A slider goes in the first slot of a row; the other slots of that row stay empty. The Session panel carries the pointer sliders.
 
 ### Rearranging panels
 
@@ -88,12 +93,12 @@ Moving single faces between slots and panels, and hiding faces, is part of U3.
 Every controller has a pointer pose derived from its aim pose and three settings, which the Session panel changes and `%APPDATA%\BlocksCAD\settings.json` keeps:
 
 - **Mode: laser or tip.** Both modes can be compared and switched at any time with the Pointer face.
-- **Angle:** the pointer is tilted down from the controller axis by this angle (steps of 5 degrees, -90 to 90, default 0). It follows the roll of the controller.
-- **Length:** the distance of the tip from the controller (steps of 1 cm, 0 to 40 cm, default 10 cm, shown in the document unit).
+- **Angle:** the pointer is tilted down from the controller axis by this angle (slider from -30 to 60 degrees in steps of 1, default 15). It follows the roll of the controller.
+- **Length:** the distance of the tip from the controller (slider from 0 to 20 cm in steps of 5 mm, default 40 mm, shown in the document unit).
 
 **Laser.** A thin beam from the tool hand along the tilted aim direction, drawn on top of the scene and ending in a dot at the point it hits (0.6 m long when it hits nothing). Panels are pointed at with the ray; models are picked with the ray.
 
-**Tip.** Like the brush tip of Open Brush: a small sphere on a thin stem in front of both controllers, at the tip length along the tilted direction, drawn on top of the scene. The tip is the selector:
+**Tip.** Like the brush tip of Open Brush: a thin cone that narrows from the controller to the tip, ending in a small sphere (7 mm), in front of both controllers, at the tip length along the tilted direction, drawn on top of the scene. The tip of the palette hand is hidden while the carousel is shown; both tips stay visible while navigating. The tip is the selector:
 
 - panels react to what the tip touches: a panel is touched when the tip is within 3 cm in front of its plate (or up to 1.5 cm behind it) and inside it; the sphere lights up while it touches; the trigger presses a face or lifts a panel by its title bar, as with the laser;
 - tools pick with the tip: the pointer pose of each hand (the tip position and the tilted orientation) replaces the aim pose for everything the tools do, and a model is picked only within 3 cm in front of the tip, so objects are selected by touching them. The inherited ray is not drawn.

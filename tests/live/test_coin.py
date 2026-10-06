@@ -193,23 +193,40 @@ class SimUiTest(unittest.TestCase):
         self.s.frame(0.02)
         self.assertEqual(self.s.ui.settings.pointer_mode, "tip")
         self.assertEqual(self.s.ui.pointer.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
-        self.assertEqual([t.root.whichChild.getValue() for t in self.s.ui.tips], [coin.SO_SWITCH_ALL] * 2)
+        # the palette hand's tip hides while the carousel is shown
+        self.assertEqual([t.root.whichChild.getValue() for t in self.s.ui.tips], [coin.SO_SWITCH_NONE, coin.SO_SWITCH_ALL])
         for hand in range(2):                      # the tip sits in front of the controller
             aim = self.s.last_frame.hands[hand].aim
             pointer = self.s.ui.pointer_poses[hand]
             self.assertAlmostEqual(sum(c * c for c in sim_sub(pointer.position, aim.position)) ** 0.5, self.s.ui.settings.tip_length, places=6)
 
-    def test_the_pointer_faces_show_their_values_and_change_them(self):
-        self.assertEqual(self.s.ui.labels()["pointer.mode"], "Pointer: Laser")
-        self.assertEqual(self.s.ui.labels()["pointer.angle_up"], "Angle + 0\u00b0")
-        self.assertEqual(self.s.ui.labels()["pointer.length_up"], "Length + 100 mm")
-        self.s.ui._change_pointer("pointer:angle+")
-        self.s.ui._change_pointer("pointer:angle+")
-        self.s.ui._change_pointer("pointer:length-")
-        self.assertEqual(self.s.ui.labels()["pointer.angle_down"], "Angle - 10\u00b0")
-        self.assertEqual(self.s.ui.labels()["pointer.length_down"], "Length - 90 mm")
+    def test_the_pointer_faces_show_their_values_and_the_sliders_set_them(self):
+        labels = self.s.ui.labels()
+        self.assertEqual(labels["pointer.mode"], "Pointer: Laser")
+        self.assertEqual(labels["pointer.angle"], "Angle 15°")
+        self.assertEqual(labels["pointer.length"], "Length 40 mm")
+        self.assertEqual(self.s.ui.slider_states()["pointer.angle"][0], 0.5)
+        self.assertEqual(self.s.ui.slider_rows(), {3: {1: "pointer.angle", 2: "pointer.length"}})
+        self.s.ui.settings.tip_angle = 30.0
+        self.assertEqual(self.s.ui.labels()["pointer.angle"], "Angle 30°")
         self.s.ui.set_unit_system("Imperial decimal (in, lb)")
-        self.assertEqual(self.s.ui.labels()["pointer.length_up"], "Length + 3.54 in")
+        self.assertEqual(self.s.ui.labels()["pointer.length"], "Length 1.57 in")
+
+    def test_the_tips_stay_while_navigating_but_the_palette_hand_tip_hides_behind_the_carousel(self):
+        from pivy import coin
+        self.s.ui.settings.pointer_mode = "tip"
+        self.s.input.set_head(position=(0.0, 1.6, 0.0), look_at_point=(-0.25, 1.2, -0.35))
+        for _ in range(30):
+            self.s.frame(0.02)
+        shown = [t.root.whichChild.getValue() for t in self.s.ui.tips]
+        self.assertEqual(shown[self.s.ui.palette_hand], coin.SO_SWITCH_NONE)       # the carousel is visible
+        self.assertEqual(shown[self.s.ui.tool_hand], coin.SO_SWITCH_ALL)
+        self.s.input.set_hand(0, grip=1.0)
+        self.s.input.set_hand(1, grip=1.0)
+        for _ in range(30):
+            self.s.frame(0.02)
+        self.assertEqual([t.root.whichChild.getValue() for t in self.s.ui.tips], [coin.SO_SWITCH_ALL] * 2)   # navigating: both tips
+        self.assertEqual(self.s.ui.ruler.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
 
     def test_the_overlay_is_the_last_child_of_the_scene(self):
         self.assertEqual(self.s.scene.findChild(self.s.ui.overlay), self.s.scene.getNumChildren() - 1)

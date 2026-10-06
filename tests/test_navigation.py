@@ -314,6 +314,29 @@ class NavigatorTest(unittest.TestCase):
         self.sim.set_hand(0, grip=1.0)
         self.assertEqual(self.step(), [("grab", 1)])
 
+    def step_tips(self, left, right):
+        return self.nav.update(self.sim.frame(0.02), points=[left, right])
+
+    def test_the_world_is_held_with_the_tips_when_they_are_given(self):
+        self.sim.set_hand(0, position=(-0.2, 1.2, 0.0), grip=1.0)
+        self.sim.set_hand(1, position=(0.2, 1.2, 0.0), grip=1.0)
+        self.step_tips((-0.1, 1.2, -0.04), (0.1, 1.2, -0.04))       # the tips are in front of the grips and closer together
+        self.assertEqual(self.nav.state, "two")
+        self.step_tips((-0.2, 1.2, -0.04), (0.2, 1.2, -0.04))       # the tips twice as far apart: scale 2 about the midpoint of the tips
+        self.assertAlmostEqual(self.nav.world.scale, 2.0)
+        self.assertTrue(close(self.nav.world.to_stage((0.0, 1.2, -0.04)), (0.0, 1.2, -0.04), 1e-9))
+
+    def test_one_grip_pivots_about_the_tip(self):
+        tip0 = (0.3, 1.2, -0.5)
+        self.sim.set_hand(1, position=(0.3, 1.2, -0.4), grip=1.0)
+        self.step_tips((0, 0, 0), tip0)
+        quarter = mu.quat_from_axis_angle((0, 1, 0), math.pi / 2)
+        self.sim.set_hand(1, orientation=quarter)
+        tip1 = mu.add((0.3, 1.2, -0.4), mu.rotate(quarter, (0.0, 0.0, -0.1)))      # the tip swings round the hand
+        self.step_tips((0, 0, 0), tip1)
+        under = self.nav.world.to_world(tip1)               # the world point now under the tip is the one that was under it
+        self.assertTrue(close(under, tip0, 1e-9))
+
     def test_format_scale(self):
         self.assertEqual(nav.format_scale(1.0), "1 : 1")
         self.assertEqual(nav.format_scale(4.0), "4 : 1")

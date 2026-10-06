@@ -157,6 +157,7 @@ class Navigator:
         self._reset_requested = False
         self._snap_t = None        # progress of the 1 : 1 snap, None when not snapping
         self._wait_release = False
+        self._points = None        # per hand, the point the world is held with instead of the grip position, or None
         self._two_latch = False    # after a two-grip gesture the remaining grip is ignored until both are released
         self._octave = None
 
@@ -170,8 +171,14 @@ class Navigator:
         pose = hand.grip_pose if hand.grip_pose.tracked else hand.aim
         return pose.orientation
 
+    def point(self, hands, i):
+        """The point that hand i holds the world with: its grip position, or the point passed to `update` (the tip of the pointer)."""
+        if self._points is not None and self._points[i] is not None:
+            return self._points[i]
+        return self.hand_position(hands[i])
+
     def _make_anchor(self, hands):
-        return (self.world, tuple(self.hand_position(h) for h in hands), tuple(self.hand_rotation(h) for h in hands))
+        return (self.world, tuple(self.point(hands, i) for i in range(2)), tuple(self.hand_rotation(h) for h in hands))
 
     @property
     def resetting(self):
@@ -198,11 +205,13 @@ class Navigator:
         self.state, self._anchor, self._snap_t = "idle", None, None
         return True
 
-    def update(self, frame, blocked=(False, False)) -> List[tuple]:
-        """Advance with one `InputFrame`. `blocked[i]` excludes hand i (for example while it grabs an object).
+    def update(self, frame, blocked=(False, False), points=None) -> List[tuple]:
+        """Advance with one `InputFrame`. `blocked[i]` excludes hand i (for example while it grabs an object). `points[i]` is the
+        point hand i holds the world with (the tip of its pointer) instead of its grip position; the world pivots about it.
         Returns events: ("grab", n_hands), ("release",), ("tick", hand_indexes), ("reset",), ("snap",) and ("level", bool)."""
         events = []
         hands = frame.hands
+        self._points = points
         gripping = tuple(bool(hands[i].down("grip") and hands[i].aim.tracked and not blocked[i]) for i in range(2))
         modifier = hands[self.modifier_hand]
 
@@ -275,7 +284,7 @@ class Navigator:
 
         if self._anchor is not None:
             world0, (left0, right0), (lrot0, rrot0) = self._anchor
-            left1, right1 = (self.hand_position(hands[0]), self.hand_position(hands[1]))
+            left1, right1 = (self.point(hands, 0), self.point(hands, 1))
             if self.state == "one":
                 i = 0 if gripping[0] else 1
                 a0, a1 = (left0, left1) if i == 0 else (right0, right1)

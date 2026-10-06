@@ -24,9 +24,7 @@ from dataclasses import asdict, dataclass
 
 MODES = ("laser", "tip")
 ANGLE_RANGE = (-90.0, 90.0)
-ANGLE_STEP = 5.0
 LENGTH_RANGE = (0.0, 0.4)
-LENGTH_STEP = 0.01
 
 
 def _clamp(value, low, high):
@@ -36,8 +34,8 @@ def _clamp(value, low, high):
 @dataclass
 class Settings:
     pointer_mode: str = "laser"
-    tip_angle: float = 0.0        # degrees; positive tilts the pointer down from the controller axis
-    tip_length: float = 0.10      # metres from the controller to the tip
+    tip_angle: float = 15.0       # degrees; positive tilts the pointer down from the controller axis
+    tip_length: float = 0.04      # metres from the controller to the tip
 
     def __post_init__(self):
         if self.pointer_mode not in MODES:
@@ -47,12 +45,6 @@ class Settings:
 
     def toggle_mode(self):
         self.pointer_mode = "tip" if self.pointer_mode == "laser" else "laser"
-
-    def adjust_angle(self, steps):
-        self.tip_angle = round(_clamp(self.tip_angle + steps * ANGLE_STEP, *ANGLE_RANGE), 6)
-
-    def adjust_length(self, steps):
-        self.tip_length = round(_clamp(self.tip_length + steps * LENGTH_STEP, *LENGTH_RANGE), 6)
 
     def to_json(self):
         return json.dumps(asdict(self), indent=1)

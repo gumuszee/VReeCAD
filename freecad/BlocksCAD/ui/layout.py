@@ -35,6 +35,7 @@ class Face:
     id: str
     label: str
     action: str
+    kind: str = "button"   # "button" or "slider" (a slider takes a whole row of its panel)
 
 
 @dataclass
@@ -116,9 +117,10 @@ class Layout:
         self.pages = [self.pages[i] for i in order]
         return order.index(page)
 
-    def add_missing(self, default):
+    def add_missing(self, default, wide=()):
         """Place the faces of the `default` layout that this layout lacks (faces added since it was saved) in the first free slot of
-        the page of the same name, else of the first page with room. Returns whether anything was added."""
+        the page of the same name, else of the first page with room. Faces in `wide` (sliders) need a whole free row and go in its
+        first slot. Returns whether anything was added."""
         present = {f for p in self.pages for f in p.slots if f}
         changed = False
         for default_page in default.pages:
@@ -127,8 +129,13 @@ class Layout:
                     continue
                 home = [p for p in self.pages if p.name == default_page.name]
                 for page in home + self.pages:
-                    if None in page.slots:
-                        page.slots[page.slots.index(None)] = face
+                    if face in wide:
+                        rows = [r for r in range(ROWS) if all(s is None for s in page.slots[r * COLS:(r + 1) * COLS])]
+                        slot = rows[0] * COLS if rows else None
+                    else:
+                        slot = page.slots.index(None) if None in page.slots else None
+                    if slot is not None:
+                        page.slots[slot] = face
                         present.add(face)
                         changed = True
                         break

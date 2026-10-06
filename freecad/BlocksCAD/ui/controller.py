@@ -55,7 +55,8 @@ class UiController:
         self.layout = lay.load_layout(default, set(self.faces), layout_path) if use_user_layout else default
         self.settings = cfg.load_settings(settings_path) if use_user_layout else cfg.Settings()
         self.settings_path = settings_path
-        if use_user_layout and self.layout is not default and self.layout.add_missing(default):
+        wide = {fid for fid, face in self.faces.items() if face.kind == "slider"}
+        if use_user_layout and self.layout is not default and self.layout.add_missing(default, wide):
             self._save_layout()
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
         self.navigator = Navigator(modifier_hand=tool_hand)
@@ -110,29 +111,37 @@ class UiController:
         s = self.settings
         return {
             "pointer.mode": "Pointer: " + ("Tip" if s.pointer_mode == "tip" else "Laser"),
-            "pointer.angle_up": f"Angle + {s.tip_angle:.0f}\u00b0",
-            "pointer.angle_down": f"Angle - {s.tip_angle:.0f}\u00b0",
-            "pointer.length_up": "Length + " + units.format_length(s.tip_length * 1000.0, self.system),
-            "pointer.length_down": "Length - " + units.format_length(s.tip_length * 1000.0, self.system),
+            "pointer.angle": f"Angle {s.tip_angle:.0f}\u00b0",
+            "pointer.length": "Length " + units.format_length(s.tip_length * 1000.0, self.system),
         }
 
-    def _change_pointer(self, action):
-        s = self.settings
-        if action == "pointer:mode":
-            s.toggle_mode()
-        elif action == "pointer:angle+":
-            s.adjust_angle(1)
-        elif action == "pointer:angle-":
-            s.adjust_angle(-1)
-        elif action == "pointer:length+":
-            s.adjust_length(1)
-        elif action == "pointer:length-":
-            s.adjust_length(-1)
+    def slider_states(self):
+        """Position along the track and label of each slider, by face id."""
+        labels = self.labels()
+        return {fid: (spec.fraction(getattr(self.settings, spec.attr)), labels[fid]) for fid, spec in defaults.SLIDERS.items()}
+
+    def slider_rows(self):
+        """Pages and grid rows that hold a slider: page -> row -> face id."""
+        rows = {}
+        for p, page in enumerate(self.layout.pages):
+            for r in range(lay.ROWS):
+                face_id = page.slots[r * lay.COLS]
+                face = self.faces.get(face_id) if face_id else None
+                if face is not None and face.kind == "slider":
+                    rows.setdefault(p, {})[r] = face_id
+        return rows
+
+    def _save_settings(self):
         if self.use_user_layout:
             try:
-                cfg.save_settings(s, self.settings_path)
+                cfg.save_settings(self.settings, self.settings_path)
             except OSError:
                 pass   # settings are a convenience; a failed write must not stop the session
+
+    def _change_pointer(self, action):
+        if action == "pointer:mode":
+            self.settings.toggle_mode()
+            self._save_settings()
 
     def _run(self, action, out):
         if action == "layout:reset":
@@ -147,7 +156,11 @@ class UiController:
 
     def update(self, frame) -> UiUpdate:
         out = UiUpdate()
-        events = self.navigator.update(frame)
+        s = self.settings
+        self.pointer_poses = [pointing.pointer_pose(h.aim, s.pointer_mode, s.tip_angle, s.tip_length) for h in frame.hands]
+        # in tip mode the world is held with the tips: it pivots about them and the ruler measures between them
+        points = [p.position for p in self.pointer_poses] if s.pointer_mode == "tip" else None
+        events = self.navigator.update(frame, points=points)
         for event in events:
             if event[0] == "grab":
                 out.haptics += [(0, 0.25, 0.03), (1, 0.25, 0.03)]
@@ -160,19 +173,28 @@ class UiController:
             elif event[0] == "level":
                 out.haptics.append((self.tool_hand, 0.3, 0.03))
 
-        s = self.settings
-        self.pointer_poses = [pointing.pointer_pose(h.aim, s.pointer_mode, s.tip_angle, s.tip_length) for h in frame.hands]
         self.ring.set_sides(self.layout.sides())
+        self.ring.slider_rows = self.slider_rows()
         result = self.ring.update(frame, navigating=self.navigator.navigating, pointers=self.pointer_poses)
         out.haptics += result.haptics
         out.ray_end, out.consume_trigger = result.ray_end, result.consume_trigger
+        if result.slider is not None:
+            page, slot, along = result.slider
+            spec = defaults.SLIDERS.get(self.layout.face_at(page, slot))
+            if spec is not None:
+                value = spec.value(along)
+                if value != getattr(self.settings, spec.attr):
+                    setattr(self.settings, spec.attr, value)
+                    out.haptics.append((self.tool_hand, 0.15, 0.01))
+        if result.slider_done is not None:
+            self._save_settings()
         if result.dropped is not None:
             page, side, row, before, new_row = result.dropped
             index = self.layout.move_page(page, side, row, before, new_row)
             self.ring.set_sides(self.layout.sides())
             self.ring.focus_side(self.layout.pages[index].side)
             self._save_layout()
-        self.view.update(self.ring, result, self.layout, self.faces, frame.head.position, self.active_actions, self.labels())
+        self.view.update(self.ring, result, self.layout, self.faces, frame.head.position, self.active_actions, self.labels(), self.slider_states())
 
         if result.activated is not None:
             action = self.action_at(*result.activated)
@@ -187,11 +209,11 @@ class UiController:
 
         nav = self.navigator
         if nav.state == "two":
-            self.ruler.update(Navigator.hand_position(frame.hands[0]), Navigator.hand_position(frame.hands[1]), frame.head,
+            self.ruler.update(nav.point(frame.hands, 0), nav.point(frame.hands, 1), frame.head,
                               nav.world.scale, self.mm_to_stage, self.system, nav.level, nav.scale_locked)
         elif nav.state == "one":
-            hand = frame.hands[0 if nav.gripping[0] else 1]
-            self.ruler.show_single(Navigator.hand_position(hand), frame.head, nav.world.scale, nav.level, nav.scale_locked)
+            self.ruler.show_single(nav.point(frame.hands, 0 if nav.gripping[0] else 1), frame.head, nav.world.scale, nav.level,
+                                   nav.scale_locked)
         else:
             self.ruler.hide()
 
@@ -202,7 +224,9 @@ class UiController:
             self.pointer.hide()
         for hand, marker in enumerate(self.tips):
             ptr = self.pointer_poses[hand]
-            if s.pointer_mode == "tip" and ptr.tracked and not nav.navigating:
+            # the tips stay visible while navigating; the tip of the palette hand is hidden while the carousel is shown
+            palette_shown = hand == self.palette_hand and self.ring.fade > 0.3 and not nav.navigating
+            if s.pointer_mode == "tip" and ptr.tracked and not palette_shown:
                 touching = hand == self.tool_hand and result.ray_end is not None
                 marker.show(frame.hands[hand].aim.position, ptr.position, touching)
             else:

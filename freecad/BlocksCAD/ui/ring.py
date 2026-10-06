@@ -51,6 +51,7 @@ FADE_RATE = 8.0        # per second
 TURN_RATE = 14.0       # exponential approach rate of the carousel angle
 POINT_COS = -0.3       # sides turned further away than this cannot be pointed at
 EDGE_ZONE = 0.5        # while lifting: the outer quarter above and below a panel (fraction of its half height)
+SLIDER_PAD = 0.014     # the track of a slider ends this far inside the grid
 TIP_FRONT = 0.03       # a tip within this distance in front of a panel touches it
 TIP_BEHIND = 0.015     # and this far behind its plate (pushing through)
 
@@ -70,7 +71,7 @@ class PanelPose:
 
 @dataclass
 class Hit:
-    kind: str                          # "face", "title", "body" or "ghost"
+    kind: str                          # "face", "slider", "title", "body" or "ghost"
     side: int
     row: int
     page: Optional[int]                # None on a ghost
@@ -78,6 +79,7 @@ class Hit:
     point: Tuple[float, float, float]
     distance: float
     zone: str = ""                     # "left", "right", "above" or "below": where on the panel the ray is
+    along: float = 0.0                 # on a slider: the position along its track, 0 to 1
 
 
 @dataclass
@@ -90,10 +92,18 @@ class RingResult:
     lift_point: Optional[Tuple[float, float, float]] = None
     drop_target: Optional[DropTarget] = None     # where the lifted page would go if released now
     drop_marker: Optional[Tuple[Optional[int], str, int]] = None   # (page or None on a ghost, zone, side) to highlight
+    slider: Optional[Tuple[int, int, float]] = None   # (page, slot, position along the track) while a slider is dragged
+    slider_done: Optional[Tuple[int, int]] = None     # (page, slot) of a slider released this frame
     dropped: Optional[tuple] = None              # (page, side, row, before, new_row): released onto a target this frame
     ray_end: Optional[Tuple[float, float, float]] = None
     haptics: List[tuple] = field(default_factory=list)   # (hand, amplitude, duration_s)
     consume_trigger: bool = False                # the tool hand's trigger belongs to the carousel this frame
+
+
+def slider_along(x):
+    """The position along the track (0 to 1) of a slider for a local x on its panel (metres from the panel centre)."""
+    low, high = -GRID_W / 2 + SLIDER_PAD, GRID_W / 2 - SLIDER_PAD
+    return min(max((x - low) / (high - low), 0.0), 1.0)
 
 
 def side_layout(rows):
@@ -122,6 +132,8 @@ class PaletteRing:
         self.hover = None
         self.hover_title = None
         self.lifted: Optional[int] = None
+        self.slider_rows: Dict[int, Dict[int, str]] = {}   # page -> row of the grid -> face id, for the rows that hold a slider
+        self.slider_drag: Optional[Tuple[int, int]] = None  # (page, slot) of the slider being dragged
         self.poses: Dict[int, PanelPose] = {}
         self.ghosts: Dict[int, PanelPose] = {}       # empty sides while lifting
         self.origin = (0.0, 0.0, 0.0)  # centre of the carousel axis
@@ -229,6 +241,8 @@ class PaletteRing:
         if TITLE_Y[0] <= y <= TITLE_Y[1]:
             return Hit("title", pose.side, pose.row, page, None, point, distance, zone)
         slot = self.locate_slot(x, y - GRID_Y)
+        if slot is not None and slot // COLS in self.slider_rows.get(page, ()):
+            return Hit("slider", pose.side, pose.row, page, slot // COLS * COLS, point, distance, zone, slider_along(x))
         return Hit("face" if slot is not None else "body", pose.side, pose.row, page, slot, point, distance, zone)
 
     def hit_test(self, origin, direction):
@@ -278,6 +292,31 @@ class PaletteRing:
         return (hit.side, hit.row, row[k + 1] if k + 1 < len(row) else None, False)
 
     # behaviour
+    def _drag_slider(self, result, tool, pointer):
+        """One frame of dragging a slider: the pointer projected onto the plate of its panel gives the position along the track, also
+        beyond the ends of the panel; releasing the trigger ends the drag."""
+        page, slot = self.slider_drag
+        pose = self.poses.get(page)
+        result.consume_trigger = True
+        self.hover, self.hover_title = (page, slot), None
+        result.hover = self.hover
+        point = None
+        if tool.down("trigger") and pose is not None and pointer.tracked:
+            if pointer.tip:
+                point = mu.sub(pointer.position, mu.mul(pose.n, mu.dot(mu.sub(pointer.position, pose.centre), pose.n)))
+            else:
+                denom = mu.dot(pointer.direction, pose.n)
+                if abs(denom) > 1e-6:
+                    t = mu.dot(mu.sub(pose.centre, pointer.position), pose.n) / denom
+                    point = mu.add(pointer.position, mu.mul(pointer.direction, t)) if t > 0 else None
+            if point is not None:
+                result.slider = (page, slot, slider_along(self._locate(pose, point)[0]))
+                result.ray_end = point
+        else:
+            result.slider_done = (page, slot)
+            self.slider_drag = None
+        return result
+
     def wants_visible(self, origin, head, head_orientation):
         to_ctrl = mu.sub(origin, head)
         dist = mu.length(to_ctrl)
@@ -287,7 +326,7 @@ class PaletteRing:
         return mu.dot(forward, mu.mul(to_ctrl, 1.0 / dist)) >= GAZE_COS
 
     def _hide(self):
-        self.hover = self.hover_title = self.lifted = self._target = None
+        self.hover = self.hover_title = self.lifted = self._target = self.slider_drag = None
         self.poses, self.ghosts = {}, {}
 
     def update(self, frame, navigating=False, pointers=None):
@@ -334,11 +373,13 @@ class PaletteRing:
 
         # ray hover, activation and rearranging
         pointer = pointers[self.tool_hand] if pointers is not None else pointing.pointer_pose(tool.aim)
+        if self.slider_drag is not None:
+            return self._drag_slider(result, tool, pointer)
         hit = None
         if pointer.tracked and self.fade > 0.8:
             hit = self.hit_tip(pointer.position) if pointer.tip else self.hit_test(pointer.position, pointer.direction)
         previous = (self.hover, self.hover_title, self._target)
-        self.hover = (hit.page, hit.slot) if hit is not None and hit.kind == "face" else None
+        self.hover = (hit.page, hit.slot) if hit is not None and hit.kind in ("face", "slider") else None
         self.hover_title = hit.page if hit is not None and hit.kind == "title" else None
         result.hover, result.hover_title = self.hover, self.hover_title
         self._target = None
@@ -352,6 +393,10 @@ class PaletteRing:
                     if hit.kind == "face":
                         result.activated = self.hover
                         result.haptics.append((self.tool_hand, 0.5, 0.04))
+                    elif hit.kind == "slider":
+                        self.slider_drag = self.hover
+                        result.slider = (hit.page, hit.slot, hit.along)
+                        result.haptics.append((self.tool_hand, 0.3, 0.02))
                     elif hit.kind == "title":
                         self.lifted = hit.page
                         self._lift_distance = hit.distance
