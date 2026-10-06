@@ -31,6 +31,7 @@ import freecad.BlocksCAD.cad.picking as _pk
 import freecad.BlocksCAD.cad.meshes as _ms
 import freecad.BlocksCAD.render.highlight as _hl
 import freecad.BlocksCAD.tools.grab as _tg
+import freecad.BlocksCAD.render.model_anchor as _ma
 import freecad.BlocksCAD.ui.ruler as _ru
 import freecad.BlocksCAD.ui.settings as _cf
 import freecad.BlocksCAD.ui.pointing as _pg
@@ -43,7 +44,7 @@ import freecad.BlocksCAD.tools.legacy as _tl
 import freecad.BlocksCAD.ui.controller as _ctl
 import freecad.BlocksCAD.backends.sim as _sim
 import freecad.BlocksCAD.render.offscreen as _off
-for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _sg, _sn, _gb, _ed, _pk, _ms, _pm, _gh, _hl, _tb, _tr, _tools, _tp, _tg, _tl, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
+for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _sg, _sn, _gb, _ed, _pk, _ms, _pm, _gh, _hl, _ma, _tb, _tr, _tools, _tp, _tg, _tl, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
     importlib.reload(_m)
 from pivy import coin as _coin
 
@@ -210,6 +211,16 @@ try:
     for _ in range(3):
         _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_primitive_marker.png"))
+    _s.input.set_hand(1, position=_to_stage((200.0, -60.0, 0.0)), stick=(0.87, 0.5))     # the stick towards the upper right
+    for _ in range(6):
+        _s.frame(0.02)
+    _s.input.set_head(position=_mu.add(_centre, (0.1, 0.25, 0.4)), look_at_point=_to_stage((230.0, 0.0, 120.0)))
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_options_create.png"))
+    print("create disc:", _s.tool_manager.active.values["shape"], _s.tool_manager.active.values["grid"])
+    _s.input.set_hand(1, stick=(0.0, 0.0))
+    _s.input.set_head(position=_mu.add(_centre, (0.1, 0.25, 0.4)), look_at_point=_centre)
+    for _ in range(3):
+        _s.frame(0.02)
     for _shape in ("Cylinder", "Prism", "Torus", "Sphere", "Wedge"):
         _tool.values["shape"] = _shape
         _cursor((200.0, -60.0, 0.0), trigger=1.0)
@@ -239,7 +250,26 @@ try:
         _s.ui.settings.pointer_mode = "tip"
         _s.ui.settings.tip_angle = 0.0
         import FreeCADGui as _Gui
-        _nodes = [_Gui.getDocument(_temp.Name).getObject(o.Name).RootNode for o in _temp.Objects]
+
+        def _node_of(obj):
+            try:
+                return _Gui.getDocument(_temp.Name).getObject(obj.Name).RootNode
+            except Exception:                                  # no GUI document (a headless run): draw the tessellated solid
+                points, triangles = obj.Shape.tessellate(0.5)
+                node = _coin.SoSeparator()
+                material = _coin.SoMaterial()
+                material.diffuseColor.setValue(0.8, 0.8, 0.84)
+                node.addChild(material)
+                coords = _coin.SoCoordinate3()
+                coords.point.setValues(0, len(points), [(p.x, p.y, p.z) for p in points])
+                node.addChild(coords)
+                faces = _coin.SoIndexedFaceSet()
+                indices = [i for t in triangles for i in (t[0], t[1], t[2], -1)]
+                faces.coordIndex.setValues(0, len(indices), indices)
+                node.addChild(faces)
+                return node
+
+        _nodes = [_node_of(o) for o in _temp.Objects]
         for _node in _nodes:
             _s.doc_scene.insertChild(_node, 2)             # before the previews and highlights, as in the headset host
         _s.input.set_hand(1, position=_to_stage((260.0, 0.0, 72.0)), point_at=_to_stage((260.0, 0.0, -1000.0)))
@@ -250,7 +280,7 @@ try:
         _shot = lambda name: _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_grab_" + name + ".png"))
         for _name, _point in (("face", (260.0, 0.0, 72.0)), ("edge", (260.0, -57.0, 77.0)), ("vertex", (203.0, -57.0, 77.0))):
             _cursor(_point)
-            for _ in range(3):
+            for _ in range(8):                               # long enough for the hover to move to the new element
                 _s.frame(0.02)
             _shot(_name)
             _got = _sg.to_document(_s.navigator.world, _s.ui.cursor(_s.last_frame.hands[1]))
@@ -261,13 +291,35 @@ try:
         for _ in range(3):
             _s.frame(0.02)
         _shot("selected")
+        _cursor((260.0, 0.0, 72.0))                          # the selected face is touched again: hover lies in front of the selection
+        for _ in range(12):
+            _s.frame(0.02)
+        _shot("selected_hover")
+        _cursor((400.0, 0.0, 40.0))                          # inside the cylinder: the whole object is filled
+        for _ in range(12):
+            _s.frame(0.02)
+        _shot("object")
+        print("grab object hover:", _s.tool_manager.active._hover)
+        _s.input.set_hand(1, stick=(-0.5, 0.8))              # the stick towards the upper left: the option disc of the Grab tool
+        for _ in range(4):
+            _s.frame(0.02)
+        _shot("disc")
+        _s.input.set_hand(1, stick=(0.0, 0.0))
+        _cursor((260.0, 0.0, 72.0))
+        for _ in range(12):
+            _s.frame(0.02)
         _cursor((260.0, 0.0, 72.0), trigger=1.0)
-        _cursor((290.0, 30.0, 102.0), trigger=1.0)           # drag the box by (30, 30, 30)
+        _cursor((283.3, 17.7, 90.0), trigger=1.0)            # a free drag: not on the grid, the open padlock over the A button
         for _ in range(3):
             _s.frame(0.02)
-        _shot("moving")
-        print("grab readout:", _s.ui.gesture_text)
-        _cursor((290.0, 30.0, 102.0), trigger=0.0)
+        _shot("free")
+        print("grab free readout:", _s.ui.gesture_text)
+        _cursor((283.3, 17.7, 90.0), trigger=1.0, button1=True)      # A held: locked to the grid, the closed padlock
+        for _ in range(3):
+            _s.frame(0.02)
+        _shot("locked")
+        print("grab locked readout:", _s.ui.gesture_text)
+        _cursor((283.3, 17.7, 90.0), trigger=0.0, button1=False)
     finally:
         for _node in _nodes:
             _s.doc_scene.removeChild(_node)

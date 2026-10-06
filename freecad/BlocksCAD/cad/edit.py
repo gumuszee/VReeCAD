@@ -21,6 +21,8 @@ a FreeCAD object import FreeCAD when they run."""
 
 from freecad.BlocksCAD.core import snapping
 
+MIN_SIZE = 0.1     # millimetres: the smallest size of a scaled object when no grid rounds it
+
 SIZE_PROPERTIES = {
     "Part::Box": ("Length", "Width", "Height"),
     "Part::Cylinder": ("Radius", "Height"),
@@ -37,15 +39,21 @@ def scalable(type_id):
     return type_id in SIZE_PROPERTIES
 
 
-def scaled_values(type_id, values, factor, grid):
-    """The size properties of a feature (`values`: name to millimetres) scaled by `factor`, each rounded to the grid and at least one
-    grid step long; a property that is zero stays zero. The tube of a torus stays thinner than its ring."""
+def scaled_values(type_id, values, factor, grid=None):
+    """The size properties of a feature (`values`: name to millimetres) scaled by `factor`. With a `grid` each is rounded to it and
+    at least one step long, without one the sizes are free (at least `MIN_SIZE`); a property that is zero stays zero. The tube of a
+    torus stays thinner than its ring."""
     result = {}
     for name in SIZE_PROPERTIES[type_id]:
         value = values[name]
-        result[name] = 0.0 if value == 0 else max(grid, snapping.snap(value * factor, grid))
+        if value == 0:
+            result[name] = 0.0
+        elif grid:
+            result[name] = max(grid, snapping.snap(value * factor, grid))
+        else:
+            result[name] = max(MIN_SIZE, value * factor)
     if type_id == "Part::Torus" and result["Radius2"] >= result["Radius1"]:
-        result["Radius1"] = result["Radius2"] + grid
+        result["Radius1"] = result["Radius2"] + (grid or MIN_SIZE)
     return result
 
 

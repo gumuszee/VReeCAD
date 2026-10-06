@@ -14,8 +14,10 @@
 # *                                                                         *
 # ***************************************************************************
 """Coin3D drawing of the small messages (docs/ux-design.md, Toasts, tooltips and readouts): toasts in front of the head, the
-tooltip of a face, the readout of a tool option next to the tool hand. All are `LabelPlate`s, drawn over the model in the
-colours and font of the palette."""
+tooltip of a face, the readout of a tool option next to the tool hand, and the padlock over the A button. The text ones are
+`LabelPlate`s, drawn over the model in the colours and font of the palette."""
+
+import math
 
 from pivy import coin
 
@@ -32,6 +34,62 @@ TOAST_SCALE = 1.5      # toasts are larger than the other labels: they are read 
 TOAST_PITCH = 0.06      # metres between stacked toasts
 READOUT_LIFT = 0.07     # metres above the pointer of the tool hand
 TOOLTIP_LIFT = 0.045    # metres above the centre of a face
+
+
+class LockIcon:
+    """A padlock on a small dark plate, open or closed, facing the head: the hint over the button that locks a grab to the grid
+    and the angles. Closed is orange (locked), open is dim."""
+    SIZE = 0.034
+
+    def __init__(self):
+        self.root = coin.SoSwitch()
+        self.root.whichChild = coin.SO_SWITCH_NONE
+        sep = coin.SoSeparator()
+        self._transform = coin.SoTransform()
+        sep.addChild(self._transform)
+        sep.addChild(style.color(style.PLATE))
+        plate = coin.SoCube()
+        plate.width = plate.height = self.SIZE
+        plate.depth = DEPTH
+        sep.addChild(plate)
+        self._states = coin.SoSwitch()               # 0: open, 1: closed
+        for closed in (False, True):
+            one = coin.SoSeparator()
+            colour = style.ACTIVE if closed else style.TEXT_DIM
+            one.addChild(style.color(colour))
+            body_move = coin.SoTranslation()
+            body_move.translation.setValue(0.0, -0.0045, DEPTH * 0.5 + 0.0004)
+            one.addChild(body_move)
+            body = coin.SoCube()
+            body.width, body.height, body.depth = 0.017, 0.012, DEPTH
+            one.addChild(body)
+            shackle = coin.SoSeparator()
+            width = coin.SoDrawStyle()
+            width.lineWidth = 3.0
+            shackle.addChild(width)
+            lift = 0.0 if closed else 0.0045                    # an open padlock has its shackle raised and swung aside
+            arc = [(0.0055 * math.cos(math.pi * i / 12) - (0.0 if closed else 0.002), 0.006 + lift + 0.0055 * math.sin(math.pi * i / 12), 0.0)
+                   for i in range(13)]
+            coords = coin.SoCoordinate3()
+            legs = [(arc[0][0], 0.006 + (0.0 if closed else lift), 0.0)] + arc + [(arc[-1][0], 0.006 + (0.0 if closed else 0.0), 0.0)]
+            coords.point.setValues(0, len(legs), legs)
+            shackle.addChild(coords)
+            line = coin.SoLineSet()
+            line.numVertices.setValue(len(legs))
+            shackle.addChild(line)
+            one.addChild(shackle)
+            self._states.addChild(one)
+        sep.addChild(self._states)
+        self.root.addChild(sep)
+
+    def place(self, centre, right, up, closed):
+        self._transform.translation.setValue(*centre)
+        self._transform.rotation.setValue(*mu.quat_from_basis(right, up, mu.cross(right, up)))
+        self._states.whichChild = 1 if closed else 0
+        self.root.whichChild = coin.SO_SWITCH_ALL
+
+    def hide(self):
+        self.root.whichChild = coin.SO_SWITCH_NONE
 
 
 class LabelPlate:
@@ -101,12 +159,13 @@ class FeedbackView:
         self._toasts = [LabelPlate(style.FACE) for _ in range(max_toasts)]
         self._tooltip = LabelPlate(style.PLATE, style.TEXT)
         self._readout = LabelPlate(style.GRAB, style.TEXT_ON_ACTIVE)
-        for plate in self._toasts + [self._tooltip, self._readout]:
+        self._lock = LockIcon()
+        for plate in self._toasts + [self._tooltip, self._readout, self._lock]:
             self.root.addChild(plate.root)
 
-    def update(self, head, toasts, tooltip=None, readout=None):
+    def update(self, head, toasts, tooltip=None, readout=None, lock=None):
         """`toasts`: the `toast.Toast`s to draw, oldest first. `tooltip`: (text, centre of the face, u, v of its panel) or None.
-        `readout`: (text, position of the tool hand's pointer) or None."""
+        `readout`: (text, position of the tool hand's pointer) or None. `lock`: (position of the hint, locked) or None."""
         right, up, forward = head_axes(head)
         base = mu.add(head.position, mu.add(mu.mul(forward, TOAST_DISTANCE), mu.mul(up, -TOAST_DROP)))
         shown = list(toasts)[-len(self._toasts):]
@@ -129,3 +188,7 @@ class FeedbackView:
             self._readout.place(mu.add(position, mu.mul(up, READOUT_LIFT)), right, up)
         else:
             self._readout.hide()
+        if lock is not None:
+            self._lock.place(lock[0], right, up, lock[1])
+        else:
+            self._lock.hide()

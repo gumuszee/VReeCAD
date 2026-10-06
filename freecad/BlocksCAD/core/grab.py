@@ -16,9 +16,9 @@
 """Grabbing an object with the hand, and choosing what the hand touches. No FreeCAD or Coin imports.
 
 A grab attaches the object to the hand as a rigid body: when the hand moves from the pose it had at the start, the object moves
-the same way. Poses are a position (document millimetres) and an orientation quaternion in document axes. The hand position is
-the cursor, which already lies on the grid, so a translation is a whole number of grid steps; a rotation is rounded to steps of
-`ROTATION_STEP` degrees, so the numbers in the document stay clean.
+the same way. Poses are a position (document millimetres) and an orientation quaternion in document axes. A grab is free; when it
+is locked, the translation is a whole number of grid steps and the rotation a multiple of an angle step, so the numbers in the
+document stay clean.
 
 `classify` decides what the cursor touches: the nearest vertex, edge or face within a reach, or the inside of a solid."""
 
@@ -33,7 +33,9 @@ REACH = {"vertex": 0.012, "edge": 0.02, "face": 0.03}   # metres on the stage: h
 
 
 def snap_rotation(q, step_degrees=ROTATION_STEP):
-    """The rotation `q` with its angle rounded to a multiple of `step_degrees` (its axis is kept)."""
+    """The rotation `q` with its angle rounded to a multiple of `step_degrees` (its axis is kept); without a step it is unchanged."""
+    if not step_degrees:
+        return mu.quat_normalize(q)
     x, y, z, w = mu.quat_normalize(q)
     if w < 0:
         x, y, z, w = -x, -y, -z, -w
@@ -55,12 +57,16 @@ class Grab:
     base: Tuple[float, float, float]
     rotation: Tuple[float, float, float, float]
 
-    def at(self, position, rotation, rotate=True, step_degrees=ROTATION_STEP):
-        """(base, rotation) of the object when the hand has the pose (`position`, `rotation`)."""
+    def at(self, position, rotation, rotate=True, grid=None, step_degrees=None):
+        """(base, rotation) of the object when the hand has the pose (`position`, `rotation`). The move of the hand is rounded to
+        whole steps of `grid` and the turn to multiples of `step_degrees` when these are given (a locked grab); otherwise both are free."""
         turn = mu.IDENTITY_QUAT
         if rotate:
             turn = snap_rotation(mu.quat_multiply(rotation, mu.quat_conjugate(self.hand_rotation)), step_degrees)
-        base = mu.add(position, mu.rotate(turn, mu.sub(self.base, self.hand_position)))
+        move = mu.sub(position, self.hand_position)
+        if grid:
+            move = tuple(math.floor(c / grid + 0.5) * grid for c in move)
+        base = mu.add(self.hand_position, mu.add(move, mu.rotate(turn, mu.sub(self.base, self.hand_position))))
         return base, mu.quat_normalize(mu.quat_multiply(turn, self.rotation))
 
 

@@ -101,7 +101,7 @@ def pick(doc, point, mm_per_metre) -> Optional[Pick]:
 
 def display(obj, sub="") -> Display:
     """The geometry that shows a sub-element of an object, or the whole object (an empty `sub`): the vertex as a marker, an edge as
-    a curve, a face filled with its boundary, an object as all its edges."""
+    a curve, a face filled with its boundary, an object filled all over with all its edges."""
     shape = obj.Shape
     kind = kind_of(sub)
     if kind == "vertex":
@@ -115,7 +115,9 @@ def display(obj, sub="") -> Display:
         points, triangles = face.tessellate(max(box.DiagonalLength / 150.0, 0.02))
         return Display(triangles=([(v.x, v.y, v.z) for v in points], [tuple(t) for t in triangles]),
                        polylines=[_curve(e) for e in face.Edges[:MAX_EDGES]])
-    return Display(polylines=[_curve(e) for e in shape.Edges[:MAX_EDGES]])
+    points, triangles = shape.tessellate(max(shape.BoundBox.DiagonalLength / 150.0, 0.02))
+    return Display(triangles=([(v.x, v.y, v.z) for v in points], [tuple(t) for t in triangles]),
+                   polylines=[_curve(e) for e in shape.Edges[:MAX_EDGES]])
 
 
 def _curve(edge):

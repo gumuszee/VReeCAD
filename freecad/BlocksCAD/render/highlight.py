@@ -17,7 +17,11 @@
 millimetres, so a host puts `Highlights.root` where the document scene is.
 
 A highlight draws `cad.picking.Display` geometry: a face as a translucent fill, curves as lines that are bright where they lie in
-front of the model and dim where the model hides them (like the outline of the Create preview), a vertex as a cross."""
+front of the model and dim where the model hides them (like the outline of the Create preview), a vertex as a cross.
+
+The highlight lies on the surface it marks, so it is drawn a little in front of it (a polygon offset and a depth range that
+squeezes its depth towards the viewer); the hover is drawn in front of the selection, because both may mark the same element and
+two coplanar highlights would fight each other and flicker."""
 
 from pivy import coin
 
@@ -29,10 +33,12 @@ LINE_WIDTH = 4.0
 FILL_TRANSPARENCY = 0.5
 FILL_OFFSET = 10.0
 LINE_OFFSET = 40.0
+DEPTH_RANGE = (0.99998, 0.99995)      # far end of the depth range of the selection and of the hover: smaller is nearer to the viewer
 
 
 class Highlight:
-    def __init__(self, colours):
+    def __init__(self, colours, level=0):
+        """`level` 0 is the selection, 1 the hover: a higher level lies in front of a lower one."""
         bright, dim = colours
         self.root = coin.SoSwitch()
         self.root.whichChild = coin.SO_SWITCH_NONE
@@ -48,11 +54,12 @@ class Highlight:
         fill.addChild(transparency)
         depth = coin.SoDepthBuffer()
         depth.function.setValue(coin.SoDepthBuffer.LEQUAL)
+        depth.range.setValue(0.0, DEPTH_RANGE[level])
         depth.getField("write").setValue(False)
         fill.addChild(depth)
         offset = coin.SoPolygonOffset()              # towards the viewer: the fill lies on the face it marks
         offset.factor.setValue(-1.0)
-        offset.units.setValue(-FILL_OFFSET)
+        offset.units.setValue(-FILL_OFFSET * (1 + level))
         offset.styles.setValue(coin.SoPolygonOffset.FILLED)
         fill.addChild(offset)
         self._fill_points = coin.SoCoordinate3()
@@ -73,12 +80,13 @@ class Highlight:
             test = coin.SoDepthBuffer()
             test.test.setValue(not hidden_pass)
             test.function.setValue(coin.SoDepthBuffer.LEQUAL)
+            test.range.setValue(0.0, DEPTH_RANGE[level])
             test.getField("write").setValue(False)
             one.addChild(test)
             if not hidden_pass:                      # the edges of the model lie where the highlight does: pull the highlight forward
                 forward = coin.SoPolygonOffset()
                 forward.factor.setValue(-1.0)
-                forward.units.setValue(-LINE_OFFSET)
+                forward.units.setValue(-LINE_OFFSET * (1 + level))
                 forward.styles.setValue(coin.SoPolygonOffset.LINES)
                 one.addChild(forward)
             one.addChild(style.color(dim if hidden_pass else bright))
@@ -130,8 +138,8 @@ class Highlights:
         light = coin.SoLightModel()
         light.model = coin.SoLightModel.BASE_COLOR
         self.root.addChild(light)
-        self.selected = Highlight(SELECTED)
-        self.hover = Highlight(HOVER)
+        self.selected = Highlight(SELECTED, 0)
+        self.hover = Highlight(HOVER, 1)
         self.root.addChild(self.selected.root)
         self.root.addChild(self.hover.root)
 

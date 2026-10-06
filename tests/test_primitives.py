@@ -259,6 +259,35 @@ class ToolTest(unittest.TestCase):
         self.step()
         self.assertEqual(self.created, [(self.document, "Sphere", (30.0, 30.0, 30.0), (40.0, 40.0, 40.0))])
 
+    def test_the_disc_has_the_grid_on_top_and_bottom_and_four_shapes_that_the_click_pages(self):
+        slots = self.tool.disc_slots()
+        self.assertEqual(len(slots), 6)
+        self.assertEqual([(s.label, s.option, s.value, s.kind) for s in (slots[0], slots[3])],
+                         [("Grid +", "grid", 1, "step"), ("Grid -", "grid", -1, "step")])
+        self.assertEqual([slots[i].label for i in (5, 1, 2, 4)], ["Box", "Cylinder", "Cone", "Sphere"])      # clockwise from the upper left
+        self.assertTrue(all(slots[i].option == "shape" for i in (5, 1, 2, 4)))
+        self.assertEqual(self.tool.disc_hub(), ["10 mm"])
+        self.assertEqual(self.tool.stick_click(), "Shapes: Torus, Wedge, Prism")
+        slots = self.tool.disc_slots()
+        self.assertEqual([slots[i].label for i in (5, 1, 2, 4)], ["Torus", "Wedge", "Prism", ""])
+        self.assertEqual(slots[4].option, "")                                  # the fourth place of the second page is empty
+        self.assertEqual(self.tool.stick_click(), "Shapes: Box, Cylinder, Cone, Sphere")
+        shown = set()
+        for _ in range(2):                                                      # look at both pages
+            shown |= {slot.value for slot in self.tool.disc_slots() if slot.option == "shape"}
+            self.tool.stick_click()
+        self.assertEqual(shown, set(prim.SHAPES))                               # every shape is on a page
+
+    def test_the_grid_stops_at_its_ends_and_the_radial_stays_closed_during_a_drag(self):
+        self.assertFalse(self.tool.options[0].wrap)
+        self.assertFalse(self.tool.busy)
+        self.hand_at((0.0, 0.0, 0.0), trigger=1.0)
+        self.step()
+        self.assertTrue(self.tool.busy)
+        self.hand_at((0.0, 0.0, 0.0), trigger=0.0)
+        self.step()
+        self.assertFalse(self.tool.busy)
+
     def test_the_grid_option_changes_the_snap(self):
         self.tool.values["grid"] = "5 mm"
         self.hand_at((0.0, 0.0, 0.0), trigger=1.0)

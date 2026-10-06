@@ -26,6 +26,7 @@ from typing import Callable, Dict, List, Optional
 
 from pivy import coin
 
+from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import units
 from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.ui import defaults
@@ -51,6 +52,11 @@ class UiUpdate:
     activated: Optional[str] = None                      # action id executed this frame
 
 
+OPTION_DISC_OUTER = 0.085      # metres: radius of the option disc of a tool
+OPTION_DISC_INNER = 0.027
+OPTION_DISC_LIFT = 0.15        # metres above the tool hand: the disc must not cover the tip and what it works on
+
+
 class UiController:
     def __init__(self, tool_names, tool_label, actions: Dict[str, Callable], palette_hand=0, tool_hand=1,
                  layout_path=None, use_user_layout=True, mm_to_stage=0.001, settings_path=None, tool_hint=None):
@@ -72,6 +78,8 @@ class UiController:
         self.ring.can_drop = lambda src, dst: self.layout.can_move_face(*src, *dst, self.wide)
         self.radial = radial.QuickRadial(tool_hand)
         self.radial_view = RadialView()
+        self.options_view = RadialView(OPTION_DISC_OUTER, OPTION_DISC_INNER, 0.85)       # the disc of the options of the active tool
+        self.button_anchor = None          # callable(hand) -> stage position of the A button of that hand, set by the host
         self.undo_button = UndoButton(tool_hand)
         self.options = tool_options.OptionControl(tool_hand)
         self.active_tool = None            # the active `tools.base.Tool`, set by the host before `update`
@@ -107,6 +115,7 @@ class UiController:
         self.overlay.addChild(self.occluders)
         self.overlay.addChild(self.ruler.root)
         self.overlay.addChild(self.feedback.root)
+        self.overlay.addChild(self.options_view.root)
         self.overlay.addChild(self.radial_view.root)
         self.active_actions = set()
 
@@ -262,9 +271,9 @@ class UiController:
         self.ring.slider_rows = self.slider_rows()
         # the quick radial takes the tool hand while it is open: the carousel does not see its pointer
         busy = (self.navigator.navigating or self.ring.lifted is not None or self.ring.lifted_face is not None
-                or self.ring.slider_drag is not None or self.ring.press is not None)
+                or self.ring.slider_drag is not None or self.ring.press is not None or getattr(self.active_tool, "busy", False))
         quick = self.radial.update(frame, self.radial_items(), blocked=busy)
-        out.owns_stick, readout = self._tool_hand_buttons(frame, busy or self.radial.is_open, out)
+        out.owns_stick, readout = self._tool_hand_buttons(frame, self.navigator.navigating or self.radial.is_open, out)
         pointers = list(self.pointer_poses)
         if self.radial.is_open:
             pointers[self.tool_hand] = replace(pointers[self.tool_hand], tracked=False)
@@ -305,7 +314,7 @@ class UiController:
         tooltip = self._tooltip(result, frame.dt, labels)
         text = readout or self.gesture_text
         shown = (text, self.pointer_poses[self.tool_hand].position) if text else None
-        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, shown)
+        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, shown, self._lock_hint())
 
         if result.activated is not None:
             self._activate(self.layout.face_at(*result.activated), out)
@@ -353,7 +362,31 @@ class UiController:
         out.haptics += undo.haptics
         chosen = self.options.update(frame, self.active_tool, blocked, self.system)
         out.haptics += chosen.haptics
+        if chosen.message:
+            self.toast(chosen.message)
+        self._show_option_disc(frame, chosen.disc)
         return chosen.owns_stick, chosen.readout
+
+    def _show_option_disc(self, frame, disc):
+        """Draw the option disc of the active tool above the tool hand, facing the head, or hide it."""
+        hand = frame.hands[self.tool_hand]
+        if disc is None or not hand.aim.tracked:
+            self.options_view.update(radial.RadialState(), [])
+            return
+        q = frame.head.orientation
+        right, up, forward = mu.rotate(q, (1.0, 0.0, 0.0)), mu.rotate(q, (0.0, 1.0, 0.0)), mu.rotate(q, (0.0, 0.0, -1.0))
+        centre = mu.add(hand.aim.position, mu.add(mu.mul(up, OPTION_DISC_LIFT), mu.mul(forward, -radial.TOWARDS_HEAD)))
+        state = radial.RadialState(open=True, items=disc.labels, selected=disc.selected, centre=centre, right=right, up=up,
+                                   cursor=tuple(c * OPTION_DISC_OUTER * 0.8 for c in disc.stick))
+        self.options_view.update(state, disc.labels, disc.active, disc.hub)
+
+    def _lock_hint(self):
+        """(position, locked) of the padlock over the A button while the active tool shows one, else None."""
+        locked = getattr(self.active_tool, "lock_state", None)
+        if locked is None or self.button_anchor is None:
+            return None
+        position = self.button_anchor(self.tool_hand)
+        return None if position is None else (position, bool(locked))
 
     def _tooltip(self, result, dt, labels):
         """(text, centre, u, v) of the tooltip of the hovered face once it has been hovered for a moment, else None."""

@@ -118,6 +118,7 @@ class SimSession:
         self.scene.addChild(doc)
         self.doc_scene = doc                     # where a script may attach more of the document (view provider nodes)
         self._setup_tools()
+        self.ui.button_anchor = self._button_position
         self.hand_transforms = []
         self.hand_models = []
         self.scene.addChild(self.ui.root)
@@ -160,6 +161,16 @@ class SimSession:
             return FreeCAD.ActiveDocument
         except ImportError:
             return None
+
+    def _button_position(self, hand, lift=0.03):
+        """Where the A (or X) button of a hand is, in the stage frame."""
+        from freecad.BlocksCAD.core import mathutil as mu
+        from freecad.BlocksCAD.render.model_anchor import button_anchor
+        anchor = button_anchor(self.hand_models[hand], lift=lift)
+        aim = self.last_frame.hands[hand].aim if self.last_frame is not None else None
+        if anchor is None or aim is None or not aim.tracked:
+            return None
+        return mu.add(aim.position, mu.rotate(aim.orientation, anchor))
 
     def select_tool(self, name):
         """Make a registered tool the active tool (the same as choosing its face)."""

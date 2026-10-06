@@ -18,8 +18,9 @@
 The tip of the tool hand is the cursor. Its position snaps to the grid in document millimetres and a cross shows where a press
 would start. Holding the trigger and moving the hand drags out an axis-aligned box; the chosen shape is fitted into it (a ghost
 shows the result, the readout names the three sizes). Releasing the trigger makes the feature in one undo step; a tap without a
-drag places the shape at a default size (4 grid steps) centred on the cursor. The stick up and down changes the grid, left and
-right the shape (`ToolOption`s). A grip or a change of tool cancels a drag.
+drag places the shape at a default size (4 grid steps) centred on the cursor. The stick chooses from an option disc of six
+sections: the grid larger (up) and smaller (down), and four shapes; the click of the stick turns to the other page of shapes. A grip
+or a change of tool cancels a drag.
 
 Services (`ToolContext.services`; every one is optional so the tool also runs in tests):
   cursor(hand) -> stage point of the tip of that hand        to_document(point) -> document millimetres
@@ -29,10 +30,11 @@ Services (`ToolContext.services`; every one is optional so the tool also runs in
 
 from freecad.BlocksCAD.cad import meshes, primitives
 from freecad.BlocksCAD.core import snapping
-from freecad.BlocksCAD.tools.base import Tool, ToolOption
+from freecad.BlocksCAD.tools.base import DiscSlot, Tool, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 
 GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
+SHAPE_PAGES = (("Box", "Cylinder", "Cone", "Sphere"), ("Torus", "Wedge", "Prism", ""))   # four shapes on the disc at a time
 
 
 @register
@@ -40,15 +42,33 @@ class PrimitiveTool(Tool):
     name = "primitive"
     label = "Create"
     hint = "Drag a box in space to make a shape, tap to place one"
-    options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS),
+    options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
                ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES))
 
     def __init__(self, ctx):
         super().__init__(ctx)
+        self._page = 0
         self._start = None        # document point (on the grid) where the trigger went down
         self._current = None
         self._marker = None
         self._built = None       # (shape, lo, size) the ghost shows
+
+    @property
+    def busy(self):
+        return self._start is not None
+
+    def disc_slots(self):
+        """The option disc, clockwise from the top: grid up, the four shapes of the page, grid down."""
+        first, second, third, fourth = (DiscSlot(name, "shape", name) if name else DiscSlot("") for name in SHAPE_PAGES[self._page])
+        return (DiscSlot("Grid +", "grid", 1, "step"), second, third, DiscSlot("Grid -", "grid", -1, "step"), fourth, first)
+
+    def disc_hub(self):
+        return [self.values["grid"]]
+
+    def stick_click(self):
+        """Turn to the other page of shapes."""
+        self._page = (self._page + 1) % len(SHAPE_PAGES)
+        return "Shapes: " + ", ".join(name for name in SHAPE_PAGES[self._page] if name)
 
     # services
     def _service(self, name, default=None):

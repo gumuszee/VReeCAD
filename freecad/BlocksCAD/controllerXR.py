@@ -35,7 +35,9 @@ from pivy.coin import SoBaseColor, SbColor
 from pivy.coin import SoRayPickAction, SoPickStyle
 from pivy.coin import SoSwitch, SO_SWITCH_NONE, SO_SWITCH_ALL
 
+from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.render.controller_shape import build_fallback
+from freecad.BlocksCAD.render.model_anchor import button_anchor
 
 
 LOW_STATE = 0.3
@@ -79,6 +81,9 @@ class xrController:
         else:
             self.ray_node = None
         self.runtime_model = None
+        self._aim_pose = None                   # (position, orientation) the generated shape is drawn at, stage frame
+        self._model_pose = None                 # the same for the runtime model
+        self._anchors = {}                      # id of a model -> where its button is, in the frame of the model
         self.picked_tail = None
         self.picked_tex_coords = SbVec4f(0, 0, 0, 0)
         self.picked_normal = SbVec3f(0.0, 0.0, 0.0)
@@ -120,8 +125,21 @@ class xrController:
             self.runtime_switch.whichChild = SO_SWITCH_ALL
             self.fallback_switch.whichChild = SO_SWITCH_NONE
 
+    def button_position(self, lift=0.03):
+        """Where the A (or X) button is in the stage frame, `lift` metres above its top, or None when it is not known."""
+        model, pose = (self.runtime_model, self._model_pose) if self.runtime_model is not None else (self.fallback_model, self._aim_pose)
+        if model is None or pose is None:
+            return None
+        anchor = self._anchors.get(id(model))
+        if anchor is None:                                   # a part that could not be found is looked for again next time
+            anchor = self._anchors[id(model)] = button_anchor(model, lift=lift)
+        if anchor is None:
+            return None
+        return mu.add(pose[0], mu.rotate(pose[1], anchor))
+
     def update_model_pose(self, position, orientation, world_transform):
         """Pose of the runtime model (stage frame, metres); combined with the artificial world movement like the aim pose."""
+        self._model_pose = (tuple(position), tuple(orientation))
         local = SoTransform()
         local.translation.setValue(SbVec3f(*position))
         local.rotation.setValue(SbRotation(*orientation))
@@ -182,6 +200,7 @@ class xrController:
     def update_pose(self, position, orientation, world_transform, pointer_position=None, pointer_orientation=None):
         """Aim pose in the stage frame: position (x, y, z) and orientation quaternion (x, y, z, w). The pointer pose (laser origin
         and direction, or the tip) defaults to the aim pose; picking and the tools use the pointer pose."""
+        self._aim_pose = (tuple(position), tuple(orientation))
         self._set_transform(self.aim_transform, position, orientation, world_transform)
         self._set_transform(self.con_transform, pointer_position or position, pointer_orientation or orientation, world_transform)
 

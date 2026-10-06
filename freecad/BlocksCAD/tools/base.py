@@ -36,6 +36,7 @@ class ToolOption:
     default: Any = 0.0
     unit: str = ""
     choices: Tuple[str, ...] = ()
+    wrap: bool = True         # a choice that is stepped past its last value goes back to the first (else it stops)
 
     def clamp(self, value):
         """The nearest allowed value: clamped and rounded to the step (numbers), or a valid choice."""
@@ -71,17 +72,43 @@ class ToolContext:
         return 1 - self.dominant
 
 
+@dataclass(frozen=True)
+class DiscSlot:
+    """One of the six sections of the option disc that the stick of the tool hand chooses from (docs/ux-design.md, Tool options).
+
+    kind "set": pushing the stick towards the section sets the option `option` to `value`. Kind "step": it steps the option by
+    `value` (+1 or -1) and repeats while the stick is held out. A slot without an option is an empty section."""
+    label: str
+    option: str = ""
+    value: Any = None
+    kind: str = "set"
+
+
 class Tool:
     """Subclass, set `name` (unique, lower case) and `label`, and register with `@register`."""
 
     name = ""
     label = ""
     hint = ""        # one line shown as a toast when the tool is chosen and as the tooltip of its face
-    options = ()     # up to two `ToolOption`s: the first on the stick up and down, the second on the stick left and right
+    options = ()     # `ToolOption`s: with `disc_slots` the disc chooses among them, else the first is on the stick up and down, the second left and right
+    busy = False     # a gesture is running: the quick radial stays closed
+    lock_state = None   # None: no hint; False: the padlock over the A button is open (free); True: closed (locked to the grid and the angles)
 
     def __init__(self, ctx: ToolContext):
         self.ctx = ctx
         self.values = {option.name: option.default for option in self.options}
+
+    def disc_slots(self):
+        """The six `DiscSlot`s of the option disc, clockwise from the top (the stick up), or None for a tool without a disc."""
+        return None
+
+    def disc_hub(self):
+        """The lines of text in the middle of the option disc."""
+        return []
+
+    def stick_click(self):
+        """The stick of the tool hand was clicked; returns a short text for a toast when the tool used the click, else None."""
+        return None
 
     def set_option(self, name, value):
         """Set an option (clamped to what it allows); returns the value that was stored."""

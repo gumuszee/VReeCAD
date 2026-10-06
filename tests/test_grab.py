@@ -59,10 +59,29 @@ class GrabTest(unittest.TestCase):
         base, rotation = grabbed.at((0.0, 0.0, 0.0), about_z(70.0))      # 30 degrees since
         self.assertAlmostEqual(abs(qdot(rotation, about_z(30.0))), 1.0, places=6)
 
-    def test_small_turns_snap_away_and_large_ones_snap_to_steps(self):
-        self.assertTrue(close(self.START.at((100.0, 0.0, 0.0), about_z(5.0))[0], (110.0, 0.0, 0.0)))
-        rotation = self.START.at((100.0, 0.0, 0.0), about_z(33.0))[1]
+    def test_a_locked_turn_snaps_small_turns_away_and_large_ones_to_steps(self):
+        self.assertTrue(close(self.START.at((100.0, 0.0, 0.0), about_z(5.0), step_degrees=15.0)[0], (110.0, 0.0, 0.0)))
+        rotation = self.START.at((100.0, 0.0, 0.0), about_z(33.0), step_degrees=15.0)[1]
         self.assertAlmostEqual(abs(qdot(rotation, about_z(30.0))), 1.0, places=6)
+
+    def test_a_free_grab_follows_the_hand_exactly(self):
+        base, rotation = self.START.at((113.7, -4.2, 0.9), about_z(33.0))
+        self.assertTrue(close(rotation, about_z(33.0)))
+        expected = mu.add((113.7, -4.2, 0.9), mu.rotate(about_z(33.0), (10.0, 0.0, 0.0)))
+        self.assertTrue(close(base, expected))
+
+    def test_a_locked_move_is_whole_grid_steps_of_the_move_of_the_hand(self):
+        grabbed = grab.Grab((3.0, 4.0, 5.0), mu.IDENTITY_QUAT, (10.0, 20.0, 30.0), mu.IDENTITY_QUAT)
+        base, _ = grabbed.at((3.0 + 34.0, 4.0 - 16.0, 5.0), mu.IDENTITY_QUAT, grid=10.0)
+        self.assertTrue(close(base, (10.0 + 30.0, 20.0 - 20.0, 30.0)))              # the object was on the grid and stays on it
+        base, _ = grabbed.at((3.0 + 4.0, 4.0, 5.0), mu.IDENTITY_QUAT, grid=10.0)
+        self.assertTrue(close(base, (10.0, 20.0, 30.0)))                            # a small move does not move it at all
+
+    def test_locking_both_gives_clean_numbers(self):
+        grabbed = grab.Grab((0.0, 0.0, 0.0), mu.IDENTITY_QUAT, (10.0, 0.0, 0.0), mu.IDENTITY_QUAT)
+        base, rotation = grabbed.at((20.0, 0.0, 0.0), about_z(88.0), grid=10.0, step_degrees=45.0)
+        self.assertAlmostEqual(abs(qdot(rotation, about_z(90.0))), 1.0, places=6)
+        self.assertTrue(close(base, (20.0, 10.0, 0.0)))
 
     def test_the_move_only_mode_ignores_the_turn(self):
         base, rotation = self.START.at((120.0, 0.0, 0.0), about_z(90.0), rotate=False)
@@ -107,6 +126,13 @@ class ScaleTest(unittest.TestCase):
     def test_the_tube_of_a_torus_stays_thinner_than_its_ring(self):
         torus = edit.scaled_values("Part::Torus", {"Radius1": 12.0, "Radius2": 8.0}, 0.2, 10.0)
         self.assertLess(torus["Radius2"], torus["Radius1"])
+
+    def test_without_a_grid_the_sizes_are_free(self):
+        values = {"Length": 30.0, "Width": 20.0, "Height": 10.0}
+        scaled = edit.scaled_values("Part::Box", values, 1.37)
+        self.assertAlmostEqual(scaled["Length"], 41.1)
+        self.assertAlmostEqual(scaled["Height"], 13.7)
+        self.assertEqual(edit.scaled_values("Part::Box", values, 0.0001), {"Length": 0.1, "Width": 0.1, "Height": 0.1})
 
     def test_every_shape_the_create_tool_makes_can_be_scaled_by_its_own_properties(self):
         for name in prim.SHAPES:

@@ -452,6 +452,7 @@ class PrimitiveLiveTest(unittest.TestCase):
         import FreeCAD as App
         self.App = App
         self.doc = App.newDocument("BlocksCADPrimitives")
+        self.doc.UndoMode = 1                       # the desktop has it on; a document without a GUI has not
 
     def tearDown(self):
         self.App.closeDocument(self.doc.Name)
@@ -584,20 +585,36 @@ class PrimitiveLiveTest(unittest.TestCase):
         finally:
             s.close()
 
-    def test_the_stick_changes_the_grid_and_the_shape_with_a_readout(self):
+    def test_the_stick_chooses_from_the_option_disc_of_the_create_tool(self):
+        import math
+        from pivy import coin
         s = sim.SimSession(None)
         try:
             s.select_tool("primitive")
-            s.input.set_hand(1, stick=(0.0, 1.0))
+            tool = s.tool_manager.active
+            push = lambda degrees: s.input.set_hand(1, stick=(math.sin(math.radians(degrees)), math.cos(math.radians(degrees))))
+            push(0)                                                          # up: the grid gets larger
             s.frame(0.02)
             s.input.set_hand(1, stick=(0.0, 0.0))
             s.frame(0.02)
-            self.assertEqual(s.tool_manager.active.values["grid"], "20 mm")
-            self.assertEqual(s.ui.feedback._readout.label, "Grid: 20 mm")
-            s.input.set_hand(1, stick=(1.0, 0.0))
+            self.assertEqual(tool.values["grid"], "20 mm")
+            self.assertEqual(s.ui.options_view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+            push(60)                                                         # upper right: the second shape
             s.frame(0.02)
-            self.assertEqual(s.tool_manager.active.values["shape"], "Cylinder")
+            self.assertEqual(tool.values["shape"], "Cylinder")
             self.assertTrue(s.ui_update.owns_stick)
+            s.input.set_hand(1, stick=(0.0, 0.0))
+            for _ in range(int(2.0 / 0.02)):
+                s.frame(0.02)
+            self.assertEqual(s.ui.options_view.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+            s.input.set_hand(1, stick_click=True)                            # the click turns to the other shapes
+            s.frame(0.02)
+            self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Shapes: Torus, Wedge, Prism")
+            s.input.set_hand(1, stick_click=False)
+            s.frame(0.02)
+            push(300)                                                        # upper left: the first shape of the page
+            s.frame(0.02)
+            self.assertEqual(tool.values["shape"], "Torus")
         finally:
             s.close()
 
@@ -610,6 +627,7 @@ class GrabLiveTest(unittest.TestCase):
         from freecad.BlocksCAD.cad import primitives as prim
         self.App = App
         self.doc = App.newDocument("BlocksCADGrab")
+        self.doc.UndoMode = 1
         self.box = prim.create(self.doc, "Box", (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         self.s = None
 
@@ -681,19 +699,47 @@ class GrabLiveTest(unittest.TestCase):
         self.assertEqual(s.highlights.hover.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
         self.assertEqual(s.tool_manager.active._hover.kind, "face")
         self.hand(1, (50.0, 50.0, 500.0))
+        self.assertEqual(s.highlights.hover.root.whichChild.getValue(), coin.SO_SWITCH_ALL)      # a moment passes before it goes
+        for _ in range(10):
+            self.hand(1, (50.0, 50.0, 500.0))
         self.assertEqual(s.highlights.hover.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
         self.assertIsNone(s.tool_manager.active._hover)
 
-    def test_a_drag_moves_the_object_in_grid_steps_in_one_undo_step(self):
+    def test_a_trembling_hand_does_not_make_the_highlight_jump_between_elements(self):
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        tool = s.tool_manager.active
+        self.assertEqual(tool._hover.kind, "face")
+        for i in range(8):                                                       # it jumps between a face and an edge every frame
+            self.hand(1, (50.0, 4.0 if i % 2 else 50.0, 96.0))
+        self.assertEqual(tool._hover.kind, "face")
+        for _ in range(8):                                                       # held at the edge for a moment: it moves to the edge
+            self.hand(1, (50.0, 4.0, 96.0))
+        self.assertEqual(tool._hover.kind, "edge")
+
+    def test_the_highlight_of_a_solid_the_tip_is_inside_is_a_fill_and_the_hover_lies_in_front_of_the_selection(self):
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 50.0))
+        tool = s.tool_manager.active
+        self.assertEqual(tool._hover.kind, "object")
+        display = tool._display(self.doc, tool._hover.name, "")[0]
+        self.assertGreater(len(display.triangles[1]), 0)                         # the whole object is filled, not just outlined
+        from freecad.BlocksCAD.render import highlight
+        self.assertLess(highlight.DEPTH_RANGE[1], highlight.DEPTH_RANGE[0])      # the hover is nearer to the viewer
+
+    def test_a_drag_moves_the_object_freely_and_in_grid_steps_while_a_is_held_in_one_undo_step(self):
         s = self.session()
         self.hand(1, (50.0, 50.0, 96.0))
         self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
-        self.hand(1, (84.0, 50.0, 96.0), trigger=1.0)                       # 34 mm: snaps to 30
-        self.assertEqual(tuple(self.box.Placement.Base), (30.0, 0.0, 0.0))
-        self.assertTrue(s.ui.gesture_text.startswith("Move: 30 mm, 0, 0"))
-        self.hand(1, (84.0, 70.0, 126.0), trigger=1.0)
-        self.hand(1, (84.0, 70.0, 126.0), trigger=0.0)
-        self.assertEqual(tuple(self.box.Placement.Base), (30.0, 20.0, 30.0))
+        self.hand(1, (84.0, 50.0, 96.0), trigger=1.0)                       # free: 34 mm
+        base = tuple(round(c, 6) for c in self.box.Placement.Base)
+        self.assertEqual(base, (34.0, 0.0, 0.0))
+        self.assertTrue(s.ui.gesture_text.startswith("Move: 34 mm, 0, 0"))
+        self.hand(1, (84.0, 50.0, 96.0), trigger=1.0, button1=True)         # A held: locked to the grid, 34 mm becomes 30
+        self.assertEqual(tuple(round(c, 6) for c in self.box.Placement.Base), (30.0, 0.0, 0.0))
+        self.hand(1, (84.0, 73.0, 126.0), trigger=1.0, button1=True)
+        self.hand(1, (84.0, 73.0, 126.0), trigger=0.0, button1=False)
+        self.assertEqual(tuple(round(c, 6) for c in self.box.Placement.Base), (30.0, 20.0, 30.0))
         self.assertIsNone(s.ui.gesture_text)
         self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Moved " + self.box.Label)
         self.assertEqual(self.selection(), [(self.box.Name, ())])           # the moved object is selected as a whole
@@ -711,9 +757,11 @@ class GrabLiveTest(unittest.TestCase):
         turned = mu.quat_multiply(rotation(100.0), start)
         self.hand(1, (50.0, 50.0, 96.0))
         self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
-        self.hand(1, (50.0, 50.0, 96.0), doc_rotation=turned, trigger=1.0)          # 100 degrees: snaps to 105
+        self.hand(1, (50.0, 50.0, 96.0), doc_rotation=turned, trigger=1.0)          # free: exactly 100 degrees
+        self.assertAlmostEqual(math.degrees(self.box.Placement.Rotation.Angle), 100.0, places=3)
+        self.hand(1, (50.0, 50.0, 96.0), doc_rotation=turned, trigger=1.0, button1=True)   # A held: the angle step of 15 gives 105
         self.assertAlmostEqual(math.degrees(self.box.Placement.Rotation.Angle), 105.0, places=3)
-        self.hand(1, (50.0, 50.0, 96.0), doc_rotation=turned, trigger=0.0)
+        self.hand(1, (50.0, 50.0, 96.0), doc_rotation=turned, trigger=0.0, button1=False)
         self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Moved and turned " + self.box.Label)
         self.doc.undo()
         self.assertAlmostEqual(self.box.Placement.Rotation.Angle, 0.0, places=6)
@@ -722,7 +770,7 @@ class GrabLiveTest(unittest.TestCase):
         self.hand(1, (50.0, 50.0, 96.0), doc_rotation=start, trigger=1.0)
         self.hand(1, (80.0, 50.0, 96.0), doc_rotation=mu.quat_multiply(rotation(90.0), start), trigger=1.0)
         self.assertAlmostEqual(self.box.Placement.Rotation.Angle, 0.0, places=6)
-        self.assertEqual(tuple(self.box.Placement.Base), (30.0, 0.0, 0.0))
+        self.assertEqual(tuple(round(c, 6) for c in self.box.Placement.Base), (30.0, 0.0, 0.0))
         self.hand(1, (80.0, 50.0, 96.0), doc_rotation=start, trigger=0.0)
 
     def test_a_tap_selects_the_touched_element_and_a_tap_on_nothing_clears_the_selection(self):
@@ -735,7 +783,8 @@ class GrabLiveTest(unittest.TestCase):
         self.assertEqual(self.selection(), [(self.box.Name, (face,))])
         self.assertEqual(tuple(self.box.Placement.Base), (0.0, 0.0, 0.0))                      # a tap moves nothing
         self.assertEqual(s.highlights.selected.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
-        self.hand(1, (400.0, 400.0, 400.0))
+        for _ in range(10):
+            self.hand(1, (400.0, 400.0, 400.0))                          # long enough for the hover to let go of the box
         self.hand(1, (400.0, 400.0, 400.0), trigger=1.0)
         self.hand(1, (400.0, 400.0, 400.0), trigger=0.0)
         self.assertEqual(self.selection(), [])
@@ -751,6 +800,12 @@ class GrabLiveTest(unittest.TestCase):
         centre = self.box.Shape.BoundBox.Center
         self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip((centre.x, centre.y, centre.z), (50.0, 50.0, 50.0))))
         self.assertEqual(s.ui.gesture_text, "Scale: 200 %")
+        self.hand(0, (230.0, 50.0, 96.0), trigger=1.0, button1=False)        # 180 mm apart: free, 180 per cent
+        self.assertAlmostEqual(self.box.Length.Value, 180.0, places=6)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0, button1=True)          # A held: the sizes go to the grid
+        self.hand(0, (221.0, 50.0, 96.0), trigger=1.0)
+        self.assertEqual(self.box.Length.Value, 170.0)
+        self.hand(0, (250.0, 50.0, 96.0), trigger=1.0)
         self.hand(1, (50.0, 50.0, 96.0), trigger=0.0)
         self.hand(0, (250.0, 50.0, 96.0), trigger=0.0)
         self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Scaled " + self.box.Label)
@@ -771,6 +826,55 @@ class GrabLiveTest(unittest.TestCase):
         self.hand(0, (550.0, 50.0, 96.0), trigger=1.0)
         self.assertEqual(plain.Shape.BoundBox.XLength, before)
         self.hand(1, (350.0, 50.0, 96.0), trigger=0.0)
+
+    def test_the_quick_radial_stays_closed_during_a_grab_and_a_padlock_shows_over_the_a_button(self):
+        from pivy import coin
+        s = self.session()
+        lock = lambda: (s.ui.feedback._lock.root.whichChild.getValue(), s.ui.feedback._lock._states.whichChild.getValue())
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.assertEqual(lock()[0], coin.SO_SWITCH_NONE)                     # no grab: no hint
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (60.0, 50.0, 96.0), trigger=1.0)
+        self.assertEqual(lock(), (coin.SO_SWITCH_ALL, 0))                    # an open padlock: free
+        self.hand(1, (60.0, 50.0, 96.0), trigger=1.0, button1=True)          # A pressed: locked, and no quick radial
+        self.hand(1, (60.0, 50.0, 96.0), trigger=1.0, button1=True)          # the hint follows the tool by a frame
+        self.assertEqual(lock(), (coin.SO_SWITCH_ALL, 1))
+        self.assertFalse(s.ui.radial.is_open)
+        self.assertEqual(s.ui.radial_view.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        self.hand(1, (60.0, 50.0, 96.0), trigger=0.0, button1=True)
+        self.hand(1, (60.0, 50.0, 96.0), trigger=0.0, button1=False)
+        self.hand(1, (60.0, 50.0, 96.0), trigger=0.0, button1=False)
+        self.assertEqual(lock()[0], coin.SO_SWITCH_NONE)
+        self.hand(1, (60.0, 50.0, 96.0), button1=True)                       # outside a grab A opens the quick radial again
+        self.assertTrue(s.ui.radial.is_open)
+        self.hand(1, (60.0, 50.0, 96.0), button1=False)
+
+    def test_the_padlock_sits_over_the_a_button_of_the_model(self):
+        from freecad.BlocksCAD.render.model_anchor import button_anchor
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        anchor = button_anchor(s.hand_models[1], lift=0.03)
+        position = s.ui.button_anchor(1)
+        aim = s.last_frame.hands[1].aim
+        expected = self.mu.add(aim.position, self.mu.rotate(aim.orientation, anchor))
+        self.assertTrue(all(abs(a - b) < 1e-9 for a, b in zip(position, expected)))
+        self.assertGreater(anchor[1], 0.03)                                  # above the top of the button
+
+    def test_the_stick_chooses_from_the_option_disc_of_the_grab_tool(self):
+        import math
+        s = self.session()
+        tool = s.tool_manager.active
+        push = lambda degrees: s.input.set_hand(1, stick=(math.sin(math.radians(degrees)), math.cos(math.radians(degrees))))
+        release = lambda: (s.input.set_hand(1, stick=(0.0, 0.0)), s.frame(0.02), s.frame(0.02))
+        for degrees, option, expected in ((0, "grid", "20 mm"), (180, "grid", "10 mm"), (300, "angle", "30 deg"), (240, "angle", "15 deg"),
+                                          (120, "mode", "Move"), (60, "mode", "Move and rotate")):
+            push(degrees)
+            s.frame(0.02)
+            self.assertEqual(tool.values[option], expected, f"{degrees}")
+            release()
+        s.input.set_hand(1, stick_click=True)
+        s.frame(0.02)
+        self.assertEqual((tool.values["grid"], tool.values["angle"]), ("10 mm", "15 deg"))
 
     def test_a_grip_cancels_the_grab(self):
         s = self.session()

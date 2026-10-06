@@ -1,3 +1,4 @@
+import math
 import unittest
 
 import support  # noqa: F401
@@ -225,6 +226,128 @@ class OptionTest(unittest.TestCase):
         self.sim.set_hand(1, stick=(0.0, 1.0))
         self.step(tool)
         self.assertEqual(tool.values["count"], 3)
+
+
+
+class DiscTool(base.Tool):
+    name = "fake_disc"
+    label = "Disc"
+    options = (base.ToolOption("grid", "Grid", "choice", default="10 mm", choices=("1 mm", "10 mm", "100 mm"), wrap=False),
+               base.ToolOption("shape", "Shape", "choice", default="Box", choices=("Box", "Cylinder", "Cone")))
+
+    def __init__(self, ctx):
+        super().__init__(ctx)
+        self.clicks = 0
+
+    def disc_slots(self):
+        D = base.DiscSlot
+        return (D("Grid +", "grid", 1, "step"), D("Cylinder", "shape", "Cylinder"), D("Cone", "shape", "Cone"),
+                D("Grid -", "grid", -1, "step"), D("", ), D("Box", "shape", "Box"))
+
+    def disc_hub(self):
+        return [self.values["grid"]]
+
+    def stick_click(self):
+        self.clicks += 1
+        return "clicked"
+
+
+class DiscTest(unittest.TestCase):
+    def setUp(self):
+        self.sim = SimInput()
+        self.control = opt.OptionControl(hand=1)
+        self.tool = DiscTool(base.ToolContext())
+
+    def step(self, n=1, dt=0.02, **kw):
+        state = None
+        for _ in range(n):
+            state = self.control.update(self.sim.frame(dt), self.tool, **kw)
+        return state
+
+    def push(self, degrees, size=1.0):
+        """The stick pushed out in a direction: 0 is straight up, clockwise."""
+        a = math.radians(degrees)
+        self.sim.set_hand(1, stick=(size * math.sin(a), size * math.cos(a)))
+
+    def test_the_stick_points_at_a_section_like_the_hours_of_a_clock(self):
+        for degrees, index in ((0, 0), (60, 1), (120, 2), (180, 3), (240, 4), (300, 5), (20, 0), (350, 0), (100, 2)):
+            self.push(degrees, 0.5)
+            state = self.step()
+            self.assertEqual(state.disc.selected, index, degrees)
+            self.sim.set_hand(1, stick=(0.0, 0.0))
+            self.step(2)
+
+    def test_up_and_down_step_the_grid_and_stop_at_its_ends(self):
+        self.push(0)
+        state = self.step()
+        self.assertEqual(self.tool.values["grid"], "100 mm")
+        self.assertEqual((state.changed, state.disc.hub, state.owns_stick), ("grid", ["100 mm"], True))
+        self.step(30)
+        self.assertEqual(self.tool.values["grid"], "100 mm")                       # no wrap round
+        self.push(180)
+        self.step()
+        self.assertEqual(self.tool.values["grid"], "10 mm")
+        self.step(int(opt.FIRST_REPEAT / 0.02) + 3)
+        self.assertEqual(self.tool.values["grid"], "1 mm")
+        self.step(30)
+        self.assertEqual(self.tool.values["grid"], "1 mm")
+
+    def test_a_set_section_sets_once_and_a_neighbouring_section_applies_when_the_stick_rolls_round(self):
+        self.push(60)
+        self.assertEqual((self.step().changed, self.tool.values["shape"]), ("shape", "Cylinder"))
+        self.assertIsNone(self.step(20).changed)
+        self.push(120)
+        self.step()
+        self.assertEqual(self.tool.values["shape"], "Cone")
+        self.push(300)
+        self.step()
+        self.assertEqual(self.tool.values["shape"], "Box")
+
+    def test_the_active_sections_are_those_that_hold_the_value(self):
+        self.push(60)
+        state = self.step()
+        self.assertEqual(state.disc.active, [False, True, False, False, False, False])
+        self.assertEqual(state.disc.labels, ["Grid +", "Cylinder", "Cone", "Grid -", "", "Box"])
+
+    def test_an_empty_section_does_nothing(self):
+        self.push(240)
+        state = self.step()
+        self.assertIsNone(state.changed)
+        self.assertEqual(self.tool.values, {"grid": "10 mm", "shape": "Box"})
+
+    def test_the_disc_is_shown_while_the_stick_is_out_and_for_a_while_after_a_change(self):
+        self.assertIsNone(self.step().disc)
+        self.push(60, 0.5)                                   # out, but not far enough to apply a section
+        self.assertIsNotNone(self.step().disc)
+        self.sim.set_hand(1, stick=(0.0, 0.0))
+        self.assertIsNone(self.step(n=2).disc)
+        self.push(60)
+        self.step()
+        self.sim.set_hand(1, stick=(0.0, 0.0))
+        self.assertIsNotNone(self.step(n=10).disc)
+        self.assertIsNone(self.step(n=int(opt.READOUT_TIME / 0.02)).disc)
+
+    def test_a_grip_blocks_the_disc(self):
+        self.sim.set_hand(0, grip=1.0)
+        self.push(0)
+        state = self.step(n=5)
+        self.assertEqual((self.tool.values["grid"], state.disc), ("10 mm", None))
+
+    def test_the_click_goes_to_the_tool_and_its_message_is_passed_on(self):
+        self.sim.set_hand(1, stick_click=True)
+        state = self.step()
+        self.assertEqual((self.tool.clicks, state.message), (1, "clicked"))
+        self.assertIsNotNone(state.disc)                                  # the disc shows what the click changed
+        self.sim.set_hand(1, stick_click=False)
+        self.step(2)
+        self.assertEqual(self.step().message, None)
+
+    def test_a_tool_without_a_disc_keeps_the_two_axes(self):
+        tool = Fake(base.ToolContext())
+        self.sim.set_hand(1, stick=(0.0, 1.0))
+        state = self.control.update(self.sim.frame(0.02), tool)
+        self.assertIsNone(state.disc)
+        self.assertEqual(tool.values["size"], 11.0)
 
 
 if __name__ == "__main__":
