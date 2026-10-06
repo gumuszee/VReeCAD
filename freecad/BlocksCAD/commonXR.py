@@ -348,6 +348,7 @@ class XRwidget(QOpenGLWidget):
         self.mirror_window = True
         self.tracker_support = False
         self.steam_frame_support = False # Steam Frame controllers bindings extension
+        self.render_model_support = False  # XR_EXT_render_model + XR_EXT_interaction_render_model
         self.tpp_camera = None
         self.tpp_cam_enabled = False
         self.tpp_cam_available = False
@@ -685,6 +686,11 @@ class XRwidget(QOpenGLWidget):
             self.tracker_support = True
         if "XR_VALVE_frame_controller_interaction" in discovered_extensions:
             self.steam_frame_support = True
+        # Runtime-provided controller models (glTF); both extensions are needed together
+        # (XR_EXT_uuid is required by XR_EXT_render_model on OpenXR 1.0 instances)
+        if all(ext in discovered_extensions for ext in (
+                "XR_EXT_render_model", "XR_EXT_interaction_render_model", "XR_EXT_uuid")):
+            self.render_model_support = True
         requested_extensions = [xr.KHR_OPENGL_ENABLE_EXTENSION_NAME]
         if windowing_interface == 'EGL':
             requested_extensions.append(xr.MNDX_EGL_ENABLE_EXTENSION_NAME)
@@ -696,6 +702,11 @@ class XRwidget(QOpenGLWidget):
         if self.steam_frame_support:
             requested_extensions.append(
                 "XR_VALVE_frame_controller_interaction")
+        if self.render_model_support:
+            requested_extensions.append(xr.EXT_UUID_EXTENSION_NAME)
+            requested_extensions.append(xr.EXT_RENDER_MODEL_EXTENSION_NAME)
+            requested_extensions.append(
+                xr.EXT_INTERACTION_RENDER_MODEL_EXTENSION_NAME)
         for extension in requested_extensions:
             assert extension in discovered_extensions
         if pref.preferences().GetBool("UseHighestOpenXR", False):
