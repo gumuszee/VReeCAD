@@ -26,6 +26,7 @@ BEAM_RADIUS = 0.0016
 DOT_RADIUS = 0.006
 IDLE = (0.55, 0.75, 1.0)
 HIT = (1.0, 0.9, 0.4)
+STEM = (0.4, 0.5, 0.65)
 
 
 class Pointer:
@@ -83,50 +84,44 @@ class Pointer:
         self.root.whichChild = coin.SO_SWITCH_ALL
 
 
-class TipMarker:
-    """The tip of a controller in tip mode (docs/ux-design.md, Pointer): a thin cone that narrows from the controller to the tip and a
-    small sphere at the tip, drawn on top of the scene. The sphere is highlighted while it touches something."""
-    BASE_RADIUS = 0.004
-    TIP_RADIUS = 0.0035
+class _TipShape:
+    """The cone and the sphere of a tip in one depth setting. `visible` colours the parts that lie in front of the scene (depth
+    test on), the other pass draws the same shape without a depth test in the inverted colours: it shows wherever the tip is behind
+    or inside something."""
 
-    def __init__(self):
-        self.root = coin.SoSwitch()
-        self.root.whichChild = coin.SO_SWITCH_NONE
-        sep = coin.SoSeparator()
-        pick = coin.SoPickStyle()
-        pick.style = coin.SoPickStyle.UNPICKABLE
-        sep.addChild(pick)
+    def __init__(self, depth_test, invert):
+        self.sep = coin.SoSeparator()
         light = coin.SoLightModel()
         light.model = coin.SoLightModel.BASE_COLOR
-        sep.addChild(light)
+        self.sep.addChild(light)
         depth = coin.SoDepthBuffer()
-        depth.test.setValue(False)
+        depth.test.setValue(depth_test)
         depth.getField("write").setValue(False)
-        sep.addChild(depth)
+        self.sep.addChild(depth)
+        self.invert = invert
         stem = coin.SoSeparator()
-        stem.addChild(style.color((0.4, 0.5, 0.65)))
+        self._stem_color = style.color(self._shade(STEM))
+        stem.addChild(self._stem_color)
         self._stem_xf = coin.SoTransform()
         stem.addChild(self._stem_xf)
         self._stem = coin.SoCone()           # the apex is at +Y: it is turned to point at the tip
-        self._stem.bottomRadius = self.BASE_RADIUS
+        self._stem.bottomRadius = TipMarker.BASE_RADIUS
         stem.addChild(self._stem)
-        sep.addChild(stem)
+        self.sep.addChild(stem)
         tip = coin.SoSeparator()
-        self._color = style.color(IDLE)
+        self._color = style.color(self._shade(IDLE))
         tip.addChild(self._color)
         self._tip_xf = coin.SoTranslation()
         tip.addChild(self._tip_xf)
         sphere = coin.SoSphere()
-        sphere.radius = self.TIP_RADIUS
+        sphere.radius = TipMarker.TIP_RADIUS
         tip.addChild(sphere)
-        sep.addChild(tip)
-        self.root.addChild(sep)
+        self.sep.addChild(tip)
 
-    def hide(self):
-        self.root.whichChild = coin.SO_SWITCH_NONE
+    def _shade(self, rgb):
+        return style.invert(rgb) if self.invert else rgb
 
-    def show(self, start, tip, touching=False):
-        """Draw the tip at `tip` with its cone from `start` (the controller)."""
+    def show(self, start, tip, touching):
         span = mu.sub(tip, start)
         length = mu.length(span)
         if length > 1e-3:
@@ -138,5 +133,35 @@ class TipMarker:
         else:
             self._stem.height = 1e-4
         self._tip_xf.translation.setValue(*tip)
-        self._color.rgb = coin.SbColor(*(HIT if touching else IDLE))
+        self._color.rgb = coin.SbColor(*self._shade(HIT if touching else IDLE))
+
+
+class TipMarker:
+    """The tip of a controller in tip mode (docs/ux-design.md, Pointer): a thin cone that narrows from the controller to the tip and a
+    small sphere at the tip, drawn over the scene so the tip is never lost. The sphere is highlighted while it touches something.
+    The parts of the tip that lie behind or inside the model or a panel are drawn in the inverted colours, so the colour tells whether
+    the tip is in front of or in contact with what it should act on."""
+    BASE_RADIUS = 0.004
+    TIP_RADIUS = 0.0035
+
+    def __init__(self):
+        self.root = coin.SoSwitch()
+        self.root.whichChild = coin.SO_SWITCH_NONE
+        sep = coin.SoSeparator()
+        pick = coin.SoPickStyle()
+        pick.style = coin.SoPickStyle.UNPICKABLE
+        sep.addChild(pick)
+        # the inverted pass first (no depth test: always there), the normal pass over it (depth test: only where nothing is in front)
+        self._passes = [_TipShape(False, True), _TipShape(True, False)]
+        for shape in self._passes:
+            sep.addChild(shape.sep)
+        self.root.addChild(sep)
+
+    def hide(self):
+        self.root.whichChild = coin.SO_SWITCH_NONE
+
+    def show(self, start, tip, touching=False):
+        """Draw the tip at `tip` with its cone from `start` (the controller)."""
+        for shape in self._passes:
+            shape.show(start, tip, touching)
         self.root.whichChild = coin.SO_SWITCH_ALL

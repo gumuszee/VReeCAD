@@ -197,6 +197,13 @@ try:
         _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_tip.png"))
     print("tip hover:", _s.ui.ring.hover)
+    # the same tip pushed through the plate and held well behind it: the parts behind are drawn in the inverted colours
+    for _name, _gap in (("through", -0.012), ("behind", -0.06)):
+        _touch = _mu.add(_target, _mu.mul(_pose.n, _gap))
+        _s.input.set_hand(1, position=_mu.add(_touch, _mu.mul(_pose.n, _s.ui.settings.tip_length)), point_at=_touch)
+        for _ in range(3):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_tip_" + _name + ".png"))
     for _ in range(3):
         _s.input.set_hand(0, stick=(1.0, 0.0))
         _s.frame(0.02)

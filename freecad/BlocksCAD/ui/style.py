@@ -37,6 +37,11 @@ TEXT_SCALE = 0.0009           # label glyphs, about 9 mm
 LINE_HEIGHT = 0.0105
 
 
+def invert(rgb):
+    """The colour with every channel inverted."""
+    return tuple(1.0 - c for c in rgb)
+
+
 def font():
     node = coin.SoFont()
     node.name = FONT
