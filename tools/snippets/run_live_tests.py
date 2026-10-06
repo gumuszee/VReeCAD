@@ -16,7 +16,7 @@ for _p in (os.path.join(_tests, "live"), _tests):
         sys.path.insert(0, _p)
 for _name in ("support", "test_gltf", "test_coin"):
     sys.modules.pop(_name, None)
-for _name in ("freecad.BlocksCAD.input", "freecad.BlocksCAD.gltf", "freecad.BlocksCAD.render.gltf_coin",
+for _name in ("freecad.BlocksCAD.core.mathutil", "freecad.BlocksCAD.core.navigation", "freecad.BlocksCAD.input", "freecad.BlocksCAD.gltf", "freecad.BlocksCAD.render.gltf_coin",
               "freecad.BlocksCAD.render.controller_shape", "freecad.BlocksCAD.render.offscreen",
               "freecad.BlocksCAD.backends.sim"):
     if _name in sys.modules:

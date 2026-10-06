@@ -30,8 +30,8 @@ The controller tools (teleport, line, cube, select, drag, working plane), Qt ove
 | `preferences.py`, `XRWorkbench_rc.py`, `Resources/` | Preferences UI, compiled Qt resources, icons |
 
 ### Control flow per frame
-`update_render` (timer) -> `poll_xr_events` -> `start_xr_frame` -> `update_xr_movement` (locomotion) -> `update_xr_views` (eye cameras, head pose) ->
-`update_xr_controls` (sync actions, `InputFrame`, controller models, palette, controller poses) ->
+`update_render` (timer) -> `poll_xr_events` -> `start_xr_frame` -> `update_xr_movement` (frame timing) -> `update_xr_views` (eye cameras, head pose) ->
+`update_xr_controls` (sync actions, `InputFrame`, controller models, grip navigation, palette, controller poses) ->
 `update_xr_interaction` (quick menu, Qt widgets, `tools.update(frame)`) -> Coin render per eye -> `end_xr_frame`; `update_gui` (title bar) runs on its own timer.
 
 ### Interaction model

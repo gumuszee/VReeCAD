@@ -34,6 +34,9 @@ from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.ui.palette import RadialPalette
+from freecad.BlocksCAD.ui.readout import Readout
+from freecad.BlocksCAD.core import mathutil as mu
+from freecad.BlocksCAD.core.navigation import Navigator, WorldPose, format_scale
 from freecad.BlocksCAD.ui.palette_view import PaletteView
 import freecad.BlocksCAD.tools.legacy  # registers the inherited tools
 from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
@@ -499,6 +502,10 @@ class XRwidget(QOpenGLWidget):
         # store complete transformation of world, including artificial movement
         self.world_transform = SoTransform()
         self.world_separator = SoSeparator()
+        self.nav_transform = SoTransform()  # world navigation (grips), see core/navigation.py
+        self.navigator = Navigator()
+        self.nav_readout = Readout()
+        self.world_separator.addChild(self.nav_transform)
         self.world_separator.addChild(self.doc_xr_transform)
         self.world_separator.addChild(self.sg)  # add FreeCAD active scenegraph
         self.cgrp = [SoGroup(), SoGroup()]  # group for camera
@@ -552,6 +559,7 @@ class XRwidget(QOpenGLWidget):
             # and labels
             self.sgrp[eye_index].addChild(self.labels_separator)
             self.sgrp[eye_index].addChild(self.palette_separator)
+            self.sgrp[eye_index].addChild(self.nav_readout.root)
             # add world (scene without controllers and gui elements)
             self.sgrp[eye_index].addChild(self.world_separator)
             # add geometry preview objects
@@ -592,6 +600,7 @@ class XRwidget(QOpenGLWidget):
             self.geo_prev.get_scenegraph())
         self.tpp_sgrp.addChild(self.qt_widgets_separator)
         self.tpp_sgrp.addChild(self.palette_separator)
+        self.tpp_sgrp.addChild(self.nav_readout.root)
         # setup additional framebuffer for the TPP camera
         self.ctx.makeCurrent(self.offs_surface)
         w = self.size().width()
@@ -1087,6 +1096,7 @@ class XRwidget(QOpenGLWidget):
         self.input_tracker.update(frame)
         self.input_frame = frame
         self.update_controller_models(frame)
+        self.update_navigation(frame)
         picked = self.palette.update(frame.hands[self.primary_con])
         if picked is not None:
             self.select_tool(picked)
@@ -1275,51 +1285,54 @@ class XRwidget(QOpenGLWidget):
                 coin_picked_point, coin_picked_p_coords = con.find_picked_coin_object(
                     self.world_separator, self.vp_reg, self.near_plane, self.far_plane)
                 if (coin_picked_point):
-                    teleport_transform = SoTransform()
-                    teleport_transform.translation.setValue(
-                        SbVec3f(coin_picked_p_coords) -
-                        self.camera[0].position.getValue() +
-                        SbVec3f(
-                            0.0,
-                            self.hmdpos[1],
-                            0.0))
-                    self.world_transform.combineRight(teleport_transform)
+                    # bring the picked surface point under the user's feet (stage floor is y = 0)
+                    picked = coin_picked_p_coords
+                    head = self.head_pose.position
+                    world = self.navigator.world
+                    self.navigator.world = WorldPose(
+                        (world.position[0] + head[0] - picked[0], world.position[1] - picked[1],
+                         world.position[2] + head[2] - picked[2]), world.rotation, world.scale)
+                    self.apply_navigation()
                 con.hide_ray()
             elif (con.get_buttons_states().grab_ev ==
                   conXR.AnInpEv.RELEASED):
                 con.hide_ray()
+
+    def doc_xr_matrices(self):
+        """Matrices (document to stage, stage to document) of the full world chain: document transform, then navigation."""
+        m_doc, i_doc = SbMatrix(), SbMatrix()
+        m_nav, i_nav = SbMatrix(), SbMatrix()
+        self.doc_xr_transform.getTranslationSpaceMatrix(m_doc, i_doc)
+        self.nav_transform.getTranslationSpaceMatrix(m_nav, i_nav)
+        to_xr = SbMatrix(m_doc)
+        to_xr.multRight(m_nav)
+        to_doc = SbMatrix(i_nav)
+        to_doc.multRight(i_doc)
+        return to_xr, to_doc
 
     def get_doc_transf(self, con_transf):
         # XR to FreeCAD coordinate system transformation
         transform = SoTransform()
         transform.copyFieldValues(con_transf)
         transform.combineRight(self.world_transform)
-        mat = SbMatrix()
-        inv = SbMatrix()
-        self.doc_xr_transform.getTranslationSpaceMatrix(mat, inv)
-        transform.multRight(inv)
+        to_xr, to_doc = self.doc_xr_matrices()
+        transform.multRight(to_doc)
         return transform
 
     def get_xr_sbvec(self, vec):
         # FreeCAD to XR point location transformation
         vec_xr = None
         if (vec):
-            mat = SbMatrix()
-            inv = SbMatrix()
-            self.doc_xr_transform.getTranslationSpaceMatrix(mat, inv)
-            mat_t = mat.transpose()
-            vec_xr = mat_t.multMatrixVec(vec)
+            to_xr, to_doc = self.doc_xr_matrices()
+            vec_xr = to_xr.multVecMatrix(vec)
         return vec_xr
 
     def get_doc_sbvec(self, vec):
         # XR to FreeCAD point location transformation
         vec_doc = None
         if (vec):
-            mat = SbMatrix()
-            inv = SbMatrix()
-            self.doc_xr_transform.getTranslationSpaceMatrix(mat, inv)
-            mat_t = inv.transpose()
-            vec_doc = mat_t.multMatrixVec(vec)
+            to_xr, to_doc = self.doc_xr_matrices()
+            vec_doc = to_doc.multVecMatrix(vec)
         return vec_doc
 
     def get_picked_doc_sbvec(self, controller):
@@ -1703,33 +1716,49 @@ class XRwidget(QOpenGLWidget):
         return widget_picked_point
 
     def update_xr_movement(self):
+        # frame timing only; the world is navigated with the grips (update_navigation)
         curr_time = self.frame_state.predicted_display_time / \
             1e9  # XrTime is measured in nanoseconds (int64)
         self.frame_duration = curr_time - self.old_time
         self.old_time = curr_time
 
-        # additional multiplier if 0 - 1 range is too small
-        aux_mul = 2
-        # translation (movement) speed
-        final_mov_speed = self.frame_duration * \
-            self.user_mov_speed * aux_mul
-        final_rot_speed = self.frame_duration * \
-            self.user_rot_speed * aux_mul
-        # transformation with movement at this particular moment
-        # combine it with existing world transformation
-        self.world_transform.combineLeft(self.mov_xr.calculate_transformation(
-            self.hmdpos, self.hmdrot,
-            self.xr_con[self.primary_con],
-            self.xr_con[self.secondary_con],
-            final_mov_speed, final_rot_speed))
-        # some movement modes may allow locking user's vertical location to a floor below
-        if self.lock_to_floor:
-            if self.mov_xr.movement_type == "ARCH":
-                pos = self.world_transform.translation.getValue()
-                h_diff = self.mov_xr.find_floor(pos, self.hmdpos,
-                                                self.world_separator, self.vp_reg)
-                self.world_transform.translation.setValue(SbVec3f(pos.getValue()[0],
-                                                                h_diff, pos.getValue()[2]))
+    def apply_navigation(self):
+        world = self.navigator.world
+        self.nav_transform.translation.setValue(*world.position)
+        self.nav_transform.rotation.setValue(*world.rotation)
+        self.nav_transform.scaleFactor.setValue(world.scale, world.scale, world.scale)
+
+    def update_navigation(self, frame):
+        """Grip navigation of the world: one grip drags, two grips move, rotate and scale (docs/ux-design.md)."""
+        events = self.navigator.update(frame)
+        self.apply_navigation()
+        for event in events:
+            kind = event[0]
+            if kind == "grab":
+                self.haptic_both(0.25, 0.03)
+            elif kind == "tick":
+                for hand in event[1]:
+                    self.haptic(hand, 0.6, 0.04)
+            elif kind == "reset":
+                self.haptic_both(0.7, 0.12)
+        if self.navigator.state == "two":
+            left = Navigator.hand_position(frame.hands[0])
+            right = Navigator.hand_position(frame.hands[1])
+            middle = mu.lerp(left, right, 0.5)
+            self.nav_readout.show(format_scale(self.navigator.world.scale), mu.add(middle, (0.0, 0.1, 0.0)),
+                                  frame.head.position)
+        else:
+            self.nav_readout.hide()
+
+    def haptic(self, hand, amplitude, duration_s):
+        try:
+            self.input.haptic(hand, amplitude, duration_s)
+        except Exception:
+            pass  # haptics are optional feedback
+
+    def haptic_both(self, amplitude, duration_s):
+        for hand in range(2):
+            self.haptic(hand, amplitude, duration_s)
 
     def update_xr_interaction(self):
         if pref.pref_updated:

@@ -38,6 +38,9 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Steam Frame left D-pad directions work as buttons | Verified | owner-confirmed |
 | Dev remote control (`tools/fc_rpc.py`, MCP smoke test) | Verified | `tools/mcp_smoke_test.py` passes end to end |
 
+| Grip navigation (`core/navigation.py`): one grip drags, two grips move/rotate/scale about the midpoint, stick click resets; unit tested and run through the Sim session | Verified | `tests/test_navigation.py`, `tests/live/test_coin.py` |
+| Grip navigation in the headset (haptics, scale readout, teleport tool moving the world) | Unverified | owner check pending, checklist item 5 |
+
 ## In-headset checklist (owner)
 
 Start the viewer (workbench BlocksCAD, "Open XR viewer"), wear the headset until the session is `FOCUSED`, then check:
@@ -46,3 +49,4 @@ Start the viewer (workbench BlocksCAD, "Open XR viewer"), wear the headset until
 2. Pulling a trigger, squeezing a grip, moving a stick and pressing buttons moves the matching parts of the models.
 3. Holding the left D-pad up (button1) opens the radial palette above the left controller; pushing the stick highlights an item; releasing picks it (status label changes).
 4. The right controller ray and the tools selected through the palette behave as the inherited modes did.
+5. Navigation: gripping with one hand drags the world with that hand; gripping with both hands moves, turns (about the vertical axis) and scales the world, a `N : 1` readout floats above the midpoint, haptic ticks occur when the scale passes a power of two; clicking the stick of a gripping hand animates the view back to the origin at scale 1 : 1; the teleport tool brings the picked surface under your feet. The thumbstick no longer moves you.

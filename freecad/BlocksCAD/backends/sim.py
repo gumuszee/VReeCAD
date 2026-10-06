@@ -25,68 +25,11 @@ metres and Z up to Y up.
 
 import math
 
+from freecad.BlocksCAD.core.mathutil import look_at, quat_from_axis_angle, quat_multiply, rotate  # noqa: F401  (re-exported for scripts)
+from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.input import HandInput, InputFrame, InputTracker, Pose
 
 IPD = 0.064  # metres between the eyes
-
-
-def quat_from_axis_angle(axis, angle):
-    x, y, z = axis
-    n = math.sqrt(x * x + y * y + z * z) or 1.0
-    s = math.sin(angle / 2) / n
-    return (x * s, y * s, z * s, math.cos(angle / 2))
-
-
-def quat_multiply(a, b):
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return (aw * bx + ax * bw + ay * bz - az * by,
-            aw * by - ax * bz + ay * bw + az * bx,
-            aw * bz + ax * by - ay * bx + az * bw,
-            aw * bw - ax * bx - ay * by - az * bz)
-
-
-def rotate(q, v):
-    """Rotate vector v by quaternion q."""
-    qx, qy, qz, qw = q
-    vx, vy, vz = v
-    tx = 2 * (qy * vz - qz * vy)
-    ty = 2 * (qz * vx - qx * vz)
-    tz = 2 * (qx * vy - qy * vx)
-    return (vx + qw * tx + (qy * tz - qz * ty),
-            vy + qw * ty + (qz * tx - qx * tz),
-            vz + qw * tz + (qx * ty - qy * tx))
-
-
-def look_at(position, target, up=(0.0, 1.0, 0.0)):
-    """Orientation (x, y, z, w) whose -Z axis points from `position` to `target`."""
-    f = tuple(t - p for t, p in zip(target, position))
-    fl = math.sqrt(sum(c * c for c in f)) or 1.0
-    f = tuple(c / fl for c in f)
-    # camera axes: z = -f, x = up x z, y = z x x
-    z = tuple(-c for c in f)
-    x = (up[1] * z[2] - up[2] * z[1], up[2] * z[0] - up[0] * z[2], up[0] * z[1] - up[1] * z[0])
-    xl = math.sqrt(sum(c * c for c in x))
-    if xl < 1e-9:  # looking along the up axis
-        x = (1.0, 0.0, 0.0)
-        xl = 1.0
-    x = tuple(c / xl for c in x)
-    y = (z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0])
-    m00, m01, m02 = x[0], y[0], z[0]
-    m10, m11, m12 = x[1], y[1], z[1]
-    m20, m21, m22 = x[2], y[2], z[2]
-    trace = m00 + m11 + m22
-    if trace > 0:
-        s = 0.5 / math.sqrt(trace + 1.0)
-        return ((m21 - m12) * s, (m02 - m20) * s, (m10 - m01) * s, 0.25 / s)
-    if m00 > m11 and m00 > m22:
-        s = 2.0 * math.sqrt(1.0 + m00 - m11 - m22)
-        return (0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s)
-    if m11 > m22:
-        s = 2.0 * math.sqrt(1.0 + m11 - m00 - m22)
-        return ((m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s)
-    s = 2.0 * math.sqrt(1.0 + m22 - m00 - m11)
-    return ((m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s)
 
 
 class SimInput:
@@ -141,6 +84,7 @@ class SimSession:
         self._coin = coin
         self.input = SimInput(profile)
         self.last_frame = None
+        self.events = []
         self.scene = coin.SoSeparator()
         self.scene.ref()
         environment = coin.SoEnvironment()
@@ -149,8 +93,11 @@ class SimSession:
         light = coin.SoDirectionalLight()
         light.direction.setValue(-0.4, -0.8, -0.6)
         self.scene.addChild(light)
+        self.navigator = Navigator()
+        self.nav_xf = coin.SoTransform()
         if document_scene is not None:
             doc = coin.SoSeparator()
+            doc.addChild(self.nav_xf)
             xf = coin.SoTransform()
             xf.scaleFactor.setValue(0.001, 0.001, 0.001)
             xf.rotation.setValue(coin.SbRotation(coin.SbVec3f(1, 0, 0), -math.pi / 2))
@@ -173,6 +120,11 @@ class SimSession:
         """Advance the simulated time, pose the controller models and return the `InputFrame`."""
         from freecad.BlocksCAD.render.controller_shape import animate
         frame = self.input.frame(dt)
+        self.events = self.navigator.update(frame)
+        world = self.navigator.world
+        self.nav_xf.translation.setValue(*world.position)
+        self.nav_xf.rotation.setValue(*world.rotation)
+        self.nav_xf.scaleFactor.setValue(world.scale, world.scale, world.scale)
         for hand, xf in enumerate(self.hand_transforms):
             aim = frame.hands[hand].aim
             xf.translation.setValue(*aim.position)

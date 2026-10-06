@@ -78,5 +78,35 @@ class SimSessionTest(unittest.TestCase):
             s.close()
 
 
+class SimNavigationTest(unittest.TestCase):
+    def test_two_grip_spread_enlarges_the_world_on_screen(self):
+        from pivy import coin
+        scene = coin.SoSeparator()
+        material = coin.SoMaterial()
+        material.diffuseColor.setValue(0.2, 0.7, 0.3)
+        scene.addChild(material)
+        cube = coin.SoCube()
+        cube.width = cube.height = cube.depth = 100.0   # millimetres, shown as 0.1 m
+        scene.addChild(cube)
+        s = sim.SimSession(scene)
+        try:
+            s.input.set_head(position=(0.0, 0.1, 1.2), look_at_point=(0.0, 0.0, 0.0))
+            s.input.set_hand(0, position=(-0.2, 0.0, 0.0))
+            s.input.set_hand(1, position=(0.2, 0.0, 0.0))
+            s.frame()
+            before = non_background(s.render("head", (200, 150)))
+            s.input.set_hand(0, grip=1.0)
+            s.input.set_hand(1, grip=1.0)
+            s.frame()
+            s.input.set_hand(0, position=(-0.4, 0.0, 0.0))
+            s.input.set_hand(1, position=(0.4, 0.0, 0.0))
+            s.frame()
+            self.assertAlmostEqual(s.navigator.world.scale, 2.0)
+            after = non_background(s.render("head", (200, 150)))
+            self.assertGreater(after, before * 1.5)
+        finally:
+            s.close()
+
+
 if __name__ == "__main__":
     unittest.main()
