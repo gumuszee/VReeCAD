@@ -25,5 +25,5 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Steam Frame controller grip, face buttons, stick click | Unverified | the input layer binds them as part of milestone M0 |
 | Meta Quest / Index / Vive / WMR / Pico controllers | Unverified | bindings exist for the profiles; no device tested |
 | Performance with large scenes | Unverified | |
-| Offscreen render of the document scene from an arbitrary camera pose to PNG | Verified | `tools/snippets/offscreen_render.py`; document geometry only, the XR rig overlays (controllers, panels) are rendered once they exist in the new rig |
+| Offscreen render of the document scene from an arbitrary camera pose to PNG | Verified | `tools/snippets/offscreen_render.py`; document geometry only, rendering the XR rig overlays (controllers, panels) is part of milestone M0 |
 | Dev remote control (`tools/fc_rpc.py`, MCP smoke test) | Verified | `tools/mcp_smoke_test.py` passes end to end |
