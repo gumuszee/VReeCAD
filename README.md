@@ -23,15 +23,15 @@ primitives, push/pull, booleans, moving points in space, sketches, constraints, 
 package.xml, LICENSE, Resources/, freecad/BlocksCAD/   the addon (FreeCAD loads the repo root as the addon)
 docs/       design, licensing, verification status, setup + gotchas, toolbox index, analyses of upstream/Open Blocks
 tools/      dev tooling (PowerShell/Python): bootstrap, launch FreeCAD, remote control, probes, test helpers
-refs/       read-only reference clones of FreeCAD, freecad-xr-workbench, open-blocks, freecad-mcp (git-ignored)
+refs/       read-only reference clones of FreeCAD, freecad-xr-workbench, open-blocks, freecad-mcp, OpenXR-Docs (git-ignored)
 CLAUDE.md   guidance for AI coding sessions working on this repo
 ```
 
 ## Use (development setup on Windows)
 
 ```powershell
-tools\bootstrap.ps1            # idempotent: refs, python deps, links the repo into FreeCAD's Mod dir
-tools\start-freecad.ps1        # launch FreeCAD (dev remote-control channel on :9875)
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\bootstrap.ps1       # idempotent: refs, python deps, links the repo into FreeCAD's Mod dir
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\start-freecad.ps1   # launch FreeCAD (dev remote-control channel on :9875)
 # in FreeCAD: open/create a document, switch to the "BlocksCAD" workbench, click "Open XR viewer" (SteamVR must see the headset)
 ```
 
@@ -39,5 +39,5 @@ Requires an OpenXR runtime with `XR_KHR_opengl_enable` (SteamVR, Monado, ...), p
 (installed into FreeCAD's Python by the bootstrap script).
 
 ## Docs
-[design](docs/design.md) · [verification](docs/verification.md) · [licensing](docs/licensing.md) · [setup & gotchas](docs/setup.md) · [toolbox](docs/toolbox.md) ·
+[design](docs/design.md) · [controller models](docs/controller-models.md) · [input profiles](docs/input-profiles.md) · [verification](docs/verification.md) · [licensing](docs/licensing.md) · [setup & gotchas](docs/setup.md) · [toolbox](docs/toolbox.md) ·
 [analysis: upstream addon](docs/analysis-xr-workbench.md) · [analysis: Open Blocks](docs/analysis-open-blocks.md)

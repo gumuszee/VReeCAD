@@ -50,7 +50,7 @@ Off hand = **palette hand**: carries the tool belt and info.
 | Thumbstick | tool option: grid size / segments / snap angle (up-down), cycle shape (left-right) | locomotion: move + snap/smooth turn (comfort option) |
 | Stick click | reset view / re-centre | toggle snapping guides |
 
-Mapping is data-driven (`input_map`), remappable in preferences. Vive/WMR (no face buttons) get a fallback layout.
+The two buttons are abstract (`button1`, `button2`): the mapping to physical controls is data-driven per interaction profile (`input-profiles.md`) and remappable in preferences. The Steam Frame left controller uses its D-pad directions as buttons; Vive/WMR use `menu` and trackpad click.
 
 ### The Blocks-like core: "move points"
 A parametric solid made of **editable points**: `BlocksCAD::Block` (FeaturePython, a polyhedron: `Vertices` (VectorList) + `Faces` (index lists), solid built with OCCT).
@@ -72,7 +72,7 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 ## Tool roadmap (milestones)
 | M | Deliverable |
 |---|---|
-| M0 | **Platform**: split `commonXR.py` into backends/input/rig/render; new action set (trigger, grip, stick+click, 2 face buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico; `InputFrame`; **Sim backend + offscreen render + test harness**; Tool registry wrapping old tools (no regression); radial palette skeleton; own controller models |
+| M0 | **Platform**: split `commonXR.py` into backends/input/rig/render; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools; radial palette skeleton |
 | M1 | Primitives (box, cylinder, cone, sphere, torus, wedge, prism) with snap grid, ghost preview, live dimension, undo/redo |
 | M2 | Selection/hover highlight (vertex/edge/face/object), Grab tool (move/rotate, two-hand scale -> parameters), world navigation |
 | M3 | Value panel: keypad + expressions + variables spreadsheet; property editing from VR |
@@ -89,8 +89,8 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 4. Real-device facts that sims cannot prove (comfort, tracking, button feel) stay explicitly marked *unverified* until the owner confirms.
 
 ## Risks / open items
-- Frame-controller OpenXR profile (`XR_VALVE_frame_controller_interaction`) input paths must be confirmed against the spec/runtime (the upstream addon binds only stick, trigger and pose).
+- The addon binds the physical controls listed in `input-profiles.md`; the inherited code binds only stick, trigger and pose.
 - Python per-frame cost: keep gesture math light; do OCCT work on release only.
 - FeaturePython `Block` objects need the addon to be installed to recompute on reopen (shape is cached; document remains viewable without it).
-- The inherited controller `.iv` models have no stated licence: they are replaced by own models in M0.
+- Controller models come from the runtime and are not bundled (`controller-models.md`); the inherited `.iv` controller models, whose licence is not stated, are removed in M0.
 - Naming: see `licensing.md` (trademark and an existing product called "BlocksCAD").

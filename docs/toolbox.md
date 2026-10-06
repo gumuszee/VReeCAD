@@ -11,12 +11,17 @@ Every script we built, so nobody reinvents it. All paths relative to the repo ro
 | `tools/fc_rpc.py` | Stdlib-only XML-RPC client for the running FreeCAD: `status`, `docs`, `objects <doc>`, `exec "<code>"`/`exec -f file`, `shot out.png [View]`. Importable (`exec_code`). Exit code reflects success. | `python tools\fc_rpc.py exec "print(App.ActiveDocument.Name)"` |
 | `tools/mcp_smoke_test.py` | Full-chain MCP test (MCP client -> server -> RPC -> GUI): builds a plate with a hole, checks volume, saves screenshot to `tools/logs/`. | `uv run --directory refs/freecad-mcp python ../../tools/mcp_smoke_test.py` |
 | `tools/xr_probe.py` | Standalone OpenXR check: runtime, `XR_KHR_opengl_enable`, instance (API 1.0 then newest), HMD system, GL requirements. Run with FreeCAD's Python. | `& "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" tools\xr_probe.py` |
+| `tools/xr_probe_paths.py` | Instance-only probe: which input/output paths a runtime accepts for an interaction profile (default Steam Frame). Prints accepted components per hand; `-v` lists every path. | `& "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" tools\xr_probe_paths.py [profile] [ext1,ext2] [-v]` |
+| `tools/snippets/xr_render_models.py` | FreeCAD-side: enumerate the runtime's controller models, download the glTF assets to the local cache, print node names and a glTF summary (needs a `FOCUSED` session). | `... exec -f tools\snippets\xr_render_models.py` |
+| `tools/snippets/xr_render_model_live.py` | FreeCAD-side: per model the hand, location versus the controllers and the animatable node state (pull a trigger while running). | `... exec -f tools\snippets\xr_render_model_live.py` |
 | `tools/snippets/report_view.py` | FreeCAD-side snippet: dump the Report view (where addon `print`s go). | `python tools\fc_rpc.py exec -f tools\snippets\report_view.py` |
 | `tools/snippets/xr_state.py` | FreeCAD-side: print live OpenXR session state (`SYNCHRONIZED`=headset off, `FOCUSED`=in use). | `... exec -f tools\snippets\xr_state.py` |
 | `tools/snippets/offscreen_render.py` | FreeCAD-side: render the active document's scene offscreen from any eye pose/target to a PNG (virtual head, no headset). Parameters are set through globals `RENDER_EYE`, `RENDER_TARGET`, `RENDER_OUT`, `RENDER_SIZE`. | `... exec -f tools\snippets\offscreen_render.py` |
 | `tools/snippets/xr_restart.py` | FreeCAD-side: hot-reload addon modules and restart the XR viewer (fast edit loop; restart FreeCAD for class-identity changes). | `... exec -f tools\snippets\xr_restart.py` |
 
 > Everything under `tools/` is **development tooling**, not shipped with the addon. `fc_rpc.py`, `mcp_smoke_test.py` and the MCP bits only exist to let a developer/agent remote-control a running FreeCAD; the addon never depends on them.
+
+PowerShell scripts run as `powershell -NoProfile -ExecutionPolicy Bypass -File tools\<script>.ps1` (the default policy blocks unsigned scripts).
 
 ## Edit loop for addon development
 

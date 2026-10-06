@@ -11,6 +11,7 @@ this page records *what* it does and *why*, plus the facts you need when somethi
 | FreeCAD user dir | `%APPDATA%\FreeCAD\v1-1` | `Mod\` holds our junctions; `user.cfg`; `freecad_mcp_settings.json` |
 | `pyopenxr` 1.1.6302, `PyOpenGL` 3.1.10 (+glfw) | FreeCAD's `bin\Lib\site-packages` | `bin\python.exe -m pip install ...`. **Lost if FreeCAD is reinstalled/upgraded** - rerun bootstrap. |
 | The addon (this repo) | repo root -> junction `Mod\BlocksCAD` | Namespace `freecad.BlocksCAD`, workbench `BlocksCADWorkbench`. It has its own namespace, distinct from upstream's `freecad.XR`; do not install both. Edit repo, restart FreeCAD (or `tools/snippets/xr_restart.py`). |
+| OpenXR spec sources (sparse) | `refs\OpenXR-Docs\specification\sources\chapters\extensions\{ext,valve}` | Khronos spec text (AsciiDoc) for extension questions, e.g. `ext\ext_render_model.adoc` |
 | MCP RPC addon (DEV-ONLY) | `refs\freecad-mcp\addon\FreeCADMCP` -> junction `Mod\FreeCADMCP` | Runs XML-RPC on `127.0.0.1:9875`, auto-start enabled. If we start modifying it, copy it out of `refs/` into our own repo. |
 | MCP server (external process) | `refs\freecad-mcp` run via `uv` (Python >= 3.12) | `uv` installed with `winget install astral-sh.uv`. Never pip-install it into FreeCAD's Python. |
 | Claude Code registration (DEV-ONLY) | `.mcp.json` (project scope, git-ignored; bootstrap writes it) | The Claude app must be restarted after uv is first installed (PATH) and the project MCP server approved on first use. |
@@ -53,4 +54,9 @@ uv run --directory refs/freecad-mcp python ../../tools/mcp_smoke_test.py   # who
     fails on locked files; `robocopy /E` copies reliably.
 12. The upstream action set contains only pose, thumbstick x/y and trigger (no grip, no face buttons). The Steam Frame profile
     `valve/frame_controller_valve` is enabled only if the runtime offers `XR_VALVE_frame_controller_interaction`. The full action set is specified in `design.md`.
-13. The repo `.gitignore` excludes `__pycache__`, `refs/`, `tools/logs/` and `.mcp.json`; check `git status` before committing.
+13. PowerShell scripts are run as `powershell -NoProfile -ExecutionPolicy Bypass -File tools\<script>.ps1`; the default execution policy rejects unsigned scripts.
+14. `XR_EXT_render_model` requires `XR_EXT_uuid` on an OpenXR 1.0 instance; without it `xrCreateInstance` fails with a validation error.
+15. Runtime controller models exist only after the first successful `xrSyncActions`, and their spaces are locatable only while the session is `FOCUSED` (not `VISIBLE`). See `controller-models.md`.
+16. The pyopenxr 1.1.6302 wrappers for render models do not work as called (UUID default, missing two-call idiom, missing preallocated arrays); `controller-models.md` lists the workarounds.
+17. Text sent through the RPC `execute_code` is XML: a snippet file containing a NUL or another control character is rejected (`not well-formed (invalid token)`); runtime strings are printed with `ascii()`.
+18. The repo `.gitignore` excludes `__pycache__`, `refs/`, `tools/logs/` and `.mcp.json`; check `git status` before committing.

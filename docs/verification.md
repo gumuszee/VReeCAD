@@ -26,4 +26,8 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Meta Quest / Index / Vive / WMR / Pico controllers | Unverified | bindings exist for the profiles; no device tested |
 | Performance with large scenes | Unverified | |
 | Offscreen render of the document scene from an arbitrary camera pose to PNG | Verified | `tools/snippets/offscreen_render.py`; document geometry only, rendering the XR rig overlays (controllers, panels) is part of milestone M0 |
+| Runtime controller models: both interaction render models enumerated, GLB assets downloaded, node names read, model spaces located while `FOCUSED`, node animation reported | Verified | Steam Frame controllers, SteamVR 2.17.10; `controller-models.md` |
+| Controller models rendered in the headset | Unverified | the glTF loader and rig nodes are part of milestone M0 |
+| Steam Frame controller input paths accepted by the runtime | Verified | `tools/xr_probe_paths.py`; `input-profiles.md` |
+| Steam Frame left D-pad directions work as buttons | Verified | owner-confirmed |
 | Dev remote control (`tools/fc_rpc.py`, MCP smoke test) | Verified | `tools/mcp_smoke_test.py` passes end to end |
