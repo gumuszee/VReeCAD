@@ -14,6 +14,7 @@ direction `docs/design.md`; verification state `docs/verification.md`.
 - **No AI/MCP in the addon** (`freecad/`, `Resources/`, `package.xml`). Dev tooling (`tools/`, the freecad-mcp RPC addon in `refs/`) is development-only; the addon must not import or depend on it.
 - Strictly parametric CAD: gestures create/edit real FreeCAD features (Part/PartDesign/Sketcher), never baked geometry.
 - Keep upstream LGPL headers; new files get the same LGPL-3.0-or-later header + our copyright. See `docs/licensing.md`. Don't use Google's "Blocks" name/logo.
+- **Never use em-dashes, en-dashes or double hyphens as punctuation** in comments, docs, commit messages or replies (use commas, colons, parentheses). Literal command-line flags are exempt.
 - `refs/` is read-only. Work on the **installed** FreeCAD, not a source build (`refs/FreeCAD` is newer, 27.1-dev).
 
 ## Working with the live FreeCAD
@@ -21,6 +22,10 @@ direction `docs/design.md`; verification state `docs/verification.md`.
 - Addon `print()` is only visible in the Report view: `tools/snippets/report_view.py`. XR state: `xr_state.py`. Hot reload: `xr_restart.py`.
 - Only the owner can wear the headset: ask for in-headset verification and record the result in `docs/verification.md`; mark unverified claims as such. Prefer the Sim backend / offscreen renders for self-testing (design.md, Test strategy).
 - Windows quirks: avoid `2>&1` on native commands in PowerShell 5.1; Python console is cp1252 (force UTF-8); heredocs with apostrophes break the Bash tool - use the Write tool for docs. A session's working directory is locked and cannot be renamed while the session runs.
+
+## Tests
+- Pure unit tests (no FreeCAD): `& "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" -m unittest discover -s tests`. GUI-dependent tests: `python tools\fc_rpc.py exec -f tools\snippets\run_live_tests.py`. Run both before committing addon changes.
+- Tools are classes in `freecad/BlocksCAD/tools/` (registered with `@register`); they see only the `InputFrame`. Drive them headless with `backends/sim.py` (`tools/snippets/sim_demo.py`).
 
 ## Conventions
 - New script -> `tools/` (FreeCAD-side snippets in `tools/snippets/`), header comment with purpose/usage, row in `docs/toolbox.md`.

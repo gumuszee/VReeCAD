@@ -14,14 +14,15 @@ primitives, push/pull, booleans, moving points in space, sketches, constraints, 
 |---|---|
 | Version | 0.1.0 |
 | Verified on | FreeCAD 1.1.4, Windows 11, SteamVR OpenXR 2.17, Steam Frame (details: [docs/verification.md](docs/verification.md)) |
-| Capabilities | view documents in VR, locomotion, line and cube builders, select / pad / pocket, drag, Qt panel overlay (inherited controls, rated unintuitive) |
-| Milestone in progress | M0 platform rework, see [docs/design.md](docs/design.md) |
+| Capabilities | view documents in VR, locomotion, line and cube builders, select / pad / pocket, drag, Qt panel overlay (inherited controls, rated unintuitive); full action set per controller profile, runtime-provided controller models, tool registry, radial tool palette (hold button1 on the left hand), headless Sim backend with offscreen rendering |
+| Milestone | M0 platform implemented except the `rig.py` split; in-headset checks pending ([docs/verification.md](docs/verification.md)); next M1 primitives, see [docs/design.md](docs/design.md) |
 
 ## Repository layout
 
 ```
 package.xml, LICENSE, Resources/, freecad/BlocksCAD/   the addon (FreeCAD loads the repo root as the addon)
 docs/       design, licensing, verification status, setup + gotchas, toolbox index, analyses of upstream/Open Blocks
+tests/      unit tests (pure Python, `tests/live/` needs the FreeCAD GUI)
 tools/      dev tooling (PowerShell/Python): bootstrap, launch FreeCAD, remote control, probes, test helpers
 refs/       read-only reference clones of FreeCAD, freecad-xr-workbench, open-blocks, freecad-mcp, OpenXR-Docs (git-ignored)
 CLAUDE.md   guidance for AI coding sessions working on this repo

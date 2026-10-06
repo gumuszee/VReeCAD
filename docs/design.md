@@ -1,6 +1,6 @@
 # BlocksCAD design
 
-Status: agreed direction; milestone M0 is in progress.
+Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction; its in-headset checks are listed in `verification.md`.
 Inspiration: Open Blocks' simple direct manipulation; substance: real parametric CAD in FreeCAD.
 
 ## Decisions (from the project owner, 2026-10-06)
@@ -16,18 +16,20 @@ Inspiration: Open Blocks' simple direct manipulation; substance: real parametric
 
 ## Architecture
 
-Python addon (`freecad.BlocksCAD`), no FreeCAD C++ changes. Layers, bottom-up:
+Python addon (`freecad.BlocksCAD`), no FreeCAD C++ changes. Layers, bottom-up (`*` marks planned modules):
 
 ```
-backends/   openxr.py  (session, swapchains, action sets, poses, haptics - from upstream commonXR, cleaned)
-            sim.py     (scripted/desktop input: fake HMD + 2 controllers, no headset)       <- test + desktop mode
-input.py    InputFrame: hmd pose, per hand {pose, trigger, grip, stick xy+click, btn_a, btn_b, menu}; edge events (pressed/released)
-rig.py      Coin scene root: world transform, controller models, rays, tips, HUD anchors, comfort (vignette later)
-render.py   per-eye render (openxr) | offscreen render to PNG (sim/test)
-ui/         radial palette, panels, numeric keypad, value field, tool tips, toasts       (Coin-based; Qt overlay stays for FreeCAD panels)
-tools/      Tool base class + registry; one module per tool
-core/       snapping, picking/highlight, preview ghosts, transactions (undo), units, parameter binding
-cad/        thin wrappers creating/editing FreeCAD features (Part primitives, Sketcher, PartDesign, booleans, Attacher)
+backends/   openxr_input.py   action set, bindings per profile, polling into InputFrame, haptics
+            openxr_models.py  runtime-provided controller models (XR_EXT_render_model)
+            sim.py            scripted head + 2 controllers, offscreen mono/stereo render, no headset  <- test + desktop mode
+input.py    InputFrame: head pose, per hand {aim/grip pose, trigger, grip, stick xy+click, button1, button2, menu}; edge events
+profiles.py abstract input -> OpenXR path per interaction profile (data, see input-profiles.md)
+gltf.py     GLB reader;  render/  gltf_coin.py (glTF -> Coin3D), controller_shape.py (generated), offscreen.py (image render)
+commonXR.py XRwidget: OpenXR session, swapchains, Coin scene, render loop, inherited interact_* handlers (to be split: rig*)
+ui/         palette.py + palette_view.py (radial palette); panels*, numeric keypad*, value field*, tool tips*, toasts*
+tools/      base.py, registry.py, manager.py, legacy.py (the six inherited modes as tools); new tools: one module each
+core/*      snapping, picking/highlight, preview ghosts, transactions (undo), units, parameter binding
+cad/*       thin wrappers creating/editing FreeCAD features (Part primitives, Sketcher, PartDesign, booleans, Attacher)
 ```
 
 Rules:
@@ -72,7 +74,7 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 ## Tool roadmap (milestones)
 | M | Deliverable |
 |---|---|
-| M0 | **Platform**: split `commonXR.py` into backends/input/rig/render; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools; radial palette skeleton |
+| M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools; radial palette skeleton |
 | M1 | Primitives (box, cylinder, cone, sphere, torus, wedge, prism) with snap grid, ghost preview, live dimension, undo/redo |
 | M2 | Selection/hover highlight (vertex/edge/face/object), Grab tool (move/rotate, two-hand scale -> parameters), world navigation |
 | M3 | Value panel: keypad + expressions + variables spreadsheet; property editing from VR |
@@ -92,5 +94,5 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 - The addon binds the physical controls listed in `input-profiles.md`; the inherited code binds only stick, trigger and pose.
 - Python per-frame cost: keep gesture math light; do OCCT work on release only.
 - FeaturePython `Block` objects need the addon to be installed to recompute on reopen (shape is cached; document remains viewable without it).
-- Controller models come from the runtime and are not bundled (`controller-models.md`); the inherited `.iv` controller models, whose licence is not stated, are removed in M0.
+- Controller models come from the runtime and are not bundled (`controller-models.md`); the repository contains no controller meshes.
 - Naming: see `licensing.md` (trademark and an existing product called "BlocksCAD").

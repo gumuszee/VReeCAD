@@ -45,14 +45,20 @@ The assets are cached as `%LOCALAPPDATA%\BlocksCAD\cache\rendermodels\<uuid>.glb
 
 ## Loading into Coin3D
 
-Coin has no glTF loader. The addon parses the GLB itself (JSON chunk + binary chunk, `struct`/`json`/`numpy`, PNG decode through Qt `QImage`) and
-builds, per animatable node, `SoSeparator { SoTransform (node pose) ; SoCoordinate3 ; SoNormal ; SoTextureCoordinate2 ; SoTexture2 ; SoIndexedFaceSet }`
-with a `SoSwitch` for visibility. Texture rows are flipped (glTF origin is top-left, Coin bottom-left). The parsed result is built once per UUID.
+Coin has no glTF loader. `gltf.py` parses the GLB (JSON chunk + binary chunk, `struct`/`json`/`numpy`) and `render/gltf_coin.py` builds, per glTF node,
+`SoSwitch { SoSeparator { SoTransform (node pose) ; SoMaterial ; SoTexture2 ; SoShapeHints ; SoCoordinate3 ; SoNormal ; SoTextureCoordinate2 ; SoIndexedFaceSet ; child nodes } }`;
+the switch hides a node and its subtree, the transform poses it. PNG decode goes through Qt `QImage`. The decoded atlas is one `SoTexture2` shared by all meshes that use it
+(the Steam Frame models use one 2048 x 2048 atlas for all nodes). Texture coordinates are used as stored: glTF has its origin at the top-left of the image, and the decoded rows
+are passed top row first, so no flip is applied. Building one Frame controller takes about 0.1 s. The cached GLB is read from disk when its UUID is known; the
+node states reported by the runtime (`xrGetRenderModelStateEXT`) replace the local pose and the visibility of the named nodes every frame.
+
+The Frame controller atlas is near black (mean RGB about 15 of 255), so the models look black unless the scene is brightly lit.
 
 ## Fallback
 
 If the extensions are missing, the models cannot be loaded, or before the first sync, the rig shows a **generated** controller shape
-(simple primitives created in code, no assets). The fallback is also what the Sim backend renders.
+(simple primitives created in code, no assets, `render/controller_shape.py`). It uses the frame and the part names of the runtime models (`trigger`, `thumbstick`,
+`button_a`, ...), is placed at the aim pose, and is animated from the `InputFrame`. The fallback is also what the Sim backend renders.
 
 ## Rules from the specification
 

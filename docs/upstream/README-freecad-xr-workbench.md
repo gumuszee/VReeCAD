@@ -86,13 +86,13 @@ Depending on platform, the mirror window may or may not need to be shown and foc
 ## Controller menus
 Pressing the left controller trigger shows the main options and tools menu. The current tool can be selected by pointing the ray and releasing the trigger. The selected tool affects the right controller behavior. Currently available tools:
 
-* Teleport Mode – enables teleport movement. Point the right controller ray at the destination surface and press its trigger. You will be teleported to the new destination.
-* Line Builder – allows building polylines in 3D space. If a polyline is created on a flat plane and closed, it will be converted to a face. You may use the Working Plane tool as a plane for drawing polylines. Press the left controller trigger to finish polyline creation. You may also adjust the picking radius (using a slider in the same menu) for easier point snapping.
-* Cube Builder – press the right controller trigger and drag to create a cube. This simple tool is included mostly as an example.
-* Selection Mode – select and edit an object in 3D space.
-* Dragging Mode – select and drag an object in 3D space. If the object is part of an assembly, it must have 6 DOF and must be constrained with GroundedJoint. Dragging works by changing the object’s placement. The assembly solver detects the constrained object’s placement change and adjusts the placement of other objects.
-* Working Plane – allows you to set a working plane with the right controller ray. It is useful for Line Builder, as vertices can be snapped to the plane.
-* Toggle Overlay – toggles the projection of the main window’s Qt widgets in 3D space. By default, the Tree View and Tasks View are projected. The right controller ray emulates mouse pointing, including left mouse click and double-click. Right mouse click and dragging are not implemented yet.
+* Teleport Mode: enables teleport movement. Point the right controller ray at the destination surface and press its trigger. You will be teleported to the new destination.
+* Line Builder: allows building polylines in 3D space. If a polyline is created on a flat plane and closed, it will be converted to a face. You may use the Working Plane tool as a plane for drawing polylines. Press the left controller trigger to finish polyline creation. You may also adjust the picking radius (using a slider in the same menu) for easier point snapping.
+* Cube Builder: press the right controller trigger and drag to create a cube. This simple tool is included mostly as an example.
+* Selection Mode: select and edit an object in 3D space.
+* Dragging Mode: select and drag an object in 3D space. If the object is part of an assembly, it must have 6 DOF and must be constrained with GroundedJoint. Dragging works by changing the object’s placement. The assembly solver detects the constrained object’s placement change and adjusts the placement of other objects.
+* Working Plane: allows you to set a working plane with the right controller ray. It is useful for Line Builder, as vertices can be snapped to the plane.
+* Toggle Overlay: toggles the projection of the main window’s Qt widgets in 3D space. By default, the Tree View and Tasks View are projected. The right controller ray emulates mouse pointing, including left mouse click and double-click. Right mouse click and dragging are not implemented yet.
 
 ### Selection mode (EXPERIMENTAL)
 If Selection Mode is enabled, pointing the right controller ray at an object and pressing the trigger displays an edit menu near the right controller. For example:
