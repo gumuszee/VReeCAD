@@ -20,6 +20,11 @@ import freecad.BlocksCAD.ui.toast as _ts
 import freecad.BlocksCAD.ui.undo_button as _ub
 import freecad.BlocksCAD.ui.options as _op
 import freecad.BlocksCAD.ui.feedback_view as _fv
+import freecad.BlocksCAD.core.stage as _sg
+import freecad.BlocksCAD.core.snapping as _sn
+import freecad.BlocksCAD.cad.primitives as _pm
+import freecad.BlocksCAD.render.ghost as _gh
+import freecad.BlocksCAD.tools.primitives as _tp
 import freecad.BlocksCAD.ui.ruler as _ru
 import freecad.BlocksCAD.ui.settings as _cf
 import freecad.BlocksCAD.ui.pointing as _pg
@@ -32,7 +37,7 @@ import freecad.BlocksCAD.tools.legacy as _tl
 import freecad.BlocksCAD.ui.controller as _ctl
 import freecad.BlocksCAD.backends.sim as _sim
 import freecad.BlocksCAD.render.offscreen as _off
-for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _tb, _tr, _tools, _tl, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
+for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _sg, _sn, _pm, _gh, _tb, _tr, _tools, _tp, _tl, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
     importlib.reload(_m)
 from pivy import coin as _coin
 
@@ -158,7 +163,8 @@ try:
         name, label = "sized", "Sized"
         options = (_tb.ToolOption("size", "Grid", "length", 1.0, 100.0, 1.0, 10.0),)
 
-    _s.ui.active_tool = _Sized(_tb.ToolContext())
+    _tr.register(_Sized)
+    _s.select_tool("sized")
     _s.input.set_hand(1, stick=(0.0, 1.0))
     for _ in range(12):
         _s.frame(0.02)
@@ -168,10 +174,50 @@ try:
     _s.input.set_head(position=_head, look_at_point=(0.1, 1.25, -0.5))
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_readout.png"))
     print("readout:", _s.ui.feedback._readout.label)
-    _s.ui.active_tool = None
+    _s.tool_manager.active_name = None
+    _tr.unregister("sized")
     _s.ui.settings.tip_angle = 15.0
     _s.input.set_head(position=_head, look_at_point=_ctrl)
     _s.input.set_hand(1, stick=(0.0, 0.0), position=(0.25, 1.3, -0.25), point_at=(0.0, 1.3, -1.0))
+    for _ in range(40):
+        _s.frame(0.02)
+
+    # the primitive tool: a cross marks the grid point under the tip, a drag spans a box and a ghost shows the chosen shape
+    _s.ui.settings.pointer_mode = "tip"
+    _s.ui.settings.tip_angle = 0.0
+    _s.select_tool("primitive")
+    _tool = _s.tool_manager.active
+    _tool.ctx.services["document"] = lambda: None        # the render must not make anything in the open document
+    _tool.values["grid"] = "20 mm"
+    _to_stage = lambda p: _sg.to_stage(_s.navigator.world, p)
+    _centre = _to_stage((260.0, 0.0, 40.0))          # beside the 300 mm test cube
+    _s.input.set_head(position=_mu.add(_centre, (0.1, 0.25, 0.4)), look_at_point=_centre)
+    _s.input.set_hand(1, position=_to_stage((200.0, -60.0, 0.0)), point_at=_to_stage((200.0, -60.0, -1000.0)))
+    _s.frame(0.02)
+    _shift = tuple(c - p for c, p in zip(_s.ui.cursor(_s.last_frame.hands[1]), _s.last_frame.hands[1].aim.position))
+
+    def _cursor(point, **inputs):
+        _s.input.set_hand(1, position=tuple(t - c for t, c in zip(_to_stage(point), _shift)), **inputs)
+        _s.frame(0.02)
+
+    _cursor((220.0, -40.0, 0.0))
+    for _ in range(3):
+        _s.frame(0.02)
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_primitive_marker.png"))
+    for _shape in ("Cylinder", "Torus", "Wedge"):
+        _tool.values["shape"] = _shape
+        _cursor((200.0, -60.0, 0.0), trigger=1.0)
+        _cursor((320.0, 60.0, 80.0), trigger=1.0)
+        for _ in range(3):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_primitive_" + _shape.lower() + ".png"))
+        print(_shape, "readout:", _s.ui.gesture_text)
+        _cursor((320.0, 60.0, 80.0), trigger=0.0)
+    _s.tool_manager.active_name = None
+    _s.ui.settings.pointer_mode = "laser"
+    _s.ui.settings.tip_angle = 15.0
+    _s.input.set_head(position=_head, look_at_point=_ctrl)
+    _s.input.set_hand(1, trigger=0.0, position=(0.25, 1.3, -0.25), point_at=(0.0, 1.3, -1.0))
     for _ in range(40):
         _s.frame(0.02)
 

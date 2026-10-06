@@ -32,9 +32,12 @@ import freecad.BlocksCAD.qtWidgetRender as qWRen
 from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
+from freecad.BlocksCAD.core import stage, units
+from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.ui.controller import UiController
 from freecad.BlocksCAD.core.navigation import WorldPose
-import freecad.BlocksCAD.tools.legacy  # noqa: F401  (registers the inherited tools)
+import freecad.BlocksCAD.tools.primitives  # noqa: F401  (registers the tools)
+import freecad.BlocksCAD.tools.legacy  # noqa: F401
 from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
 from freecad.BlocksCAD.backends.openxr_models import RuntimeModels
 from freecad.BlocksCAD.render.gltf_coin import load_glb
@@ -59,7 +62,6 @@ from pivy.coin import SbColor
 from pivy.coin import SoSeparator
 import ctypes
 import logging
-from enum import Enum
 
 try:
     from PySide6.QtWidgets import QDockWidget
@@ -222,15 +224,6 @@ stringForFormat = {
 }
 
 
-class InteractMode(Enum):
-    TELEPORT = 1
-    LINE_BUILDER = 2
-    CUBE_BUILDER = 3
-    SELECT_MODE = 4
-    DRAG_MODE = 5
-    WORKING_PLANE = 6
-
-
 class DockWidget(QDockWidget):
     def __init__(self, parent=None):
         QDockWidget.__init__(self, parent)
@@ -283,14 +276,6 @@ class DockWidget(QDockWidget):
 
 
 class XRwidget(QOpenGLWidget):
-    @property
-    def interact_mode(self):
-        return InteractMode[self.tools.active_name.upper()]
-
-    @interact_mode.setter
-    def interact_mode(self, mode):
-        self.tools.activate(mode.name.lower())
-
     def __init__(self, parent=None, log_level=logging.WARNING):
         QOpenGLWidget.__init__(self, parent)
         self.log_level = log_level
@@ -389,7 +374,7 @@ class XRwidget(QOpenGLWidget):
         # 0 is the left one - defined in hand_paths
         self.secondary_con = 1
         self.tools = ToolManager(ToolContext(host=self, dominant=self.secondary_con))
-        self.interact_mode = InteractMode.TELEPORT
+        self.tools.activate("teleport")
         self.frame_duration = 0
         self.render_duration = 0
 
@@ -506,6 +491,7 @@ class XRwidget(QOpenGLWidget):
         self.world_separator.addChild(self.nav_transform)
         self.world_separator.addChild(self.doc_xr_transform)
         self.world_separator.addChild(self.sg)  # add FreeCAD active scenegraph
+        self.world_separator.addChild(self.ghost.root)  # preview of the shape being made
         self.cgrp = [SoGroup(), SoGroup()]  # group for camera
         self.sgrp = [SoGroup(), SoGroup()]  # group for scenegraph
         self.root_scene = [SoSeparator(), SoSeparator()]
@@ -644,6 +630,25 @@ class XRwidget(QOpenGLWidget):
         self.ui = UiController(tool_registry.names(), tool_registry.label_of, actions, tool_hint=tool_registry.hint_of,
                                palette_hand=self.primary_con, tool_hand=self.secondary_con)
         self.navigator = self.ui.navigator
+        self.setup_tool_services()
+
+    def setup_tool_services(self):
+        """What the tools may use besides the input frame (docs/design.md, Architecture): the cursor, the document, the ghost."""
+        self.ghost = Ghost()      # the preview of a shape being made, in document space (added next to the document scene)
+        self.ui_consumes_trigger = False
+        context = self.tools.ctx
+        context.haptic = self.haptic
+        context.services.update({
+            "cursor": lambda hand: self.ui.cursor(self.input_frame.hands[hand]),
+            "to_document": lambda point: stage.to_document(self.navigator.world, point,
+                                                           self.doc_xr_transform.scaleFactor.getValue()[0]),
+            "document": lambda: App.ActiveDocument,
+            "trigger_free": lambda: not self.ui_consumes_trigger,
+            "ghost": self.ghost,
+            "toast": self.ui.toast,
+            "readout": self.ui.set_readout,
+            "format_length": lambda mm: units.format_length(mm, self.ui.system),
+        })
 
     def toggle_overlays(self):
         for w in self.qt_widget_renders:
@@ -1096,6 +1101,7 @@ class XRwidget(QOpenGLWidget):
         self.input_frame = frame
         self.update_controller_models(frame)
         ui_update = self.update_ui(frame)
+        self.ui_consumes_trigger = ui_update.consume_trigger
         for hand in range(self.hand_count):
             h = frame.hands[hand]
             con = self.xr_con[hand]

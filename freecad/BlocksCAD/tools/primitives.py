@@ -1,0 +1,150 @@
+# ***************************************************************************
+# *                                                                         *
+# *   Copyright (c) 2026 Vojtech Tuma                                       *
+# *                                                                         *
+# *   This program is free software; you can redistribute it and/or modify  *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)    *
+# *   as published by the Free Software Foundation; either version 3 of     *
+# *   the License, or (at your option) any later version.                   *
+# *                                                                         *
+# *   This program is distributed in the hope that it will be useful,       *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# ***************************************************************************
+"""The primitive tool: make a parametric box, cylinder, cone, sphere, torus, wedge or prism by moving a point in space.
+
+The tip of the tool hand is the cursor. Its position snaps to the grid in document millimetres and a cross shows where a press
+would start. Holding the trigger and moving the hand drags out an axis-aligned box; the chosen shape is fitted into it (a ghost
+shows the result, the readout names the three sizes). Releasing the trigger makes the feature in one undo step; a tap without a
+drag places the shape at a default size (4 grid steps) centred on the cursor. The stick up and down changes the grid, left and
+right the shape (`ToolOption`s). A grip or a change of tool cancels a drag.
+
+Services (`ToolContext.services`; every one is optional so the tool also runs in tests):
+  cursor(hand) -> stage point of the tip of that hand        to_document(point) -> document millimetres
+  document() -> the active FreeCAD document or None          trigger_free() -> False while the interface owns the trigger
+  ghost -> `render.ghost.Ghost`                              toast(text), readout(text or None), format_length(mm)
+  create(doc, shape, lo, size), mesh(shape, lo, size)        replace the `cad.primitives` functions (tests)"""
+
+from freecad.BlocksCAD.cad import primitives
+from freecad.BlocksCAD.core import snapping
+from freecad.BlocksCAD.tools.base import Tool, ToolOption
+from freecad.BlocksCAD.tools.registry import register
+
+GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
+
+
+@register
+class PrimitiveTool(Tool):
+    name = "primitive"
+    label = "Create"
+    hint = "Drag a box in space to make a shape, tap to place one"
+    options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS),
+               ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES))
+
+    def __init__(self, ctx):
+        super().__init__(ctx)
+        self._start = None        # document point (on the grid) where the trigger went down
+        self._current = None
+        self._marker = None
+        self._built = None       # (shape, lo, size) the ghost shows
+
+    # services
+    def _service(self, name, default=None):
+        return self.ctx.services.get(name, default)
+
+    @property
+    def grid(self):
+        return float(self.values["grid"].split()[0])
+
+    def _format(self, mm):
+        return self._service("format_length", lambda v: f"{v:g} mm")(mm)
+
+    def _haptic(self, amplitude, duration):
+        if self.ctx.haptic is not None:
+            self.ctx.haptic(self.ctx.dominant, amplitude, duration)
+
+    def _ghost(self):
+        return self._service("ghost")
+
+    # lifecycle
+    def deactivate(self):
+        self._cancel()
+        ghost = self._ghost()
+        if ghost is not None:
+            ghost.hide()
+        self._marker = None
+
+    def _cancel(self):
+        self._start = self._current = self._built = None
+        ghost = self._ghost()
+        if ghost is not None:
+            ghost.hide_shape()
+        readout = self._service("readout")
+        if readout is not None:
+            readout(None)
+
+    def update(self, frame):
+        cursor, to_document = self._service("cursor"), self._service("to_document")
+        if cursor is None or to_document is None:
+            return
+        hand = frame.hands[self.ctx.dominant]
+        point = snapping.snap_point(to_document(cursor(self.ctx.dominant)), self.grid)
+        gripping = any(h.down("grip") for h in frame.hands)
+        if self._start is not None:
+            if gripping:
+                self._cancel()
+                return
+            self._drag(hand, point)
+            return
+        free = self._service("trigger_free", lambda: True)()
+        ghost = self._ghost()
+        if ghost is not None:
+            if free and not gripping and hand.aim.tracked:
+                ghost.show_marker(point, self.grid * 0.75)
+            else:
+                ghost.hide_marker()
+        if free and not gripping and "trigger" in hand.pressed and hand.aim.tracked:
+            self._start = self._current = point
+            self._haptic(0.3, 0.02)
+        elif point != self._marker:
+            self._marker = point
+            if free and not gripping:
+                self._haptic(0.08, 0.008)       # a tick whenever the cursor moves to another grid point
+
+    def _drag(self, hand, point):
+        ghost, readout = self._ghost(), self._service("readout")
+        if point != self._current:
+            self._current = point
+            self._haptic(0.08, 0.008)
+        lo, size = snapping.drag_box(self._start, self._current, self.grid)
+        shape = self.values["shape"]
+        if ghost is not None:
+            ghost.hide_marker()
+            key = (shape, lo, size)
+            if key != self._built:
+                self._built = key
+                points, triangles = self._service("mesh", primitives.mesh)(shape, lo, size)
+                ghost.show_shape(points, triangles)
+                ghost.show_box(lo, size)
+        if readout is not None:
+            readout(primitives.describe(shape, size, self._format))
+        if not hand.down("trigger"):
+            self._commit(shape, lo, size)
+
+    def _commit(self, shape, lo, size):
+        toast = self._service("toast", lambda text: None)
+        doc = self._service("document", lambda: None)()
+        self._cancel()
+        if doc is None:
+            toast("No document open")
+            return
+        try:
+            self._service("create", primitives.create)(doc, shape, lo, size)
+        except Exception as error:      # a shape FreeCAD cannot make must not stop the session
+            toast(f"Could not make the {shape.lower()}")
+            print(f"BlocksCAD: could not make a {shape}: {error}")
+            return
+        self._haptic(0.5, 0.04)
+        toast(primitives.describe(f"{shape} made", size, self._format))

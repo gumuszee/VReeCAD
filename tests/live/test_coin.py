@@ -391,17 +391,19 @@ class SimUiTest(unittest.TestCase):
 
     def test_the_stick_of_the_tool_hand_adjusts_the_options_of_the_active_tool(self):
         from pivy import coin
-        from freecad.BlocksCAD.tools import base
+        from freecad.BlocksCAD.tools import base, registry
 
         class Sized(base.Tool):
             name, label = "sized", "Sized"
             options = (base.ToolOption("size", "Size", "length", 1.0, 100.0, 1.0, 10.0),)
 
+        registry.register(Sized)
+        self.addCleanup(registry.unregister, "sized")
         self.show_carousel()
         ui = self.s.ui
         self.settle(2)
         self.assertFalse(self.s.ui_update.owns_stick)
-        ui.active_tool = Sized(base.ToolContext())
+        self.s.select_tool("sized")
         self.s.input.set_hand(1, stick=(0.0, 1.0))
         self.settle(2)
         self.assertTrue(self.s.ui_update.owns_stick)
@@ -440,3 +442,134 @@ class SimUiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PrimitiveLiveTest(unittest.TestCase):
+    """The primitives against real FreeCAD features, and the tool driven through the Sim session."""
+    LO, SIZE = (10.0, 20.0, 30.0), (40.0, 60.0, 80.0)
+
+    def setUp(self):
+        import FreeCAD as App
+        self.App = App
+        self.doc = App.newDocument("BlocksCADPrimitives")
+
+    def tearDown(self):
+        self.App.closeDocument(self.doc.Name)
+
+    def bounds(self, shape):
+        b = shape.optimalBoundingBox(False, False)     # the analytic tight box (the default one of a curved solid is loose)
+        return tuple(round(v, 2) for v in (b.XMin, b.YMin, b.ZMin)), tuple(round(v, 2) for v in (b.XLength, b.YLength, b.ZLength))
+
+    def test_every_shape_is_made_inside_its_box_and_the_preview_is_the_same_solid(self):
+        from freecad.BlocksCAD.cad import primitives as prim
+        for name in prim.SHAPES:
+            obj = prim.create(self.doc, name, self.LO, self.SIZE)
+            lo, size = self.bounds(obj.Shape)
+            ghost = prim.shape(name, self.LO, self.SIZE)
+            self.assertTrue(obj.Shape.isValid(), name)
+            self.assertAlmostEqual(obj.Shape.Volume, ghost.Volume, places=3, msg=name)
+            self.assertEqual(self.bounds(ghost), self.bounds(obj.Shape), name)
+            for axis in range(3):                                           # inside the box, and touching it where the shape fills it
+                self.assertGreaterEqual(lo[axis], self.LO[axis] - 1e-6, name)
+                self.assertLessEqual(lo[axis] + size[axis], self.LO[axis] + self.SIZE[axis] + 1e-6, name)
+            if name in ("Box", "Wedge"):
+                self.assertEqual((lo, size), (self.LO, self.SIZE), name)
+            if name in ("Cylinder", "Cone", "Prism"):
+                self.assertAlmostEqual(lo[2], self.LO[2], places=2)
+                self.assertAlmostEqual(size[2], self.SIZE[2], places=2)
+            if name in ("Sphere", "Torus"):
+                centre = (self.LO[0] + self.SIZE[0] / 2, self.LO[1] + self.SIZE[1] / 2, self.LO[2] + self.SIZE[2] / 2)
+                for axis in range(2):
+                    self.assertAlmostEqual(lo[axis] + size[axis] / 2, centre[axis], places=2)
+        self.assertEqual(len(self.doc.Objects), len(prim.SHAPES))
+
+    def test_the_wedge_is_a_ramp_that_rises_towards_plus_y(self):
+        from freecad.BlocksCAD.cad import primitives as prim
+        wedge = prim.create(self.doc, "Wedge", (0.0, 0.0, 0.0), (40.0, 60.0, 80.0))
+        self.assertAlmostEqual(wedge.Shape.Volume, 40.0 * 60.0 * 80.0 / 2, places=3)
+        self.assertGreater(wedge.Shape.CenterOfMass.y, 30.0)                        # heavier on the +Y side where the ramp is tall
+
+    def test_a_shape_is_one_undo_step_and_a_parametric_feature(self):
+        from freecad.BlocksCAD.cad import primitives as prim
+        obj = prim.create(self.doc, "Cylinder", self.LO, self.SIZE)
+        self.assertEqual((obj.TypeId, obj.Radius.Value, obj.Height.Value), ("Part::Cylinder", 20.0, 80.0))
+        obj.Radius = 10.0                                                          # editable afterwards
+        self.doc.recompute()
+        self.assertAlmostEqual(obj.Shape.optimalBoundingBox(False, False).XLength, 20.0, places=2)
+        self.doc.undo()                                                            # undoes the radius edit
+        self.doc.undo()                                                            # and the creation
+        self.assertEqual(len(self.doc.Objects), 0)
+        self.doc.redo()
+        self.assertEqual(len(self.doc.Objects), 1)
+
+    def test_a_failed_shape_leaves_the_document_unchanged(self):
+        from freecad.BlocksCAD.cad import primitives as prim
+        with self.assertRaises(Exception):
+            prim.create(self.doc, "Box", self.LO, (0.0, 0.0, 0.0))
+        self.assertEqual(len(self.doc.Objects), 0)
+
+    def test_the_tool_makes_a_box_from_a_drag_in_the_sim_and_undo_removes_it(self):
+        from pivy import coin
+        from freecad.BlocksCAD.core import stage
+        s = sim.SimSession(None)
+        try:
+            s.ui.settings.pointer_mode = "tip"
+            s.select_tool("primitive")
+            to_stage = lambda p: stage.to_stage(s.navigator.world, p)
+            s.input.set_head(position=(0.0, 1.6, 0.4), look_at_point=to_stage((20.0, 20.0, 0.0)))
+            tip = s.ui.settings.tip_length
+
+            def put(point_mm, **inputs):
+                aim_point = to_stage(point_mm)
+                # the cursor is `tip_length` ahead of the controller along its tilted aim; point the controller straight down -Y
+                s.input.set_hand(1, position=aim_point, point_at=(aim_point[0], aim_point[1], aim_point[2] - 1.0), **inputs)
+                s.frame(0.02)
+
+            s.ui.settings.tip_angle = 0.0
+            put((0.0, 0.0, 0.0))
+            offset = s.ui.cursor(s.last_frame.hands[1])
+            cursor_shift = tuple(o - p for o, p in zip(offset, s.last_frame.hands[1].aim.position))
+            self.assertAlmostEqual(sum(c * c for c in cursor_shift) ** 0.5, tip, places=6)
+
+            def put_cursor(point_mm, **inputs):
+                target = to_stage(point_mm)
+                position = tuple(t - c for t, c in zip(target, cursor_shift))
+                s.input.set_hand(1, position=position, **inputs)
+                s.frame(0.02)
+
+            put_cursor((0.0, 0.0, 0.0))
+            self.assertEqual(s.ghost._marker.whichChild.getValue(), coin.SO_SWITCH_ALL)
+            put_cursor((0.0, 0.0, 0.0), trigger=1.0)
+            put_cursor((30.0, 20.0, 10.0), trigger=1.0)
+            self.assertEqual(s.ghost._body.whichChild.getValue(), coin.SO_SWITCH_ALL)
+            self.assertEqual(s.ui.gesture_text, "Box: 30 mm x 20 mm x 10 mm")
+            put_cursor((30.0, 20.0, 10.0), trigger=0.0)
+            self.assertEqual(len(self.doc.Objects), 1)
+            box = self.doc.Objects[0]
+            self.assertEqual((box.TypeId, box.Length.Value, box.Width.Value, box.Height.Value), ("Part::Box", 30.0, 20.0, 10.0))
+            self.assertEqual(tuple(box.Placement.Base), (0.0, 0.0, 0.0))
+            self.assertEqual(s.ghost._body.whichChild.getValue(), coin.SO_SWITCH_NONE)
+            self.assertIsNone(s.ui.gesture_text)
+            self.assertTrue(any(t.text.startswith("Box made") for t in s.ui.toasts.items))
+            s.actions["doc:undo"] = lambda: self.doc.undo()
+            s.ui._run("doc:undo", s.ui_update)
+            self.assertEqual(len(self.doc.Objects), 0)
+        finally:
+            s.close()
+
+    def test_the_stick_changes_the_grid_and_the_shape_with_a_readout(self):
+        s = sim.SimSession(None)
+        try:
+            s.select_tool("primitive")
+            s.input.set_hand(1, stick=(0.0, 1.0))
+            s.frame(0.02)
+            s.input.set_hand(1, stick=(0.0, 0.0))
+            s.frame(0.02)
+            self.assertEqual(s.tool_manager.active.values["grid"], "20 mm")
+            self.assertEqual(s.ui.feedback._readout.label, "Grid: 20 mm")
+            s.input.set_hand(1, stick=(1.0, 0.0))
+            s.frame(0.02)
+            self.assertEqual(s.tool_manager.active.values["shape"], "Cylinder")
+            self.assertTrue(s.ui_update.owns_stick)
+        finally:
+            s.close()

@@ -22,7 +22,8 @@ for _name in ("freecad.BlocksCAD.core.mathutil", "freecad.BlocksCAD.core.units",
               "freecad.BlocksCAD.ui.layout", "freecad.BlocksCAD.ui.style", "freecad.BlocksCAD.ui.ring", "freecad.BlocksCAD.ui.ring_view", "freecad.BlocksCAD.ui.radial", "freecad.BlocksCAD.ui.radial_view",
               "freecad.BlocksCAD.ui.ruler", "freecad.BlocksCAD.ui.settings", "freecad.BlocksCAD.ui.pointing", "freecad.BlocksCAD.ui.pointer", "freecad.BlocksCAD.ui.defaults", "freecad.BlocksCAD.ui.toast", "freecad.BlocksCAD.ui.undo_button", "freecad.BlocksCAD.ui.options",
               "freecad.BlocksCAD.ui.feedback_view", "freecad.BlocksCAD.tools.base", "freecad.BlocksCAD.tools.registry", "freecad.BlocksCAD.tools",
-              "freecad.BlocksCAD.tools.legacy", "freecad.BlocksCAD.ui.controller",
+              "freecad.BlocksCAD.core.stage", "freecad.BlocksCAD.core.snapping", "freecad.BlocksCAD.cad", "freecad.BlocksCAD.cad.primitives",
+              "freecad.BlocksCAD.render.ghost", "freecad.BlocksCAD.tools.primitives", "freecad.BlocksCAD.tools.legacy", "freecad.BlocksCAD.ui.controller",
               "freecad.BlocksCAD.backends.sim"):
     if _name in sys.modules:
         importlib.reload(sys.modules[_name])

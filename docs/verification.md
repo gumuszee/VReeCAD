@@ -52,6 +52,7 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Lifting a face (0.4 s hold), dropping it on a slot (move or swap), hiding it on the extra side, Show hidden | Unverified | `tests/test_ring.py`, `tests/live/test_coin.py`, `tools/snippets/render_ui.py` (`ui_face_lift.png`, `ui_face_hide.png`) |
 | Tip drawn in inverted colours where it is behind or inside a panel or the model | Unverified | `tools/snippets/render_ui.py` (`ui_tip_through.png`, `ui_tip_behind.png`); legibility of the dark inverted colours is a guess |
 | Controller models hide the tip and the laser (second draw of the models with the depth test), no flicker where the model is drawn twice | Unverified | `tests/live/test_coin.py` counts the inverted cone pixels (0 with, more than 10 without); the runtime glTF models have not been checked for depth fighting |
+| Create tool: cross at the snapped cursor, drag to a ghost and sizes, release makes the feature, tap places a default shape, grid and shape on the stick, undo removes it | Unverified | `tests/test_primitives.py`, `tests/live/test_coin.py` (`PrimitiveLiveTest`, real FreeCAD features and the Sim), `tools/snippets/render_ui.py` (`ui_primitive_*.png`); feel of the snap, cursor offset and ghost are guesses |
 | Undo on `button2` of the tool hand (tap), redo (hold 0.4 s), toasts for undo and redo | Unverified | `tests/test_feedback.py`, `tests/live/test_coin.py`; `button2` stays the 1 : 1 lock while a grip holds the world |
 | Toasts in front of the head (position, size, duration) and tooltips of faces after 0.5 s | Unverified | `tools/snippets/render_ui.py` (`ui_feedback.png`); distance 0.8 m, drop 0.2 m, scale 1.5 are guesses |
 | Tool options on the stick with the readout next to the pointer | Unverified | `tests/test_feedback.py`, `tools/snippets/render_ui.py` (`ui_readout.png`); no inherited tool declares options, so the first use is a new tool |
@@ -66,11 +67,12 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 
 Start the viewer (workbench BlocksCAD, "Open XR viewer"), wear the headset until the session is `FOCUSED`, then check:
 
-1. Quick radial: hold `button1` of the right controller (A on the Steam Frame), move the hand towards an item, release; check that it is not triggered while a grip holds the world and that the dead zone and the ring size feel right.
-2. Faces: tap a face (it runs on release), hold a face for 0.4 s and drop it on another slot, on a filled slot (swap) and on the "Hide face" side; use Show hidden and Reset layout.
-3. `button2` of the right controller (B on the Steam Frame): a tap undoes, a hold of 0.4 s redoes, with toasts; while a grip holds the world it is still the 1 : 1 lock. Toast size and place, tooltips after 0.5 s on a face.
-4. Pressing the left D-pad left undoes and D-pad right redoes the last document change, with a haptic tick (the Edit faces do the same).
-5. After a two-grip gesture, releasing one grip first and moving the other hand does not move the model; after releasing both, a one-grip drag works again.
-6. The haptic ticks are noticeable and not annoying: hover over a face, activation, slider steps, grip start, scale doubling, reset.
-7. The Teleport tool brings the picked surface under the feet, with the laser and with the tip.
-8. In tip mode Select, Drag and the builders act on what the tip touches.
+1. Create tool: choose Create on the palette, move the tip (a cross shows the grid point), drag with the trigger and release; try every shape on the stick left and right, the grid on the stick up and down, a tap, a grip during a drag and undo. Check that the snapped point and the box feel right at different world scales.
+2. Quick radial: hold `button1` of the right controller (A on the Steam Frame), move the hand towards an item, release; check that it is not triggered while a grip holds the world and that the dead zone and the ring size feel right.
+3. Faces: tap a face (it runs on release), hold a face for 0.4 s and drop it on another slot, on a filled slot (swap) and on the "Hide face" side; use Show hidden and Reset layout.
+4. `button2` of the right controller (B on the Steam Frame): a tap undoes, a hold of 0.4 s redoes, with toasts; while a grip holds the world it is still the 1 : 1 lock. Toast size and place, tooltips after 0.5 s on a face.
+5. Pressing the left D-pad left undoes and D-pad right redoes the last document change, with a haptic tick (the Edit faces do the same).
+6. After a two-grip gesture, releasing one grip first and moving the other hand does not move the model; after releasing both, a one-grip drag works again.
+7. The haptic ticks are noticeable and not annoying: hover over a face, activation, slider steps, grip start, scale doubling, reset.
+8. The Teleport tool brings the picked surface under the feet, with the laser and with the tip.
+9. In tip mode Select, Drag and the builders act on what the tip touches.

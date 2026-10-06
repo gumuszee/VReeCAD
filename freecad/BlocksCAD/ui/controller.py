@@ -75,6 +75,7 @@ class UiController:
         self.undo_button = UndoButton(tool_hand)
         self.options = tool_options.OptionControl(tool_hand)
         self.active_tool = None            # the active `tools.base.Tool`, set by the host before `update`
+        self.gesture_text = None           # readout of a running gesture (the size of a shape being dragged), set by the tool
         self.toasts = toast.Toasts()
         self.dwell = toast.Dwell()
         self.feedback = FeedbackView()
@@ -123,6 +124,15 @@ class UiController:
         scene: the depth test against the depth the scene already wrote passes only where nothing is in front of it. The node is
         shared, not copied, so it follows its original."""
         self.occluders.addChild(node)
+
+    def cursor(self, hand):
+        """The cursor of a hand (an `input.HandInput`) for the tools: the tip of the pointer, whatever the pointer mode is."""
+        s = self.settings
+        return pointing.pointer_pose(hand.aim, "tip", s.tip_angle, s.tip_length).position
+
+    def set_readout(self, text):
+        """The text of a running gesture, shown next to the tool hand's pointer; None removes it."""
+        self.gesture_text = text
 
     def toast(self, text):
         """Show a short message in front of the head."""
@@ -293,8 +303,9 @@ class UiController:
         self.view.update(self.ring, result, self.layout, self.faces, frame.head.position, self.active_actions, labels, self.slider_states())
         self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items])
         tooltip = self._tooltip(result, frame.dt, labels)
-        shown = readout and (readout, self.pointer_poses[self.tool_hand].position)
-        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, shown or None)
+        text = readout or self.gesture_text
+        shown = (text, self.pointer_poses[self.tool_hand].position) if text else None
+        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, shown)
 
         if result.activated is not None:
             self._activate(self.layout.face_at(*result.activated), out)

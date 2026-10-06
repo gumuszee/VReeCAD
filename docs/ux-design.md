@@ -124,6 +124,18 @@ Every controller has a pointer pose derived from its aim pose and three settings
 | Button 1 | held while navigating (one or two grips): level rotation. Otherwise: hold for the quick radial (below) |
 | Button 2 | held while navigating: scale locked at 1 : 1. Otherwise: undo (tap), redo (hold) |
 
+### Create tool
+
+The first tool of the palette makes parametric primitives (`tools/primitives.py`, `cad/primitives.py`). The tip of the tool hand is the cursor, in laser mode as well as in tip mode (the tip position is the controller position moved by the tip length along the tilted aim).
+
+- **Snap:** the cursor snaps to a grid in document millimetres (options below). A small cross at the snapped point shows where a press would start; it is drawn over the model so it is never lost. A haptic tick marks every move to another grid point.
+- **Drag:** the trigger pressed on a grid point starts an axis-aligned box in document axes; moving the hand drags out the opposite corner in 3D. A translucent ghost of the chosen shape fitted into the box and the outline of the box follow the hand, and the readout next to the pointer names the shape and the three sizes ("Cylinder: 120 mm x 120 mm x 80 mm") in the unit system of the document. Every axis is at least one grid step long.
+- **Release** makes the shape as a real FreeCAD feature in one transaction, so one undo step removes it; a toast reports it. A **tap** (the hand stays within its grid cell) places the shape at a default size of four grid steps centred on the cursor.
+- **Shapes** fit into the box: Box (the box itself), Cylinder, Cone and Prism (the hexagonal prism) stand on the bottom of the box with the radius of half the smaller horizontal side, Sphere (half the smallest side) and Torus (tube of a fifth of the smaller horizontal side) are centred in it, Wedge is a ramp that rises towards +Y. The features are `Part::Box`, `Part::Cylinder`, `Part::Cone`, `Part::Sphere`, `Part::Torus`, `Part::Wedge` and `Part::Prism` with their dimensions as properties, so the size can be edited afterwards.
+- **Options:** the stick up and down changes the grid (1, 2, 5, 10, 20, 50 and 100 mm; default 10 mm), left and right the shape.
+- A press that starts on the carousel or the radial does not start a shape; a grip pressed during a drag cancels it, as does choosing another tool. Without an open document a release makes nothing and a toast says so.
+- The grid is in document millimetres, whatever the scale of the world; zooming in with the grips and choosing a finer grid give finer shapes.
+
 ### Tool options
 
 A tool declares up to two options (`ToolOption` in `tools/base.py`): a number with a range and a step, a length in millimetres (shown in the unit system of the document) or a choice from a list. While such a tool is active the stick of the tool hand belongs to its options:

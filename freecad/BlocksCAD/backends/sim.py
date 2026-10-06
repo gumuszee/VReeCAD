@@ -80,8 +80,10 @@ class SimSession:
     def __init__(self, document_scene=None, profile="/interaction_profiles/valve/frame_controller_valve", actions=None):
         from pivy import coin
         from freecad.BlocksCAD import tools
-        import freecad.BlocksCAD.tools.legacy  # noqa: F401  (registers the inherited tools)
+        import freecad.BlocksCAD.tools.primitives  # noqa: F401  (registers the tools)
+        import freecad.BlocksCAD.tools.legacy  # noqa: F401
         from freecad.BlocksCAD.render.controller_shape import build_fallback
+        from freecad.BlocksCAD.render.ghost import Ghost
         from freecad.BlocksCAD.ui.controller import UiController
         self._coin = coin
         self.input = SimInput(profile)
@@ -99,15 +101,18 @@ class SimSession:
         light.direction.setValue(-0.4, -0.8, -0.6)
         self.scene.addChild(light)
         self.nav_xf = coin.SoTransform()
+        doc = coin.SoSeparator()                 # the document: navigation, millimetres to metres, Z up
+        doc.addChild(self.nav_xf)
+        xf = coin.SoTransform()
+        xf.scaleFactor.setValue(0.001, 0.001, 0.001)
+        xf.rotation.setValue(coin.SbRotation(coin.SbVec3f(1, 0, 0), -math.pi / 2))
+        doc.addChild(xf)
         if document_scene is not None:
-            doc = coin.SoSeparator()
-            doc.addChild(self.nav_xf)
-            xf = coin.SoTransform()
-            xf.scaleFactor.setValue(0.001, 0.001, 0.001)
-            xf.rotation.setValue(coin.SbRotation(coin.SbVec3f(1, 0, 0), -math.pi / 2))
-            doc.addChild(xf)
             doc.addChild(document_scene)
-            self.scene.addChild(doc)
+        self.ghost = Ghost()                     # the preview of a shape being made lives in document space
+        doc.addChild(self.ghost.root)
+        self.scene.addChild(doc)
+        self._setup_tools()
         self.hand_transforms = []
         self.hand_models = []
         self.scene.addChild(self.ui.root)
@@ -123,11 +128,45 @@ class SimSession:
             self.hand_models.append(model)
         self.scene.addChild(self.ui.overlay)   # last: drawn over everything
 
+    def _setup_tools(self):
+        """A tool manager with the services of the headset host, so tools run in the Sim as they do in the headset."""
+        from freecad.BlocksCAD import tools
+        from freecad.BlocksCAD.core import stage, units
+        context = tools.ToolContext(host=self, dominant=self.ui.tool_hand)
+        context.services.update({
+            "cursor": lambda hand: self.ui.cursor(self.last_frame.hands[hand]),
+            "to_document": lambda point: stage.to_document(self.navigator.world, point),
+            "document": self._document,
+            "trigger_free": lambda: not (self.ui_update is not None and self.ui_update.consume_trigger),
+            "ghost": self.ghost,
+            "toast": self.ui.toast,
+            "readout": self.ui.set_readout,
+            "format_length": lambda mm: units.format_length(mm, self.ui.system),
+        })
+        self.tool_manager = tools.ToolManager(context)
+
+    @staticmethod
+    def _document():
+        try:
+            import FreeCAD
+            return FreeCAD.ActiveDocument
+        except ImportError:
+            return None
+
+    def select_tool(self, name):
+        """Make a registered tool the active tool (the same as choosing its face)."""
+        self.tool_manager.activate(name)
+        self.ui.active_tool = self.tool_manager.active
+
     def frame(self, dt=1.0 / 72.0):
         """Advance the simulated time, pose the controller models and return the `InputFrame`."""
         from freecad.BlocksCAD.render.controller_shape import animate
         frame = self.input.frame(dt)
+        self.last_frame = frame
+        self.ui.active_actions = {f"tool:{self.tool_manager.active_name}"}
+        self.ui.active_tool = self.tool_manager.active
         self.ui_update = self.ui.update(frame)
+        self.tool_manager.update(frame)
         world = self.navigator.world
         self.nav_xf.translation.setValue(*world.position)
         self.nav_xf.rotation.setValue(*world.rotation)
