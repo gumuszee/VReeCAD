@@ -95,5 +95,6 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 - `commonXR.py` still hosts the OpenXR session, the render loop and the inherited tool handlers in one module; the extraction into `rig.py` is open.
 - The preferences page (`Resources/Gui/Resources/preferences/XRPreferences.ui`, compiled into `XRWorkbench_rc.py`) still lists the locomotion options (movement mode, speeds, lock to floor); they have no effect, because the world is navigated with the grips.
 - The inherited tools (teleport, line and cube builders, select, drag, working plane), the Qt panel overlay and the edit menu shown after a selection are upstream code; they pick along a ray from the pointer pose (a ray of 3 cm from the tip in tip mode) and are replaced milestone by milestone.
+- The inherited status text on the right controller (tool hints, selection label) is not drawn; the objects and their `set_text` calls remain in `commonXR.py` and the tool hints return as toasts and tooltips (U4).
 - Handedness is fixed: the left controller carries the carousel, the right controller is the tool hand.
 - Only the Steam Frame controllers are tested; the other profiles are bound but unverified (`verification.md`).

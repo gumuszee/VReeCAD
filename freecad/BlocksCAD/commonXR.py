@@ -544,8 +544,7 @@ class XRwidget(QOpenGLWidget):
             # edit menu (shown after selecting an object)
             self.sgrp[eye_index].addChild(
                 self.edit_menu.get_menu_scenegraph())
-            # and labels
-            self.sgrp[eye_index].addChild(self.labels_separator)
+            # the inherited status label ("Pick teleport destination") stays out of the scene: the palette shows the active tool
             self.sgrp[eye_index].addChild(self.ui.root)
             # add world (scene without controllers and gui elements)
             self.sgrp[eye_index].addChild(self.world_separator)
