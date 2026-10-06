@@ -33,6 +33,10 @@ REQUIRED_EXTENSIONS = ("XR_EXT_uuid", "XR_EXT_render_model", "XR_EXT_interaction
 HAND_PATHS = {"left": "/user/hand/left", "right": "/user/hand/right"}
 
 
+def _int(handle):
+    return int(getattr(handle, "value", handle))
+
+
 def cache_dir():
     base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".cache")
     return os.path.join(base, "BlocksCAD", "cache", "rendermodels")
@@ -61,7 +65,8 @@ class RuntimeModels:
         self.instance = instance
         self.session = session
         self.models: Dict[str, RuntimeModel] = {}   # hand -> model
-        self._hand_paths = {side: xr.string_to_path(instance, path) for side, path in HAND_PATHS.items()}
+        # path handles may be ctypes objects (unhashable), so they are compared by their integer value
+        self._hand_paths = {side: _int(xr.string_to_path(instance, path)) for side, path in HAND_PATHS.items()}
         self._glb_by_uuid: Dict[str, bytes] = {}
 
     # raw calls
@@ -132,7 +137,7 @@ class RuntimeModels:
         for model_id in ids:
             handle = xr.create_render_model_ext(self.session, xr.RenderModelCreateInfoEXT(render_model_id=model_id))
             try:
-                hand = next((by_path[p] for p in self._subaction_paths(handle) if p in by_path), None)
+                hand = next((by_path[_int(p)] for p in self._subaction_paths(handle) if _int(p) in by_path), None)
                 if hand is None or hand in self.models:
                     xr.destroy_render_model_ext(handle)
                     continue
