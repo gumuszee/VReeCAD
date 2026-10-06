@@ -17,7 +17,8 @@
 """Hardware-independent input model.
 
 Tools see only an `InputFrame`: the head pose and, per hand, a pose plus the five abstract inputs
-(`trigger`, `grip`, `stick` xy + click, `button1`, `button2`) with edge events. Backends (OpenXR, Sim)
+(`trigger`, `grip`, `stick` xy + click, `button1`, `button2`) with edge events. `aux1` and `aux2` are optional extra buttons
+(the left and right D-pad directions of the Steam Frame left controller); a profile without them leaves them released. Backends (OpenXR, Sim)
 fill the raw values; `InputTracker.update` derives the edges, so tools never touch OpenXR.
 
 Poses are in metres in the stage (tracking) frame, Y up, orientation as a quaternion (x, y, z, w).
@@ -34,7 +35,7 @@ LEFT, RIGHT = 0, 1
 HAND_NAMES = ("left", "right")
 
 ANALOG_INPUTS = ("trigger", "grip")
-DIGITAL_INPUTS = ("stick_click", "button1", "button2", "menu")
+DIGITAL_INPUTS = ("stick_click", "button1", "button2", "menu", "aux1", "aux2")
 PRESS_INPUTS = ANALOG_INPUTS + DIGITAL_INPUTS
 
 
@@ -57,6 +58,8 @@ class HandInput:
     button1: bool = False
     button2: bool = False
     menu: bool = False
+    aux1: bool = False
+    aux2: bool = False
     pressed: frozenset = frozenset()   # inputs that went down in this frame
     released: frozenset = frozenset()  # inputs that went up in this frame
     held: frozenset = frozenset()      # inputs that are down after this frame (analog ones with hysteresis)

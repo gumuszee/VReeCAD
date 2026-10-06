@@ -13,22 +13,25 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""The user interface as one unit: grip navigation, the palette ring with its faces, the scale readout and action dispatch.
+"""The user interface as one unit: grip navigation with its ruler, the palette carousel with its panels, action dispatch.
 Hosts (the XR widget and the Sim session) feed it one `InputFrame` per frame and apply what it returns: the world pose goes to a
-scene transform, `haptics` to the controllers, `ray_end` to the tool hand's ray, `consume_trigger` suppresses the tool hand's trigger."""
+scene transform, `haptics` to the controllers, `ray_end` to the tool hand's ray, `consume_trigger` suppresses the tool hand's trigger.
+The scene graph has two roots: `root` (the carousel, depth tested) and `overlay` (the ruler, drawn last on top of everything)."""
 
+import os
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
 from pivy import coin
 
 from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.core.navigation import Navigator, format_scale
+from freecad.BlocksCAD.core import units
+from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.ui import defaults
-from freecad.BlocksCAD.ui.layout import load_layout
-from freecad.BlocksCAD.ui.readout import Readout
+from freecad.BlocksCAD.ui import layout as lay
 from freecad.BlocksCAD.ui.ring import PaletteRing
 from freecad.BlocksCAD.ui.ring_view import RingView
+from freecad.BlocksCAD.ui.ruler import Ruler
 
 
 @dataclass
@@ -41,25 +44,63 @@ class UiUpdate:
 
 class UiController:
     def __init__(self, tool_names, tool_label, actions: Dict[str, Callable], palette_hand=0, tool_hand=1,
-                 layout_path=None, use_user_layout=True):
+                 layout_path=None, use_user_layout=True, mm_to_stage=0.001):
         self.actions = actions
         self.faces = defaults.build_faces(tool_names, tool_label)
-        default = defaults.default_layout(tool_names)
-        self.layout = load_layout(default, set(self.faces), layout_path) if use_user_layout else default
-        self.navigator = Navigator()
-        self.ring = PaletteRing(len(self.layout.pages), palette_hand, tool_hand)
+        self._tool_names = list(tool_names)
+        default = defaults.default_layout(self._tool_names)
+        self.use_user_layout, self.layout_path = use_user_layout, layout_path
+        self.layout = lay.load_layout(default, set(self.faces), layout_path) if use_user_layout else default
+        self.palette_hand, self.tool_hand = palette_hand, tool_hand
+        self.navigator = Navigator(modifier_hand=tool_hand)
+        self.ring = PaletteRing(self.layout.sides(), palette_hand, tool_hand)
         self.view = RingView()
-        self.readout = Readout()
+        self.ruler = Ruler()
+        self.system = units.METRIC_MM
+        self.mm_to_stage = mm_to_stage     # stage length of one document millimetre at world scale 1
         self.root = coin.SoSeparator()
         self.root.ref()
         self.root.addChild(self.view.root)
-        self.root.addChild(self.readout.root)
+        self.overlay = coin.SoSeparator()
+        self.overlay.ref()
+        self.overlay.addChild(self.ruler.root)
         self.active_actions = set()
+
+    def set_unit_system(self, name):
+        """Use the measurement system of a FreeCAD document unit system name (the document's `UnitSystem` property)."""
+        self.system = units.system_for(name)
 
     def action_at(self, page, slot):
         face_id = self.layout.face_at(page, slot)
         face = self.faces.get(face_id) if face_id else None
         return face.action if face else None
+
+    def reset_layout(self):
+        """Back to the default layout; a saved layout file is removed."""
+        self.layout = defaults.default_layout(self._tool_names)
+        self.ring.set_sides(self.layout.sides())
+        self.ring.focus_side(0)
+        self._save_layout(remove=True)
+
+    def _save_layout(self, remove=False):
+        if not self.use_user_layout:
+            return
+        try:
+            if remove:
+                os.remove(self.layout_path or lay.user_layout_path())
+            else:
+                lay.save_layout(self.layout, self.layout_path)
+        except OSError:
+            pass   # the layout is a convenience; a failed write must not stop the session
+
+    def _run(self, action, out):
+        if action == "layout:reset":
+            self.reset_layout()
+        else:
+            handler = self.actions.get(action)
+            if handler is not None:
+                handler()
+        out.activated = action
 
     def update(self, frame) -> UiUpdate:
         out = UiUpdate()
@@ -71,28 +112,41 @@ class UiController:
                 out.haptics += [(hand, 0.6, 0.04) for hand in event[1]]
             elif event[0] == "reset":
                 out.haptics += [(0, 0.7, 0.12), (1, 0.7, 0.12)]
+            elif event[0] == "snap":
+                out.haptics += [(0, 0.5, 0.06), (1, 0.5, 0.06)]
+            elif event[0] == "level":
+                out.haptics.append((self.tool_hand, 0.3, 0.03))
 
-        navigating = self.navigator.state != "idle" or self.navigator.resetting
-        result = self.ring.update(frame, navigating=navigating)
+        self.ring.set_sides(self.layout.sides())
+        result = self.ring.update(frame, navigating=self.navigator.navigating)
         out.haptics += result.haptics
         out.ray_end, out.consume_trigger = result.ray_end, result.consume_trigger
-        controller = frame.hands[self.ring.palette_hand].aim.position
-        self.view.update(self.ring, result, self.layout, self.faces, controller, frame.head.position, self.active_actions)
+        if result.dropped is not None:
+            page, side, before = result.dropped
+            index = self.layout.move_page(page, side, before)
+            self.ring.set_sides(self.layout.sides())
+            self.ring.focus_side(self.layout.pages[index].side)
+            self._save_layout()
+        self.view.update(self.ring, result, self.layout, self.faces, frame.head.position, self.active_actions)
 
         if result.activated is not None:
             action = self.action_at(*result.activated)
             if action is not None:
-                out.activated = action
-                handler = self.actions.get(action)
-                if handler is not None:
-                    handler()
+                self._run(action, out)
+
+        palette = frame.hands[self.palette_hand]
+        for name, action in (("aux1", "doc:undo"), ("aux2", "doc:redo")):
+            if name in palette.pressed:
+                self._run(action, out)
+                out.haptics.append((self.palette_hand, 0.4, 0.03))
 
         if self.navigator.state == "two":
-            middle = mu.lerp(Navigator.hand_position(frame.hands[0]), Navigator.hand_position(frame.hands[1]), 0.5)
-            self.readout.show(format_scale(self.navigator.world.scale), mu.add(middle, (0.0, 0.1, 0.0)), frame.head.position)
+            self.ruler.update(Navigator.hand_position(frame.hands[0]), Navigator.hand_position(frame.hands[1]), frame.head,
+                              self.navigator.world.scale, self.mm_to_stage, self.system, self.navigator.level)
         else:
-            self.readout.hide()
+            self.ruler.hide()
         return out
 
     def close(self):
         self.root.unref()
+        self.overlay.unref()

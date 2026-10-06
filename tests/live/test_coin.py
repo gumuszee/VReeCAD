@@ -108,5 +108,53 @@ class SimNavigationTest(unittest.TestCase):
             s.close()
 
 
+class SimUiTest(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+        self.s = sim.SimSession(None, actions={"doc:undo": lambda: self.calls.append("undo"),
+                                               "doc:redo": lambda: self.calls.append("redo")})
+
+    def tearDown(self):
+        self.s.close()
+
+    def test_dpad_left_and_right_of_the_palette_hand_undo_and_redo(self):
+        self.s.frame()
+        self.s.input.set_hand(0, aux1=True)
+        self.s.frame()
+        self.s.input.set_hand(0, aux1=False)
+        self.s.frame()
+        self.s.input.set_hand(0, aux2=True)
+        self.s.frame()
+        self.assertEqual(self.calls, ["undo", "redo"])
+        self.s.input.set_hand(1, aux1=True)       # the tool hand has no such shortcut
+        self.s.frame()
+        self.assertEqual(self.calls, ["undo", "redo"])
+
+    def test_the_ruler_follows_the_two_grips_and_uses_the_document_units(self):
+        from pivy import coin
+        self.s.input.set_hand(0, position=(-0.2, 1.2, -0.5))
+        self.s.input.set_hand(1, position=(0.2, 1.2, -0.5))
+        self.s.frame()
+        self.assertEqual(self.s.ui.ruler.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        self.s.input.set_hand(0, grip=1.0)
+        self.s.input.set_hand(1, grip=1.0)
+        self.s.frame()
+        self.s.frame()
+        self.assertEqual(self.s.ui.ruler.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        shown = [label.text.string.getValues(0) for label in self.s.ui.ruler._labels if label.switch.whichChild.getValue() == coin.SO_SWITCH_ALL]
+        self.assertEqual(shown[0], ["0"])
+        self.assertTrue(shown[1][0].endswith(" mm"))
+        self.s.ui.set_unit_system("Imperial decimal (in, lb)")
+        self.s.frame()
+        shown = [label.text.string.getValues(0) for label in self.s.ui.ruler._labels if label.switch.whichChild.getValue() == coin.SO_SWITCH_ALL]
+        self.assertTrue(shown[1][0].endswith(" in"))
+        self.s.input.set_hand(0, grip=0.0)
+        self.s.frame()
+        self.assertEqual(self.s.ui.ruler.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
+    def test_the_overlay_is_the_last_child_of_the_scene(self):
+        self.assertEqual(self.s.scene.findChild(self.s.ui.overlay), self.s.scene.getNumChildren() - 1)
+
+
 if __name__ == "__main__":
     unittest.main()

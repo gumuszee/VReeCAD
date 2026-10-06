@@ -40,6 +40,9 @@ To unshallow any ref: `git -C refs/<x> fetch --unshallow`.
 8. PowerShell 5.1 wraps native stderr in ErrorRecords - avoid `2>&1` on git/uv in scripts; use `ForEach-Object { "$_" }`.
 9. `FreeCAD.exe --write-log <file>` writes a log, but with the MCP RPC the Report view snippet is usually more useful.
 10. The RPC `execute_code` shares **one persistent namespace** across calls and runs on the GUI thread (blocking calls freeze the UI).
+11. **pivy field names can be shadowed by node methods.** `SoDepthBuffer.write` is the `SoNode.write` method, so the field is set with `node.getField("write").setValue(False)`. `SoMFVec3f.setValues` does not shorten a field: call `setNum(n)` first when a shape is refilled with fewer entries.
+12. **Coin text fonts:** `SoFont.name = "Segoe UI:Bold"` selects a Windows system font for `SoText3`; the unset default is a serif face. Unicode text such as the micrometre sign renders.
+13. A fresh FreeCAD start has no document (gotcha 6); `tools/snippets/demo_document.py` creates one.
 
 ## Reproducing from scratch
 

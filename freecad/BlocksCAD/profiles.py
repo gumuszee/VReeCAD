@@ -17,7 +17,8 @@
 """Mapping of the abstract inputs to OpenXR input paths per interaction profile (docs/input-profiles.md).
 
 Pure data, no OpenXR import. An abstract input maps to one component path below `/user/hand/<side>/input/`.
-The abstract inputs: trigger, grip (analog), stick (x, y), stick_click, button1, button2, menu (digital).
+The abstract inputs: trigger, grip (analog), stick (x, y), stick_click, button1, button2, menu, aux1, aux2 (digital; the last two
+only where the controller has more buttons).
 """
 
 # component paths per hand; "{h}" is replaced by "left" / "right"
@@ -52,6 +53,8 @@ PROFILES = {
         "both": {**_stick("thumbstick"), "grip": "/user/hand/{h}/input/squeeze/value"},
         "left": {"button1": "/user/hand/left/input/dpad_up/click",
                  "button2": "/user/hand/left/input/dpad_down/click",
+                 "aux1": "/user/hand/left/input/dpad_left/click",
+                 "aux2": "/user/hand/left/input/dpad_right/click",
                  "menu": "/user/hand/left/input/view/click"},
         "right": {"button1": "/user/hand/right/input/a/click",
                   "button2": "/user/hand/right/input/b/click",
@@ -91,7 +94,7 @@ PROFILES = {
 ACTIONS = {
     "aim_pose": "pose", "grip_pose": "pose", "haptic": "haptic",
     "trigger": "float", "grip": "float", "stick_x": "float", "stick_y": "float",
-    "stick_click": "bool", "button1": "bool", "button2": "bool", "menu": "bool",
+    "stick_click": "bool", "button1": "bool", "button2": "bool", "menu": "bool", "aux1": "bool", "aux2": "bool",
 }
 
 

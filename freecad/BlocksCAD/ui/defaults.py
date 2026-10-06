@@ -14,7 +14,7 @@
 # *                                                                         *
 # ***************************************************************************
 """The faces and the default layout. Tool faces are generated from the tool registry; the other faces are fixed.
-Action ids: "tool:<name>", "view:reset", "overlay:toggle", "plane:toggle", "scene:reload", "doc:undo", "doc:redo", "doc:delete", "app:close"."""
+Action ids: "tool:<name>", "view:reset", "overlay:toggle", "plane:toggle", "scene:reload", "doc:undo", "doc:redo", "doc:delete", "app:close", and "layout:reset" (handled by the UI controller itself)."""
 
 from freecad.BlocksCAD.ui.layout import Face, Layout, Page
 
@@ -24,9 +24,10 @@ def build_faces(tool_names, tool_label):
     faces = [Face(f"tool.{name}", tool_label(name), f"tool:{name}") for name in tool_names]
     faces += [
         Face("view.reset", "Reset view", "view:reset"),
-        Face("view.overlay", "Panels", "overlay:toggle"),
+        Face("view.overlay", "Overlays", "overlay:toggle"),
         Face("view.reload", "Reload scene", "scene:reload"),
         Face("view.plane", "Work plane", "plane:toggle"),
+        Face("view.layout", "Reset layout", "layout:reset"),
         Face("doc.undo", "Undo", "doc:undo"),
         Face("doc.redo", "Redo", "doc:redo"),
         Face("doc.delete", "Delete", "doc:delete"),
@@ -39,6 +40,6 @@ def default_layout(tool_names):
     return Layout([
         Page("Tools", [f"tool.{name}" for name in tool_names]),
         Page("Edit", ["doc.undo", "doc.redo", "doc.delete"]),
-        Page("View", ["view.reset", "view.overlay", "view.plane", "view.reload"]),
+        Page("View", ["view.reset", "view.overlay", "view.plane", "view.reload", "view.layout"]),
         Page("Session", ["app.close"]),
     ])

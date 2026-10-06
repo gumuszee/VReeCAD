@@ -156,6 +156,8 @@ class OpenXRInput:
             h.button1 = self._bool("button1", hand)
             h.button2 = self._bool("button2", hand)
             h.menu = self._bool("menu", hand)
+            h.aux1 = self._bool("aux1", hand)
+            h.aux2 = self._bool("aux2", hand)
             hands.append(h)
         frame.hands = tuple(hands)
         return frame

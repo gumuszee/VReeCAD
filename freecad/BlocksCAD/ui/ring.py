@@ -13,90 +13,185 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""Behaviour and geometry of the palette ring (docs/ux-design.md, Palette ring). No Coin, OpenXR or FreeCAD imports.
+"""Behaviour and geometry of the palette carousel (docs/ux-design.md, Palette carousel). No Coin, OpenXR or FreeCAD imports.
 
-Pages stand on a ring around the palette hand's controller; the front page faces the user. The stick of the palette hand turns the
-ring one page per flick, the ring fades in while the head looks at the controller (or when pinned) and out otherwise, the tool hand's
-ray hovers faces and its trigger activates them. `update` returns what the host needs: hover, activation, haptics, ray end point."""
+The carousel is a prism around the long axis of the palette hand's controller: the sides turn with the controller, the side at
+the front stands on the thumb side of the controller facing up, the others are turned away. Each side carries one or more panels
+(pages of faces), next to each other. The stick of the palette hand turns the carousel one side per flick, the carousel fades in
+while the head looks at the controller (or when pinned) and out otherwise, the tool hand's ray hovers faces and its trigger
+activates them. Holding the trigger on the title bar of a panel lifts the panel; releasing it over another panel puts the panel
+in front of that one, over the empty slot at the end of a side appends it, over the empty extra side makes a new side.
+`update` returns what the host needs: hover, activation, drop, haptics and the ray end point."""
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.ui.layout import COLS, ROWS
 
-UP = (0.0, 1.0, 0.0)
 CELL = 0.05            # metres, face edge
 GAP = 0.008
 GRID_W = COLS * CELL + (COLS - 1) * GAP
 GRID_H = ROWS * CELL + (ROWS - 1) * GAP
-RADIUS = 0.16          # distance of the page planes from the ring axis
-LIFT = 0.13            # height of the page centres above the controller
+PANEL_W = GRID_W + 0.02
+PANEL_H = GRID_H + 0.08
+TITLE_Y = (GRID_H / 2 + 0.004, GRID_H / 2 + 0.036)   # title bar, the handle for lifting a panel
+DOT_Y = -(GRID_H / 2 + 0.022)
+PANEL_GAP = 0.012
+SIDE_COLUMNS = 2       # panels on one side are laid out in rows of this many
+FORWARD = 0.09         # distance of the carousel centre in front of the grip point, along the controller
+RADIUS_MIN = 0.09      # distance of the side planes from the controller axis
 GAZE_COS = math.cos(math.radians(35.0))
 GAZE_RANGE = (0.12, 0.95)
 FLICK_ON, FLICK_OFF = 0.65, 0.3
 FADE_RATE = 8.0        # per second
-TURN_RATE = 14.0       # exponential approach rate of the ring angle
-FRONT_COS = 0.5        # pages within 60 degrees of the front are interactive
+TURN_RATE = 14.0       # exponential approach rate of the carousel angle
+FRONT_COS = 0.5        # sides within 60 degrees of the front are interactive
+SHOW_COS = 0.05        # sides further round are not drawn; between this and FRONT_COS they shrink away
+
+
+@dataclass
+class PanelPose:
+    centre: Tuple[float, float, float]
+    u: Tuple[float, float, float]      # right on the panel as seen from outside
+    v: Tuple[float, float, float]      # up on the panel: the direction the controller points
+    n: Tuple[float, float, float]      # outward normal
+    cos: float = 1.0                   # cosine of the angle of its side from the front: 1 = facing up from the controller
+    side: int = 0                      # carousel side the panel stands on
+
+
+@dataclass
+class Hit:
+    kind: str                          # "face", "title", "body" or "ghost"
+    side: int
+    page: Optional[int]                # None on a ghost
+    slot: Optional[int]
+    point: Tuple[float, float, float]
+    distance: float
 
 
 @dataclass
 class RingResult:
     visible: bool = False
-    hover: Optional[Tuple[int, int]] = None      # (page index, slot) under the ray
+    hover: Optional[Tuple[int, int]] = None      # (page index, slot) of the face under the ray
+    hover_title: Optional[int] = None            # page whose title bar is under the ray
     activated: Optional[Tuple[int, int]] = None  # (page index, slot) activated this frame
+    lifted: Optional[int] = None                 # page held by the trigger (being rearranged)
+    lift_point: Optional[Tuple[float, float, float]] = None
+    drop_target: Optional[Tuple[int, Optional[int]]] = None   # (side, page to insert before or None) under the ray while lifting
+    dropped: Optional[Tuple[int, int, Optional[int]]] = None  # (page, side, before) released onto a target this frame
     ray_end: Optional[Tuple[float, float, float]] = None
     haptics: List[tuple] = field(default_factory=list)   # (hand, amplitude, duration_s)
-    consume_trigger: bool = False                # the tool hand's trigger belongs to the ring this frame
+    consume_trigger: bool = False                # the tool hand's trigger belongs to the carousel this frame
+
+
+def panel_offset(k, count):
+    """Centre of panel k of `count` panels on one side, in side coordinates (x right, y forward, metres)."""
+    cols = min(count, SIDE_COLUMNS)
+    rows = math.ceil(count / cols)
+    row, col = divmod(k, cols)
+    in_row = cols if row < rows - 1 else count - (rows - 1) * cols
+    x = (col - (in_row - 1) / 2) * (PANEL_W + PANEL_GAP)
+    y = (row - (rows - 1) / 2) * (PANEL_H + PANEL_GAP)
+    return x, y
+
+
+def side_half_width(count):
+    cols = min(max(count, 1), SIDE_COLUMNS)
+    return (cols * PANEL_W + (cols - 1) * PANEL_GAP) / 2
 
 
 class PaletteRing:
-    def __init__(self, page_count, palette_hand=0, tool_hand=1):
-        self.page_count = page_count
+    def __init__(self, sides, palette_hand=0, tool_hand=1):
+        self.sides: List[List[int]] = [list(s) for s in sides]   # page indexes per carousel side
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
-        self.index = 0                 # page at the front (unbounded, modulo page_count)
-        self.angle = 0.0               # displayed ring angle (radians), eases towards the target
+        self.index = 0                 # side at the front (unbounded, modulo the number of sides)
+        self.angle = 0.0               # displayed carousel angle (radians), eases towards the target
         self.fade = 0.0
         self.pinned = False
-        self._front = (0.0, 0.0, 1.0)  # horizontal direction from the controller to the head, kept when degenerate
-        self._armed = True             # the stick must return to the centre before the next flick
         self.hover = None
+        self.hover_title = None
+        self.lifted: Optional[int] = None
+        self.poses: Dict[int, PanelPose] = {}
+        self.ghost: Optional[PanelPose] = None
+        self.origin = (0.0, 0.0, 0.0)  # centre of the carousel axis
+        self.radius = RADIUS_MIN
+        self._armed = True             # the stick must return to the centre before the next flick
+        self._count = max(1, len(self.sides))
+        self._known_count = None
+        self._target = None
+        self._lift_distance = 0.5
 
-    # -- geometry ---------------------------------------------------------------------------------------------------
+    # structure
+    def set_sides(self, sides):
+        self.sides = [list(s) for s in sides]
+
+    def display_sides(self):
+        """The sides as drawn: without the lifted page, and while lifting with one empty side at the end to start a new side."""
+        if self.lifted is None:
+            return self.sides
+        shown = [[p for p in side if p != self.lifted] for side in self.sides]
+        if not any(len(side) == 0 for side in shown):
+            shown.append([])
+        return shown
+
+    def focus_side(self, side):
+        self.index = side
+        self.angle = self.target_angle
+
     @property
     def step(self):
-        return 2 * math.pi / max(1, self.page_count)
+        return 2 * math.pi / max(1, self._count)
 
     @property
     def target_angle(self):
         return -self.index * self.step
 
-    def front_page(self):
-        return self.index % self.page_count
+    def front_side(self):
+        return self.index % max(1, self._count)
 
-    def frame_vectors(self, controller, head):
-        """(axis origin, front f, right r): f points horizontally from the controller towards the head."""
-        d = mu.sub(head, controller)
-        d = (d[0], 0.0, d[2])
-        if mu.length(d) > 0.05:
-            self._front = mu.normalize(d)
-        f = self._front
-        r = mu.cross(UP, f)
-        origin = mu.sub(mu.add(controller, mu.mul(UP, LIFT)), mu.mul(f, RADIUS))
-        return origin, f, r
+    # geometry
+    @staticmethod
+    def controller_axes(pose):
+        """(origin of the carousel, right, up, forward) of a controller pose."""
+        q = pose.orientation
+        right, up, forward = mu.rotate(q, (1.0, 0.0, 0.0)), mu.rotate(q, (0.0, 1.0, 0.0)), mu.rotate(q, (0.0, 0.0, -1.0))
+        return mu.add(pose.position, mu.mul(forward, FORWARD)), right, up, forward
 
-    def page_frame(self, page, controller, head):
-        """(centre, u, v, n) of a page: u right and v up on the page as seen from outside, n the outward normal."""
-        origin, f, r = self.frame_vectors(controller, head)
-        a = self.angle + page * self.step
-        n = mu.add(mu.mul(f, math.cos(a)), mu.mul(r, math.sin(a)))
-        u = mu.add(mu.mul(f, -math.sin(a)), mu.mul(r, math.cos(a)))
-        return mu.add(origin, mu.mul(n, RADIUS)), u, UP, n
+    def side_frame(self, side, pose):
+        """(centre, u, v, n) of the plane of a carousel side at the current angle."""
+        origin, right, up, forward = self.controller_axes(pose)
+        a = self.angle + side * self.step
+        n = mu.add(mu.mul(up, math.cos(a)), mu.mul(right, math.sin(a)))
+        u = mu.cross(forward, n)
+        return mu.add(origin, mu.mul(n, self.radius)), u, forward, n
 
-    def page_cos(self, page):
-        """Cosine of the page's angle from the front: 1 = facing the user."""
-        return math.cos(self.angle + page * self.step)
+    def _pose_on_side(self, side, k, count, pose):
+        centre, u, v, n = self.side_frame(side, pose)
+        x, y = panel_offset(k, count)
+        a = self.angle + side * self.step
+        return PanelPose(mu.add(centre, mu.add(mu.mul(u, x), mu.mul(v, y))), u, v, n, math.cos(a), side)
+
+    def layout_poses(self, pose):
+        """Compute the pose of every drawn panel (and of the ghost slot while lifting) for a palette controller pose."""
+        shown = self.display_sides()
+        self._count = max(1, len(shown))
+        half = max([side_half_width(len(s) + (1 if self.lifted is not None else 0)) for s in shown] or [side_half_width(1)])
+        self.radius = max(RADIUS_MIN, half / math.tan(math.pi / self._count)) if self._count >= 3 else RADIUS_MIN
+        self.origin = self.controller_axes(pose)[0]
+        self.poses, self.ghost = {}, None
+        front = self.front_side()
+        for side, pages in enumerate(shown):
+            a = self.angle + side * self.step
+            if math.cos(a) < SHOW_COS:
+                continue
+            count = len(pages) + (1 if self.lifted is not None else 0)
+            for k, page in enumerate(pages):
+                self.poses[page] = self._pose_on_side(side, k, count, pose)
+            if self.lifted is not None and side == front:
+                self.ghost = self._pose_on_side(side, len(pages), count, pose)
+        return shown
 
     @staticmethod
     def locate_slot(x, y):
@@ -108,29 +203,44 @@ class PaletteRing:
             return row * COLS + col
         return None
 
-    def hit_test(self, origin, direction, controller, head):
-        """Ray against the interactive pages. Returns (page, slot, point) or None."""
+    @staticmethod
+    def _locate(pose, point):
+        rel = mu.sub(point, pose.centre)
+        return mu.dot(rel, pose.u), mu.dot(rel, pose.v)
+
+    def hit_test(self, origin, direction):
+        """Ray against the interactive panels. Returns the nearest `Hit` or None. Needs `layout_poses` first."""
+        candidates = [(page, pose) for page, pose in self.poses.items()]
+        if self.ghost is not None:
+            candidates.append((None, self.ghost))
         best = None
-        for page in range(self.page_count):
-            if self.page_cos(page) < FRONT_COS:
+        for page, pose in candidates:
+            if pose.cos < FRONT_COS:
                 continue
-            centre, u, v, n = self.page_frame(page, controller, head)
-            denom = mu.dot(direction, n)
+            denom = mu.dot(direction, pose.n)
             if denom >= -1e-6:
                 continue
-            t = mu.dot(mu.sub(centre, origin), n) / denom
+            t = mu.dot(mu.sub(pose.centre, origin), pose.n) / denom
             if t <= 0:
                 continue
             point = mu.add(origin, mu.mul(direction, t))
-            rel = mu.sub(point, centre)
-            slot = self.locate_slot(mu.dot(rel, u), mu.dot(rel, v))
-            if slot is not None and (best is None or t < best[3]):
-                best = (page, slot, point, t)
-        return None if best is None else best[:3]
+            x, y = self._locate(pose, point)
+            if abs(x) > PANEL_W / 2 or abs(y) > PANEL_H / 2:
+                continue
+            if page is None:
+                hit = Hit("ghost", pose.side, None, None, point, t)
+            elif TITLE_Y[0] <= y <= TITLE_Y[1]:
+                hit = Hit("title", pose.side, page, None, point, t)
+            else:
+                slot = self.locate_slot(x, y)
+                hit = Hit("face" if slot is not None else "body", pose.side, page, slot, point, t)
+            if best is None or t < best.distance:
+                best = hit
+        return best
 
-    # -- behaviour --------------------------------------------------------------------------------------------------
-    def wants_visible(self, controller, head, head_orientation):
-        to_ctrl = mu.sub(controller, head)
+    # behaviour
+    def wants_visible(self, origin, head, head_orientation):
+        to_ctrl = mu.sub(origin, head)
         dist = mu.length(to_ctrl)
         if not GAZE_RANGE[0] <= dist <= GAZE_RANGE[1]:
             return False
@@ -140,46 +250,89 @@ class PaletteRing:
     def update(self, frame, navigating=False):
         result = RingResult()
         palette, tool = frame.hands[self.palette_hand], frame.hands[self.tool_hand]
-        if not palette.aim.tracked:
+        pose = palette.grip_pose if palette.grip_pose.tracked else palette.aim
+        if not pose.tracked:
             self.fade = 0.0
-            self.hover = None
+            self.hover = self.hover_title = self.lifted = None
+            self.poses, self.ghost = {}, None
             return result
-        controller = palette.aim.position
         head = frame.head.position
         dt = frame.dt
 
         if "button1" in palette.pressed:
             self.pinned = not self.pinned
-        want = (self.pinned or self.wants_visible(controller, head, frame.head.orientation)) and not navigating
+        self.layout_poses(pose)
+        want = (self.pinned or self.lifted is not None
+                or self.wants_visible(self.origin, head, frame.head.orientation)) and not navigating
         self.fade = min(1.0, self.fade + FADE_RATE * dt) if want else max(0.0, self.fade - FADE_RATE * dt)
         if self.fade <= 0.0:
-            self.hover = None
+            self.hover = self.hover_title = self.lifted = None
+            self.poses, self.ghost = {}, None
             self._armed = True
             return result
         result.visible = True
 
-        # stick flick turns the ring one page
+        # a change in the number of sides keeps the front side in front
+        if self._known_count != self._count:
+            self._known_count = self._count
+            self.index %= self._count
+            self.angle = self.target_angle
+            self.layout_poses(pose)
+
+        # stick flick turns the carousel one side
         x = palette.stick[0]
-        if self._armed and abs(x) >= FLICK_ON and self.page_count > 1 and self.fade > 0.5:
+        if self._armed and abs(x) >= FLICK_ON and self._count > 1 and self.fade > 0.5:
             self.index += 1 if x > 0 else -1
             self._armed = False
             result.haptics.append((self.palette_hand, 0.35, 0.025))
         elif abs(x) <= FLICK_OFF:
             self._armed = True
         self.angle += (self.target_angle - self.angle) * min(1.0, TURN_RATE * dt)
+        self.layout_poses(pose)
 
-        # ray hover and activation
+        # ray hover, activation and rearranging
         hit = None
+        direction = None
         if tool.aim.tracked and self.fade > 0.8:
             direction = mu.rotate(tool.aim.orientation, (0.0, 0.0, -1.0))
-            hit = self.hit_test(tool.aim.position, direction, controller, head)
-        previous = self.hover
-        self.hover = None if hit is None else (hit[0], hit[1])
-        if hit is not None:
-            result.hover, result.ray_end, result.consume_trigger = self.hover, hit[2], True
-            if self.hover != previous:
+            hit = self.hit_test(tool.aim.position, direction)
+        previous = (self.hover, self.hover_title, self._target)
+        self.hover = (hit.page, hit.slot) if hit is not None and hit.kind == "face" else None
+        self.hover_title = hit.page if hit is not None and hit.kind == "title" else None
+        result.hover, result.hover_title = self.hover, self.hover_title
+        self._target = None
+
+        if self.lifted is None:
+            if hit is not None:
+                result.ray_end, result.consume_trigger = hit.point, True
+                if (self.hover, self.hover_title) != previous[:2]:
+                    result.haptics.append((self.tool_hand, 0.15, 0.015))
+                if "trigger" in tool.pressed:
+                    if hit.kind == "face":
+                        result.activated = self.hover
+                        result.haptics.append((self.tool_hand, 0.5, 0.04))
+                    elif hit.kind == "title":
+                        self.lifted = hit.page
+                        self._lift_distance = hit.distance
+                        result.haptics.append((self.tool_hand, 0.4, 0.04))
+                        self.layout_poses(pose)
+        else:
+            result.consume_trigger = True
+            if hit is not None:
+                self._target = (hit.side, None if hit.kind == "ghost" else hit.page)
+                result.ray_end = hit.point
+            if self._target != previous[2]:
                 result.haptics.append((self.tool_hand, 0.15, 0.015))
-            if "trigger" in tool.pressed:
-                result.activated = self.hover
-                result.haptics.append((self.tool_hand, 0.5, 0.04))
+            if not tool.down("trigger"):
+                page, target = self.lifted, self._target
+                self.lifted = None
+                if target is not None:
+                    result.dropped = (page, target[0], target[1])
+                    result.haptics.append((self.tool_hand, 0.5, 0.04))
+                self._target = None
+            elif tool.aim.tracked:
+                direction = mu.rotate(tool.aim.orientation, (0.0, 0.0, -1.0))
+                result.lift_point = mu.add(tool.aim.position, mu.mul(direction, self._lift_distance if hit is None else hit.distance))
+        result.lifted = self.lifted
+        result.drop_target = self._target
         return result

@@ -23,12 +23,12 @@ Python addon (`freecad.BlocksCAD`), no FreeCAD C++ changes. Layers, bottom-up (`
 backends/   openxr_input.py   action set, bindings per profile, polling into InputFrame, haptics
             openxr_models.py  runtime-provided controller models (XR_EXT_render_model)
             sim.py            scripted head + 2 controllers, offscreen mono/stereo render, no headset  <- test + desktop mode
-input.py    InputFrame: head pose, per hand {aim/grip pose, trigger, grip, stick xy+click, button1, button2, menu}; edge events
+input.py    InputFrame: head pose, per hand {aim/grip pose, trigger, grip, stick xy+click, button1, button2, menu, aux1, aux2}; edge events
 profiles.py abstract input -> OpenXR path per interaction profile (data, see input-profiles.md)
 gltf.py     GLB reader;  render/  gltf_coin.py (glTF -> Coin3D), controller_shape.py (generated), offscreen.py (image render)
 commonXR.py XRwidget: OpenXR session, swapchains, Coin scene, render loop, inherited interact_* handlers (to be split: rig*)
-core/       mathutil.py (vector/quaternion math), navigation.py (grip navigation); snapping*, transactions*, units*
-ui/         controller.py (navigation + ring + actions), ring.py (ring logic), ring_view.py, layout.py (faces, pages, JSON), defaults.py, readout.py; numeric keypad*, quick radial*, tool tips*, toasts*
+core/       mathutil.py (vector/quaternion math), navigation.py (grip navigation, home pose), units.py (measurement systems, ruler ticks); snapping*, transactions*
+ui/         controller.py (navigation + carousel + ruler + actions), ring.py (carousel logic and geometry), ring_view.py, ruler.py, style.py (colours, font), layout.py (faces, panels, sides, JSON), defaults.py; numeric keypad*, quick radial*, tool tips*, toasts*
 tools/      base.py, registry.py, manager.py, legacy.py (the six inherited modes as tools); new tools: one module each
 core/*      picking/highlight, preview ghosts, transactions (undo), units, parameter binding (further modules)
 cad/*       thin wrappers creating/editing FreeCAD features (Part primitives, Sketcher, PartDesign, booleans, Attacher)
@@ -42,8 +42,8 @@ Rules:
 
 ## Interaction design
 
-The interface is specified in [ux-design.md](ux-design.md): the Open Brush control scheme adapted to CAD (palette ring on the off hand, grip navigation with two-hand
-move/rotate/scale, quick radial, modular faces and pages with a user layout). Hardware independence rests on the five abstract inputs per hand (`input-profiles.md`).
+The interface is specified in [ux-design.md](ux-design.md): the Open Brush control scheme adapted to CAD (palette carousel on the off hand controller, grip navigation with two-hand
+free orbit/scale, quick radial, modular faces and panels with a user layout). Hardware independence rests on the five abstract inputs per hand (`input-profiles.md`).
 
 ### The Blocks-like core: "move points"
 A parametric solid made of **editable points**: `BlocksCAD::Block` (FeaturePython, a polyhedron: `Vertices` (VectorList) + `Faces` (index lists), solid built with OCCT).
@@ -65,7 +65,7 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 ## Tool roadmap (milestones)
 | M | Deliverable |
 |---|---|
-| U1 to U4 | **UX foundation** (before M1): world navigation, palette ring with faces and pages, quick radial, layout customization, tool options. See `ux-design.md` |
+| U1 to U4 | **UX foundation** (before M1): world navigation, palette carousel with faces and panels, quick radial, layout customization, tool options. See `ux-design.md` |
 | M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools |
 | M1 | Primitives (box, cylinder, cone, sphere, torus, wedge, prism) with snap grid, ghost preview, live dimension, undo/redo |
 | M2 | Selection/hover highlight (vertex/edge/face/object), Grab tool (move/rotate, two-hand scale -> parameters), world navigation |

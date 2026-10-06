@@ -34,7 +34,7 @@ IPD = 0.064  # metres between the eyes
 class SimInput:
     """Scripted input source; `frame()` advances the clock and returns an `InputFrame` with edges."""
 
-    HAND_FIELDS = ("trigger", "grip", "stick", "stick_click", "button1", "button2", "menu")
+    HAND_FIELDS = ("trigger", "grip", "stick", "stick_click", "button1", "button2", "menu", "aux1", "aux2")
 
     def __init__(self, profile="/interaction_profiles/valve/frame_controller_valve"):
         self.profile = profile
@@ -70,7 +70,7 @@ class SimInput:
         self.time += dt
         frame = InputFrame(time=self.time, head=self.head, profile=self.profile)
         frame.hands = tuple(HandInput(**{f: getattr(h, f) for f in (
-            "aim", "grip_pose", "trigger", "grip", "stick", "stick_click", "button1", "button2", "menu")}) for h in self.hands)
+            "aim", "grip_pose", "trigger", "grip", "stick", "stick_click", "button1", "button2", "menu", "aux1", "aux2")}) for h in self.hands)
         return self._tracker.update(frame)
 
 
@@ -120,6 +120,7 @@ class SimSession:
             self.scene.addChild(sep)
             self.hand_transforms.append(xf)
             self.hand_models.append(model)
+        self.scene.addChild(self.ui.overlay)   # last: drawn over everything
 
     def frame(self, dt=1.0 / 72.0):
         """Advance the simulated time, pose the controller models and return the `InputFrame`."""

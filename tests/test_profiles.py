@@ -12,6 +12,8 @@ class ProfilesTest(unittest.TestCase):
         left = profiles.bindings(FRAME, "left")
         self.assertEqual(left["button1"], "/user/hand/left/input/dpad_up/click")
         self.assertEqual(left["button2"], "/user/hand/left/input/dpad_down/click")
+        self.assertEqual(left["aux1"], "/user/hand/left/input/dpad_left/click")
+        self.assertEqual(left["aux2"], "/user/hand/left/input/dpad_right/click")
         self.assertEqual(left["grip"], "/user/hand/left/input/squeeze/value")
 
     def test_frame_right_uses_face_buttons(self):

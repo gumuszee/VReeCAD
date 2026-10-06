@@ -19,7 +19,7 @@ The Meta Touch Plus/Pro and Pico 4 profiles are bound by the addon and are not m
 
 ## Abstract inputs used by the tools
 
-Tools use five abstract inputs per hand (`design.md`): `trigger`, `grip`, `stick` (xy + click), `button1`, `button2`; `menu` is an extra binding.
+Tools use five abstract inputs per hand (`design.md`): `trigger`, `grip`, `stick` (xy + click), `button1`, `button2`; `menu` is an extra binding, and `aux1` and `aux2` are optional extra buttons that only some controllers have (Steam Frame left: D-pad left and right; released everywhere else).
 The mapping to physical controls is data-driven per interaction profile (`profiles.py`, polled by `backends/openxr_input.py` into an `InputFrame`):
 
 | Abstract | Quest Touch | Index | Steam Frame | Vive / WMR |
@@ -30,7 +30,7 @@ The mapping to physical controls is data-driven per interaction profile (`profil
 | `button1` | right `a`, left `x` | `a` | right `a`, left `dpad_up` | `menu` |
 | `button2` | right `b`, left `y` | `b` | right `b`, left `dpad_down` | trackpad click |
 
-The Steam Frame left controller has no face buttons; its D-pad directions act as buttons (owner-confirmed to work as buttons).
+The Steam Frame left controller has no face buttons; its D-pad directions act as buttons (owner-confirmed to work as buttons for up and down): up is `button1`, down is `button2`, left is `aux1` (undo), right is `aux2` (redo).
 `system` is reserved by the runtime and is never used. `menu` binds to Frame left `view`, Frame right `menu`, Quest left `menu`, and is unbound on the right Quest controller. `bumper` is unbound.
 The Vive trackpad is the stick without a separate stick click, because its click is `button2`; WMR uses the thumbstick for the stick and the trackpad click for `button2`.
 A press starts at an analog value of 0.7 and ends below 0.3.

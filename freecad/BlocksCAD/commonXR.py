@@ -553,6 +553,8 @@ class XRwidget(QOpenGLWidget):
                 self.geo_prev.get_scenegraph())
             # add 2D Qt widgets to each eye scenegraph
             self.sgrp[eye_index].addChild(self.qt_widgets_separator)
+            # the scale ruler is drawn last, over everything
+            self.sgrp[eye_index].addChild(self.ui.overlay)
         self.cam_picking_root.ref()
         self.cam_picking_root.addChild(self.pick_camera)
         self.cam_picking_root.addChild(self.world_separator)
@@ -584,6 +586,7 @@ class XRwidget(QOpenGLWidget):
             self.geo_prev.get_scenegraph())
         self.tpp_sgrp.addChild(self.qt_widgets_separator)
         self.tpp_sgrp.addChild(self.ui.root)
+        self.tpp_sgrp.addChild(self.ui.overlay)
         # setup additional framebuffer for the TPP camera
         self.ctx.makeCurrent(self.offs_surface)
         w = self.size().width()
@@ -1610,6 +1613,10 @@ class XRwidget(QOpenGLWidget):
     def update_ui(self, frame):
         """One frame of the user interface: grip navigation, palette ring, haptics, ray and trigger ownership."""
         self.ui.active_actions = {f"tool:{self.tools.active_name}"}
+        self.ui.mm_to_stage = self.doc_xr_transform.scaleFactor.getValue()[0]
+        doc = App.ActiveDocument
+        if doc is not None and self.navigator.state == "two":
+            self.ui.set_unit_system(getattr(doc, "UnitSystem", ""))
         update = self.ui.update(frame)
         self.apply_navigation()
         for hand, amplitude, duration in update.haptics:

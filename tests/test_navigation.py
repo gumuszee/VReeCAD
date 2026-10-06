@@ -5,6 +5,7 @@ import support  # noqa: F401
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import navigation as nav
 from freecad.BlocksCAD.backends.sim import SimInput
+from freecad.BlocksCAD.input import Pose
 
 
 def close(a, b, tol=1e-6):
@@ -35,9 +36,9 @@ class TwoPointTest(unittest.TestCase):
         self.assertTrue(close(w.to_stage((-0.2, 1, 0)), (0, 1, 0.2)))
 
     def test_hands_tilting_do_not_tilt_the_world_when_constrained(self):
-        w = nav.two_point(nav.IDENTITY, (-0.2, 1, 0), (0.2, 1, 0), (-0.2, 0.8, 0), (0.2, 1.2, 0))
+        w = nav.two_point(nav.IDENTITY, (-0.2, 1, 0), (0.2, 1, 0), (-0.2, 0.8, 0), (0.2, 1.2, 0), constrain_up=True)
         self.assertTrue(close(mu.rotate(w.rotation, (0, 1, 0)), (0, 1, 0)))
-        free = nav.two_point(nav.IDENTITY, (-0.2, 1, 0), (0.2, 1, 0), (-0.2, 0.8, 0), (0.2, 1.2, 0), constrain_up=False)
+        free = nav.two_point(nav.IDENTITY, (-0.2, 1, 0), (0.2, 1, 0), (-0.2, 0.8, 0), (0.2, 1.2, 0))
         self.assertGreater(abs(mu.rotate(free.rotation, (0, 1, 0))[0]), 0.1)
 
     def test_scale_is_clamped(self):
@@ -108,27 +109,114 @@ class NavigatorTest(unittest.TestCase):
         self.assertEqual(self.step(blocked=(False, True)), [])
         self.assertEqual(self.nav.state, "idle")
 
-    def test_stick_click_resets_with_an_animation(self):
+    def test_stick_click_resets_to_the_home_pose_in_front_of_the_head(self):
         self.sim.set_hand(1, position=(0.3, 1.2, 0.0), grip=1.0)
         self.step()
         self.sim.set_hand(1, position=(0.3, 1.2, -1.0))
         self.step()
-        self.assertFalse(close(self.nav.world.position, (0, 0, 0)))
+        self.assertFalse(close(self.nav.world.position, (0, 1.2, -1.0)))
         self.sim.set_hand(1, stick_click=True)
         self.assertEqual(self.step(), [("reset",)])
         self.assertTrue(self.nav.resetting)
         for _ in range(30):
             self.step()
         self.assertFalse(self.nav.resetting)
-        self.assertEqual(self.nav.world, nav.IDENTITY)
+        home = nav.home_pose(self.sim.head)
+        self.assertEqual(self.nav.world, home)
+        self.assertTrue(close(home.position, (0.0, 1.6 * nav.HOME_HEIGHT, -nav.HOME_DISTANCE)))
         # the grip still held does not drag until it is released
         self.sim.set_hand(1, stick_click=False, position=(0.3, 1.2, -2.0))
         self.step()
-        self.assertEqual(self.nav.world, nav.IDENTITY)
+        self.assertEqual(self.nav.world, home)
         self.sim.set_hand(1, grip=0.0)
         self.step()
         self.sim.set_hand(1, grip=1.0)
         self.assertEqual(self.step(), [("grab", 1)])
+
+    def test_home_pose_follows_the_head_position_and_heading(self):
+        self.sim.set_head(position=(1.0, 1.7, 2.0), look_at_point=(6.0, 1.7, 2.0))   # looking along +X
+        home = nav.home_pose(self.sim.head)
+        self.assertTrue(close(home.position, (2.0, 1.7 * nav.HOME_HEIGHT, 2.0), 1e-6))
+        # the document front view (document +Y is stage -Z) points along the line of sight
+        self.assertTrue(close(mu.rotate(home.rotation, (0, 0, -1)), (1, 0, 0), 1e-6))
+        # looking down does not turn the home pose: the top of the head points forward
+        self.sim.set_head(position=(0.0, 1.7, 0.0), look_at_point=(0.0, 0.0, -0.01))
+        home = nav.home_pose(self.sim.head)
+        self.assertTrue(close(home.position, (0.0, 1.7 * nav.HOME_HEIGHT, -nav.HOME_DISTANCE), 1e-3))
+        self.assertEqual(nav.home_pose(Pose()), nav.IDENTITY)   # an untracked head
+
+    def test_reset_can_be_requested_without_a_gesture(self):
+        self.step()
+        self.nav.world = nav.WorldPose((3, 0, 0), mu.quat_from_axis_angle((1, 0, 0), 0.5), 3.0)
+        self.nav.request_reset()
+        self.assertEqual(self.step(), [("reset",)])
+        for _ in range(30):
+            self.step()
+        self.assertEqual(self.nav.world, nav.home_pose(self.sim.head))
+        self.nav.request_reset()                                   # already home: nothing to animate
+        self.assertEqual(self.step(), [])
+        self.assertFalse(self.nav.resetting)
+
+    def two_grips(self, left=(-0.2, 1.2, 0), right=(0.2, 1.2, 0), **right_inputs):
+        self.sim.set_hand(0, position=left, grip=1.0)
+        self.sim.set_hand(1, position=right, grip=1.0, **right_inputs)
+        self.step()
+
+    def test_free_orbit_tilts_the_world_and_the_modifier_keeps_it_level(self):
+        self.two_grips()
+        self.sim.set_hand(0, position=(-0.2, 0.9, 0))
+        self.sim.set_hand(1, position=(0.2, 1.5, 0))
+        self.step()
+        self.assertGreater(abs(mu.rotate(self.nav.world.rotation, (0, 1, 0))[0]), 0.1)   # free by default
+        self.assertFalse(self.nav.level)
+        # holding button1 of the tool hand: the next movement only turns about the vertical axis
+        self.sim.set_hand(1, button1=True)
+        events = self.step()
+        self.assertIn(("level", True), events)
+        tilted = mu.rotate(self.nav.world.rotation, (0, 1, 0))
+        self.sim.set_hand(0, position=(-0.2, 1.5, 0))
+        self.sim.set_hand(1, position=(0.2, 0.9, 0))
+        self.step()
+        self.assertTrue(close(mu.rotate(self.nav.world.rotation, (0, 1, 0)), tilted, 1e-6))   # no further tilt
+
+    def test_switching_the_rotation_mode_does_not_jump(self):
+        self.two_grips()
+        self.sim.set_hand(0, position=(-0.2, 0.9, 0))
+        self.sim.set_hand(1, position=(0.2, 1.5, 0))
+        self.step()
+        before = self.nav.world
+        self.sim.set_hand(1, button1=True)
+        self.step()
+        self.assertTrue(close(self.nav.world.position, before.position, 1e-9))
+        self.assertTrue(close(self.nav.world.rotation, before.rotation, 1e-9))
+        self.sim.set_hand(1, button1=False)
+        self.step()
+        self.assertTrue(close(self.nav.world.position, before.position, 1e-9))
+
+    def test_button2_snaps_the_scale_to_one_about_the_hands(self):
+        self.two_grips()
+        self.sim.set_hand(0, position=(-0.4, 1.2, 0))
+        self.sim.set_hand(1, position=(0.4, 1.2, 0))
+        self.step()
+        self.assertAlmostEqual(self.nav.world.scale, 2.0)
+        under = self.nav.world.to_world((0.0, 1.2, 0.0))          # the world point at the midpoint of the hands
+        self.sim.set_hand(1, button2=True)
+        events = self.step()
+        self.assertIn(("snap",), events)
+        self.sim.set_hand(1, button2=False)
+        for _ in range(20):
+            self.step()
+        self.assertEqual(self.nav.world.scale, 1.0)
+        self.assertTrue(close(self.nav.world.to_world((0.0, 1.2, 0.0)), under, 1e-9))
+        # the gesture continues from 1 : 1
+        self.sim.set_hand(0, position=(-0.2, 1.2, 0))
+        self.sim.set_hand(1, position=(0.2, 1.2, 0))
+        self.step()
+        self.assertAlmostEqual(self.nav.world.scale, 0.5, places=6)   # the hands halved their distance
+
+    def test_button2_without_a_grip_does_nothing(self):
+        self.sim.set_hand(1, button2=True)
+        self.assertEqual(self.step(), [])
 
     def test_format_scale(self):
         self.assertEqual(nav.format_scale(1.0), "1 : 1")
