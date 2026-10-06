@@ -13,20 +13,46 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""Coin3D drawing of the quick radial (docs/ux-design.md, Quick radial): a ring of faces in a plane that faces the head, drawn over
-the model, with a dot that follows the hand. Same look as the palette faces (`style`, `ring_view`)."""
+"""Coin3D drawing of the quick radial (docs/ux-design.md, Quick radial): a disc in a plane that faces the head, cut into one
+segment per item around a hub, drawn over the model, with a dot that follows the hand. Same colours and font as the palette."""
 
 import math
 
 from pivy import coin
 
 from freecad.BlocksCAD.core import mathutil as mu
+from freecad.BlocksCAD.ui import layout as lay
 from freecad.BlocksCAD.ui import radial as rd
-from freecad.BlocksCAD.ui import ring as rg
 from freecad.BlocksCAD.ui import style
-from freecad.BlocksCAD.ui.ring_view import DEPTH, _Cell, _plate
+from freecad.BlocksCAD.ui.ring_view import DEPTH, _text
 
-CURSOR = 0.012     # edge of the dot that follows the hand
+BACKDROP = 0.012      # the dark disc reaches this far beyond the segments
+CURSOR = 0.012        # edge of the dot that follows the hand
+LABEL_RADIUS = (rd.INNER + rd.OUTER) / 2 + 0.004
+
+
+def _strip(parent, points, rgb, z):
+    """A filled triangle strip in the plane of the radial; returns its colour node."""
+    sep = coin.SoSeparator()
+    colour = style.color(rgb)
+    sep.addChild(colour)
+    coords = coin.SoCoordinate3()
+    coords.point.setValues(0, len(points), [(x, y, z) for x, y in points])
+    sep.addChild(coords)
+    strip = coin.SoTriangleStripSet()
+    strip.numVertices.setValue(len(points))
+    sep.addChild(strip)
+    parent.addChild(sep)
+    return colour
+
+
+def _disc(radius, steps=48):
+    """Strip points that fill a disc: outer point and centre alternate."""
+    points = []
+    for k in range(steps + 1):
+        a = 2 * math.pi * k / steps
+        points += [(radius * math.sin(a), radius * math.cos(a)), (0.0, 0.0)]
+    return points
 
 
 class RadialView:
@@ -58,18 +84,21 @@ class RadialView:
         cursor.addChild(dot)
         sep.addChild(cursor)
         self.root.addChild(sep)
-        self._cells = []
+        self._segments = []
         self._built_for = None
 
     def _build(self, labels):
+        """With the depth test off what is drawn later lies on top, so the order is: backdrop, hub, segments, labels."""
         self._items.removeAllChildren()
-        self._cells = []
-        # the backing plate comes first: with the depth test off, what is drawn later lies on top
-        _plate(self._items, 2 * rd.RADIUS + rg.CELL, 2 * rd.RADIUS + rg.CELL, style.PLATE, 0.0, 0.0, -DEPTH * 2)
+        self._segments = []
         count = len(labels)
+        _strip(self._items, _disc(rd.OUTER + BACKDROP), style.PLATE, -DEPTH)
+        _strip(self._items, _disc(rd.INNER - rd.GAP), style.EMPTY, 0.0)
+        for i in range(count):
+            self._segments.append(_strip(self._items, rd.segment_strip(i, count), style.FACE, 0.0))
         for i, label in enumerate(labels):
-            angle = 2 * math.pi * i / count
-            self._cells.append(_Cell(self._items, rd.RADIUS * math.sin(angle), rd.RADIUS * math.cos(angle), label))
+            a = 2 * math.pi * i / count
+            _text(self._items, lay.wrap_label(label), LABEL_RADIUS * math.sin(a), LABEL_RADIUS * math.cos(a), DEPTH, style.TEXT)
         self._built_for = tuple(labels)
 
     def update(self, state, labels):
@@ -83,8 +112,8 @@ class RadialView:
         normal = mu.cross(state.right, state.up)
         self._transform.translation.setValue(*state.centre)
         self._transform.rotation.setValue(*mu.quat_from_basis(state.right, state.up, normal))
-        reach = min(math.hypot(*state.cursor), rd.RADIUS)
-        scale = reach / math.hypot(*state.cursor) if math.hypot(*state.cursor) > 1e-9 else 0.0
+        reach = math.hypot(*state.cursor)
+        scale = min(reach, rd.OUTER) / reach if reach > 1e-9 else 0.0
         self._cursor_move.translation.setValue(state.cursor[0] * scale, state.cursor[1] * scale, DEPTH)
-        for i, cell in enumerate(self._cells):
-            cell.set_state(state.selected == i, False, True)
+        for i, colour in enumerate(self._segments):
+            colour.rgb = coin.SbColor(*(style.HOVER if state.selected == i else style.FACE))

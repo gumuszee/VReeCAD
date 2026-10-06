@@ -15,7 +15,7 @@
 # ***************************************************************************
 """The quick radial (docs/ux-design.md, Quick radial). No Coin, OpenXR or FreeCAD imports.
 
-Holding `button1` of the tool hand (outside navigation) opens a ring of favourite faces around the hand. The item is chosen by the
+Holding `button1` of the tool hand (outside navigation) opens a disc around the hand, cut into one segment per favourite face. The item is chosen by the
 direction the hand moves from the spot where the button went down, seen from the head: the first item is straight up, the others
 follow clockwise. Releasing the button activates the chosen item; releasing it before the hand has left the dead zone, or starting
 a grip, cancels. The plane of the radial and its axes are fixed when it opens, so turning the head does not move the choice."""
@@ -28,7 +28,9 @@ from freecad.BlocksCAD.core import mathutil as mu
 
 MAX_ITEMS = 8
 DEAD_ZONE = 0.03       # metres the hand must move before an item is chosen
-RADIUS = 0.075         # metres from the centre of the radial to the centre of an item
+INNER = DEAD_ZONE      # radius of the hub: the area in which nothing is chosen
+OUTER = 0.115          # outer radius of the segments
+GAP = 0.003            # metres of dark between neighbouring segments, measured at the outer radius
 TOWARDS_HEAD = 0.05    # the radial stands this far in front of the hand, so the controller does not hide it
 RECENT = 6             # number of favourites: the faces used last, padded from `DEFAULT_FAVOURITES`
 DEFAULT_FAVOURITES = ("doc.undo", "doc.redo", "view.reset", "doc.delete", "view.overlay", "pointer.mode")
@@ -53,6 +55,18 @@ def sector(x, y, count):
     step = 2 * math.pi / count
     angle = math.atan2(x, y) % (2 * math.pi)
     return int((angle + step / 2) // step) % count
+
+
+def segment_strip(index, count, r_in=INNER, r_out=OUTER, gap=GAP, steps=10):
+    """The points (x right, y up, metres) of a triangle strip that fills the segment of item `index` of `count`: a ring sector
+    centred on the direction of the item (0 is straight up, clockwise), alternating outer and inner points."""
+    half = math.pi / count - gap / (2 * r_out)
+    centre = 2 * math.pi * index / count
+    points = []
+    for k in range(steps + 1):
+        a = centre - half + 2 * half * k / steps
+        points += [(r_out * math.sin(a), r_out * math.cos(a)), (r_in * math.sin(a), r_in * math.cos(a))]
+    return points
 
 
 def choose_items(recent, known, hidden=(), count=RECENT):

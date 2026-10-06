@@ -20,6 +20,32 @@ class SectorTest(unittest.TestCase):
         self.assertEqual(rd.sector(0.0, 1.0, 1), 0)
 
 
+class SegmentTest(unittest.TestCase):
+    def test_a_segment_is_centred_on_its_direction_and_lies_between_the_hub_and_the_outer_radius(self):
+        import math
+        for count in (1, 4, 6, 8):
+            for index in range(count):
+                points = rd.segment_strip(index, count)
+                self.assertEqual(len(points), 22)
+                radii = [math.hypot(*p) for p in points]
+                self.assertAlmostEqual(min(radii), rd.INNER)
+                self.assertAlmostEqual(max(radii), rd.OUTER)
+                mid_x = sum(p[0] for p in points) / len(points)
+                mid_y = sum(p[1] for p in points) / len(points)
+                if count > 1:
+                    self.assertEqual(rd.sector(mid_x, mid_y, count), index)     # the middle of the drawing is in its own sector
+
+    def test_neighbouring_segments_do_not_overlap(self):
+        import math
+        a, b = rd.segment_strip(0, 6), rd.segment_strip(1, 6)
+        last_of_a = max(math.atan2(x, y) for x, y in a)
+        first_of_b = min(math.atan2(x, y) for x, y in b)
+        self.assertLess(last_of_a, first_of_b)
+
+    def test_the_hub_is_the_dead_zone(self):
+        self.assertEqual(rd.INNER, rd.DEAD_ZONE)
+
+
 class ItemsTest(unittest.TestCase):
     KNOWN = {"doc.undo", "doc.redo", "view.reset", "doc.delete", "view.overlay", "pointer.mode", "tool.line", "tool.cube", "app.close",
              "view.layout"}

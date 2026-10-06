@@ -48,7 +48,7 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Pointer: laser, and tip on both controllers with a cone and a small sphere; angle 15 degrees and length 40 mm | Verified | owner-confirmed; the tip of the left controller hides while the carousel is shown |
 | Navigation in tip mode: the world is held at the tips, the ruler runs between the tips, both tips stay visible | Verified | owner-confirmed |
 | Faces activate when the trigger is released over them (tip and laser); a press that leaves the face does nothing | Unverified | `tests/test_ring.py`, `tests/live/test_coin.py` |
-| Quick radial: `button1` of the tool hand held opens it, the hand direction chooses, release activates; favourites follow use | Unverified | `tests/test_radial.py`, `tests/live/test_coin.py`, `tools/snippets/render_ui.py` (`ui_radial.png`); size and dead zone (3 cm) are guesses |
+| Quick radial: `button1` of the tool hand held opens it, the hand direction chooses, release activates; favourites follow use | Unverified | `tests/test_radial.py`, `tests/live/test_coin.py`, `tools/snippets/render_ui.py` (`ui_radial.png`); disc size and dead zone (3 cm hub) are guesses |
 | Lifting a face (0.4 s hold), dropping it on a slot (move or swap), hiding it on the extra side, Show hidden | Unverified | `tests/test_ring.py`, `tests/live/test_coin.py`, `tools/snippets/render_ui.py` (`ui_face_lift.png`, `ui_face_hide.png`) |
 | Undo on the left D-pad left, redo on D-pad right | Unverified | `tests/live/test_coin.py` covers the dispatch; the runtime binding of `dpad_left` and `dpad_right` has not been observed |
 | After a two-grip gesture the remaining grip does nothing until both are released | Unverified | `tests/test_navigation.py` covers it |
