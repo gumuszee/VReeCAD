@@ -7,6 +7,7 @@ Diverging from upstream without merging back is allowed.
 | Component | Licence | Relationship | What we must do |
 |---|---|---|---|
 | freecad-xr-workbench (base of this repo) | LGPL-3.0-or-later (`LICENSE`, `package.xml`, file headers say "version 3 or any later") | Forked and modified | Keep `LICENSE` and the existing copyright headers; modified files stay LGPL-3.0+; add our own copyright line to files we substantially change; changes are documented by git history; new files get the same LGPL header. Original author stays credited (`package.xml` `<author>`, `docs/upstream/README-freecad-xr-workbench.md`). |
+| `commonXR.py` core (OpenXR/OpenGL session code) | derived from `gl_example.py` of [pyopenxr_examples](https://github.com/cmbruns/pyopenxr_examples) (Apache-2.0, Christopher Bruns); the upstream author distributes the combination under LGPL-3.0 | Part of the code base we modify | Keep the "Based on gl_example.py" header notice in files that retain this code; Apache-2.0 attribution requirements apply to the derived portions. |
 | Upstream controller models `Resources/controllers/*.iv`, icons | **no separate licence stated** (inherit the repo's) | Shipped in this repo | Provenance unverified. Controller models are replaced by own models in M0; icons are redrawn when touched. |
 | FreeCAD | LGPL-2.1-or-later | We call its Python API; not bundled | none beyond normal use |
 | pyopenxr | Apache-2.0 | runtime dependency, installed via pip, not bundled | none |
