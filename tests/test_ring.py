@@ -143,9 +143,14 @@ class RingTest(unittest.TestCase):
         self.assertIsNone(r.activated)
         self.sim.set_hand(1, trigger=1.0)
         r = self.run_frames(1)
-        self.assertEqual(r.activated, (0, 5))
-        r = self.run_frames(1)                   # still held: no second activation
+        self.assertIsNone(r.activated)           # a press only arms the face
+        self.assertTrue(r.consume_trigger)
+        r = self.run_frames(1)
         self.assertIsNone(r.activated)
+        self.sim.set_hand(1, trigger=0.0)
+        r = self.run_frames(1)                   # released over the same face: activated once
+        self.assertEqual(r.activated, (0, 5))
+        self.assertIsNone(self.run_frames(1).activated)
 
     def test_ray_beside_the_panel_does_not_hover(self):
         self.run_frames()
@@ -292,6 +297,8 @@ class RingTest(unittest.TestCase):
         self.assertTrue(r.consume_trigger)
         self.assertLess(mu.length(mu.sub(r.ray_end, point)), 1e-6)       # the tip projected onto the plate
         self.sim.set_hand(1, trigger=1.0)
+        self.assertIsNone(self.run_tip().activated)
+        self.sim.set_hand(1, trigger=0.0)
         self.assertEqual(self.run_tip().activated, (0, 5))
 
     def test_tip_far_from_the_panel_does_nothing_and_pushing_through_still_touches(self):
@@ -386,7 +393,123 @@ class RingTest(unittest.TestCase):
         self.aim_at(point, n)
         self.assertEqual(self.run_frames(1).hover, (0, 0))
         self.sim.set_hand(1, trigger=1.0)
+        self.run_frames(1)
+        self.sim.set_hand(1, trigger=0.0)
         self.assertEqual(self.run_frames(1).activated, (0, 0))
+
+    def press_face(self, slot, page=0):
+        point, n = self.slot_point(slot, page)
+        self.aim_at(point, n)
+        self.run_frames(1)
+        self.sim.set_hand(1, trigger=1.0)
+        return self.run_frames(1)
+
+    def test_a_long_hold_on_a_face_lifts_it_instead_of_activating_it(self):
+        self.run_frames()
+        self.press_face(5)
+        r = self.run_frames(int(rg.HOLD_LIFT / 0.02) + 3)
+        self.assertEqual(self.ring.lifted_face, (0, 5))
+        self.assertEqual(r.lifted_face, (0, 5))
+        self.assertTrue(r.consume_trigger)
+        self.assertIsNotNone(r.lift_point)
+        self.assertEqual(len(self.ring.display_sides()), len(SIDES) + 1)       # one extra empty side to hide the face
+        self.sim.set_hand(1, trigger=0.0)
+        r = self.run_frames(1)                   # released over its own slot: nothing happens
+        self.assertIsNone(r.activated)
+        self.assertIsNone(r.face_dropped)
+        self.assertIsNone(self.ring.lifted_face)
+
+    def test_leaving_the_face_while_pressed_cancels_the_press(self):
+        self.run_frames()
+        self.press_face(5)
+        point, n = self.slot_point(6)
+        self.aim_at(point, n)
+        self.run_frames(2)
+        self.sim.set_hand(1, trigger=0.0)
+        r = self.run_frames(1)
+        self.assertIsNone(r.activated)
+        self.assertIsNone(self.ring.press)
+        point, n = self.slot_point(5)            # coming back and releasing does not activate either
+        self.aim_at(point, n)
+        self.press_face(5)
+        point, n = self.slot_point(6)
+        self.aim_at(point, n)
+        self.run_frames(1)
+        point, n = self.slot_point(5)
+        self.aim_at(point, n)
+        self.run_frames(1)
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertIsNone(self.run_frames(1).activated)
+
+    def test_a_lifted_face_is_dropped_on_another_slot(self):
+        self.run_frames()
+        self.press_face(5)
+        self.run_frames(25)
+        point, n = self.slot_point(6)
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertEqual(r.face_target, (0, 6))
+        self.assertFalse(r.face_hide)
+        self.assertIsNone(r.hover)
+        self.sim.set_hand(1, trigger=0.0)
+        r = self.run_frames(1)
+        self.assertEqual(r.face_dropped, (0, 5, 0, 6))
+
+    def test_slots_the_host_refuses_are_no_drop_target(self):
+        self.ring.can_drop = lambda src, dst: dst != (0, 6)
+        self.run_frames()
+        self.press_face(5)
+        self.run_frames(25)
+        point, n = self.slot_point(6)
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertIsNone(r.face_target)
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertIsNone(self.run_frames(1).face_dropped)
+
+    def test_a_slot_the_host_says_is_empty_cannot_be_lifted(self):
+        self.ring.can_lift = lambda page, slot: slot != 5
+        self.run_frames()
+        self.press_face(5)
+        self.run_frames(25)
+        self.assertIsNone(self.ring.lifted_face)
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertIsNone(self.run_frames(1).activated)                       # a long press is not a tap
+
+    def test_a_lifted_face_dropped_on_the_empty_side_is_hidden(self):
+        self.run_frames()
+        self.press_face(5)
+        self.run_frames(25)
+        self.assertEqual(sorted(self.ring.ghosts), [len(SIDES)])
+        self.flick(-1.0)                                                       # the empty side to the front
+        self.assertEqual(self.ring.front_side(), len(SIDES))
+        ghost = self.ring.ghosts[len(SIDES)]
+        self.aim_at(ghost.centre, ghost.n)
+        r = self.run_frames(1)
+        self.assertTrue(r.face_hide)
+        self.assertIsNone(r.face_target)
+        self.assertEqual(r.drop_marker, (None, "", len(SIDES)))
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertEqual(self.run_frames(1).face_dropped, (0, 5, None, None))
+
+    def test_releasing_a_lifted_face_over_nothing_cancels(self):
+        self.run_frames()
+        self.press_face(5)
+        self.run_frames(25)
+        self.sim.set_hand(1, position=(0.3, 1.5, -0.3), point_at=(0.3, 1.5, -2.0))
+        self.run_frames(2)
+        self.sim.set_hand(1, trigger=0.0)
+        r = self.run_frames(1)
+        self.assertIsNone(r.face_dropped)
+        self.assertIsNone(self.ring.lifted_face)
+
+    def test_the_carousel_stays_while_a_face_is_lifted_without_looking_at_it(self):
+        self.run_frames()
+        self.press_face(5)
+        self.run_frames(25)
+        self.sim.set_head(look_at_point=(0.0, 1.6, 2.0))
+        self.assertTrue(self.run_frames(10).visible)
+        self.assertEqual(self.ring.lifted_face, (0, 5))
 
 
 class LayoutTest(unittest.TestCase):
@@ -488,6 +611,45 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(saved.pages[0].slots[8], "length")                   # row 2 is free
         crowded = lay.Layout([lay.Page("Session", ["m", "c", "x", "y", "z", "u", "v", "w", "q", "r", "s", "t"])])
         self.assertFalse(crowded.add_missing(default, wide={"angle", "length"}))   # no free row: nothing is squeezed in
+
+    def test_a_face_moves_to_a_free_slot_or_changes_places(self):
+        layout = lay.Layout([lay.Page("A", ["a", "b"]), lay.Page("B", ["c"])])
+        self.assertTrue(layout.move_face(0, 0, 1, 5))
+        self.assertEqual((layout.face_at(0, 0), layout.face_at(1, 5)), (None, "a"))
+        self.assertTrue(layout.move_face(1, 5, 0, 1))                          # onto an occupied slot: swap
+        self.assertEqual((layout.face_at(0, 1), layout.face_at(1, 5)), ("a", "b"))
+        self.assertFalse(layout.move_face(0, 1, 0, 1))                         # onto itself
+        self.assertFalse(layout.move_face(0, 7, 1, 2))                         # an empty slot has no face to move
+
+    def test_sliders_are_not_lifted_and_their_rows_take_no_faces(self):
+        layout = lay.Layout([lay.Page("A", ["a", "b", None, None, "s"])])
+        wide = {"s"}
+        self.assertFalse(layout.can_move_face(0, 4, 0, 8, wide))               # a slider is dragged, not lifted
+        self.assertFalse(layout.can_move_face(0, 0, 0, 6, wide))               # a slot in a slider row
+        self.assertFalse(layout.can_move_face(0, 0, 0, 4, wide))
+        self.assertTrue(layout.can_move_face(0, 0, 0, 9, wide))
+        self.assertFalse(layout.hide_face(0, 4, wide))
+
+    def test_hidden_faces_stay_out_of_the_panels_and_come_back_on_request(self):
+        default = lay.Layout([lay.Page("Tools", ["a", "b"]), lay.Page("Session", ["x"])])
+        layout = lay.Layout([lay.Page("Tools", ["a", "b"]), lay.Page("Session", ["x"])])
+        self.assertTrue(layout.hide_face(0, 1))
+        self.assertEqual((layout.face_at(0, 1), layout.hidden), (None, ["b"]))
+        self.assertFalse(layout.hide_face(0, 1))                               # nothing left in that slot
+        self.assertFalse(layout.add_missing(default))                          # hidden is not missing
+        again = lay.Layout.from_json(layout.to_json())
+        self.assertEqual(again.hidden, ["b"])
+        self.assertFalse(again.add_missing(default))
+        self.assertEqual(lay.Layout.from_json(layout.to_json(), known_faces={"a", "x"}).hidden, [])
+        self.assertTrue(again.show_hidden(default))
+        self.assertEqual((again.pages[0].slots[:2], again.hidden), (["a", "b"], []))
+        self.assertFalse(again.show_hidden(default))
+
+    def test_hidden_faces_without_room_stay_hidden(self):
+        default = lay.Layout([lay.Page("A", ["a"])])
+        layout = lay.Layout([lay.Page("A", ["f%d" % i for i in range(lay.SLOTS)])], hidden=["a"])
+        self.assertFalse(layout.show_hidden(default))
+        self.assertEqual(layout.hidden, ["a"])
 
     def test_slider_specs_quantize_and_clamp(self):
         angle = defaults.SLIDERS["pointer.angle"]

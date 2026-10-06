@@ -13,13 +13,15 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""The user interface as one unit: grip navigation with its ruler, the palette carousel with its panels, action dispatch.
+"""The user interface as one unit: grip navigation with its ruler, the palette carousel with its panels, the quick radial, action
+dispatch.
 Hosts (the XR widget and the Sim session) feed it one `InputFrame` per frame and apply what it returns: the world pose goes to a
 scene transform, `haptics` to the controllers, `ray_end` to the tool hand's ray, `consume_trigger` suppresses the tool hand's trigger.
 The scene graph has two roots: `root` (the carousel, depth tested) and `overlay` (the ruler, drawn last on top of everything)."""
 
 import os
 from dataclasses import dataclass, field
+from dataclasses import replace
 from typing import Callable, Dict, List, Optional
 
 from pivy import coin
@@ -29,7 +31,9 @@ from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.ui import defaults
 from freecad.BlocksCAD.ui import layout as lay
 from freecad.BlocksCAD.ui import pointing, settings as cfg
+from freecad.BlocksCAD.ui import radial
 from freecad.BlocksCAD.ui.pointer import Pointer, TipMarker
+from freecad.BlocksCAD.ui.radial_view import RadialView
 from freecad.BlocksCAD.ui.ring import PaletteRing
 from freecad.BlocksCAD.ui.ring_view import RingView
 from freecad.BlocksCAD.ui.ruler import Ruler
@@ -54,12 +58,16 @@ class UiController:
         self.layout = lay.load_layout(default, set(self.faces), layout_path) if use_user_layout else default
         self.settings = cfg.load_settings(settings_path) if use_user_layout else cfg.Settings()
         self.settings_path = settings_path
-        wide = {fid for fid, face in self.faces.items() if face.kind == "slider"}
-        if use_user_layout and self.layout is not default and self.layout.add_missing(default, wide):
+        self.wide = {fid for fid, face in self.faces.items() if face.kind == "slider"}
+        if use_user_layout and self.layout is not default and self.layout.add_missing(default, self.wide):
             self._save_layout()
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
         self.navigator = Navigator(modifier_hand=tool_hand)
         self.ring = PaletteRing(self.layout.sides(), palette_hand, tool_hand)
+        self.ring.can_lift = lambda page, slot: self.layout.face_at(page, slot) is not None
+        self.ring.can_drop = lambda src, dst: self.layout.can_move_face(*src, *dst, self.wide)
+        self.radial = radial.QuickRadial(tool_hand)
+        self.radial_view = RadialView()
         self.view = RingView()
         self.ruler = Ruler()
         self.pointer = Pointer()
@@ -76,6 +84,7 @@ class UiController:
         self.overlay.addChild(self.pointer.root)
         for tip in self.tips:
             self.overlay.addChild(tip.root)
+        self.overlay.addChild(self.radial_view.root)
         self.active_actions = set()
 
     def set_unit_system(self, name):
@@ -87,8 +96,27 @@ class UiController:
         face = self.faces.get(face_id) if face_id else None
         return face.action if face else None
 
+    def radial_items(self):
+        """Face ids offered by the quick radial: the faces used last, then the defaults."""
+        return radial.choose_items(self.settings.recent, self.faces, self.layout.hidden)
+
+    def _activate(self, face_id, out):
+        """Run the action of a face and remember the face for the quick radial."""
+        face = self.faces.get(face_id) if face_id else None
+        if face is None:
+            return
+        self._run(face.action, out)
+        if face.kind == "button" and (not self.settings.recent or self.settings.recent[0] != face_id):
+            self.settings.recent = radial.remember(self.settings.recent, face_id)
+            self._save_settings()
+
+    def show_hidden(self):
+        """Put the hidden faces back on the panels."""
+        if self.layout.show_hidden(defaults.default_layout(self._tool_names), self.wide):
+            self._save_layout()
+
     def reset_layout(self):
-        """Back to the default layout; a saved layout file is removed."""
+        """Back to the default layout (no hidden faces); a saved layout file is removed."""
         self.layout = defaults.default_layout(self._tool_names)
         self.ring.set_sides(self.layout.sides())
         self.ring.focus_side(0)
@@ -145,6 +173,8 @@ class UiController:
     def _run(self, action, out):
         if action == "layout:reset":
             self.reset_layout()
+        elif action == "layout:show_hidden":
+            self.show_hidden()
         elif action.startswith("pointer:"):
             self._change_pointer(action)
         else:
@@ -174,9 +204,17 @@ class UiController:
 
         self.ring.set_sides(self.layout.sides())
         self.ring.slider_rows = self.slider_rows()
-        result = self.ring.update(frame, navigating=self.navigator.navigating, pointers=self.pointer_poses)
-        out.haptics += result.haptics
-        out.ray_end, out.consume_trigger = result.ray_end, result.consume_trigger
+        # the quick radial takes the tool hand while it is open: the carousel does not see its pointer
+        busy = (self.navigator.navigating or self.ring.lifted is not None or self.ring.lifted_face is not None
+                or self.ring.slider_drag is not None or self.ring.press is not None)
+        quick = self.radial.update(frame, self.radial_items(), blocked=busy)
+        pointers = list(self.pointer_poses)
+        if self.radial.is_open:
+            pointers[self.tool_hand] = replace(pointers[self.tool_hand], tracked=False)
+        result = self.ring.update(frame, navigating=self.navigator.navigating, pointers=pointers)
+        out.haptics += result.haptics + quick.haptics
+        out.ray_end = result.ray_end
+        out.consume_trigger = result.consume_trigger or self.radial.is_open or quick.activated is not None
         if result.slider is not None:
             page, slot, along = result.slider
             spec = defaults.SLIDERS.get(self.layout.face_at(page, slot))
@@ -193,12 +231,22 @@ class UiController:
             self.ring.set_sides(self.layout.sides())
             self.ring.focus_side(self.layout.pages[index].side)
             self._save_layout()
-        self.view.update(self.ring, result, self.layout, self.faces, frame.head.position, self.active_actions, self.labels(), self.slider_states())
+        if result.face_dropped is not None:
+            page, slot, target_page, target_slot = result.face_dropped
+            if target_page is None:
+                moved = self.layout.hide_face(page, slot, self.wide)
+            else:
+                moved = self.layout.move_face(page, slot, target_page, target_slot, self.wide)
+            if moved:
+                self._save_layout()
+        labels = self.labels()
+        self.view.update(self.ring, result, self.layout, self.faces, frame.head.position, self.active_actions, labels, self.slider_states())
+        self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items])
 
         if result.activated is not None:
-            action = self.action_at(*result.activated)
-            if action is not None:
-                self._run(action, out)
+            self._activate(self.layout.face_at(*result.activated), out)
+        if quick.activated is not None:
+            self._activate(quick.items[quick.activated], out)
 
         palette = frame.hands[self.palette_hand]
         for name, action in (("aux1", "doc:undo"), ("aux2", "doc:redo")):
@@ -217,7 +265,7 @@ class UiController:
             self.ruler.hide()
 
         tool_pointer = self.pointer_poses[self.tool_hand]
-        if s.pointer_mode == "laser" and self.ring.fade > 0.3 and tool_pointer.tracked and not nav.navigating:
+        if s.pointer_mode == "laser" and self.ring.fade > 0.3 and tool_pointer.tracked and not nav.navigating and not self.radial.is_open:
             self.pointer.show(tool_pointer.position, tool_pointer.direction, result.ray_end)
         else:
             self.pointer.hide()

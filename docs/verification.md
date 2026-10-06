@@ -29,8 +29,8 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Runtime controller models displayed at both controllers in the headset, animated with input | Verified | owner-confirmed, alignment identical to the controllers of the Steam overlay |
 | Offscreen render of the document scene from an arbitrary camera pose to PNG | Verified | `tools/snippets/offscreen_render.py` |
 | Sim backend: scripted head and controller poses and inputs, edge events, offscreen mono and stereo render of the document scene with controller shapes | Verified | `backends/sim.py`, `tools/snippets/sim_demo.py`, `tests/live/test_coin.py` |
-| Unit tests without FreeCAD (input, profiles, glTF, Sim math, tool registry, navigation, units, pointing, carousel, layout, sliders) | Verified | 100 tests: `"%LOCALAPPDATA%\Programs\FreeCAD 1.1\bin\python.exe" -m unittest discover -s tests` |
-| Unit tests with the live GUI (glTF to Coin loader, generated controller shape, Sim session render, interface scene graph) | Verified | 13 tests: `tools/snippets/run_live_tests.py` |
+| Unit tests without FreeCAD (input, profiles, glTF, Sim math, tool registry, navigation, units, pointing, carousel, layout, sliders, face moves, quick radial) | Verified | 126 tests: `"%LOCALAPPDATA%\Programs\FreeCAD 1.1\bin\python.exe" -m unittest discover -s tests` |
+| Unit tests with the live GUI (glTF to Coin loader, generated controller shape, Sim session render, interface scene graph, radial and face moves through the controller) | Verified | 17 tests: `tools/snippets/run_live_tests.py` |
 | Import check of the sources | Verified | `tools/lint_imports.py` reports no problem |
 | Dev remote control (`tools/fc_rpc.py`, MCP smoke test) | Verified | `tools/mcp_smoke_test.py` passes end to end |
 | Meta Quest / Index / Vive / WMR / Pico controllers | Unverified | bindings exist for the profiles; no device tested |
@@ -47,6 +47,9 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Scale ruler (document units, drawn over the model, interface font) and the scale plate with one grip | Verified | owner-confirmed; `core/units.py`, `ui/ruler.py` |
 | Pointer: laser, and tip on both controllers with a cone and a small sphere; angle 15 degrees and length 40 mm | Verified | owner-confirmed; the tip of the left controller hides while the carousel is shown |
 | Navigation in tip mode: the world is held at the tips, the ruler runs between the tips, both tips stay visible | Verified | owner-confirmed |
+| Faces activate when the trigger is released over them (tip and laser); a press that leaves the face does nothing | Unverified | `tests/test_ring.py`, `tests/live/test_coin.py` |
+| Quick radial: `button1` of the tool hand held opens it, the hand direction chooses, release activates; favourites follow use | Unverified | `tests/test_radial.py`, `tests/live/test_coin.py`, `tools/snippets/render_ui.py` (`ui_radial.png`); size and dead zone (3 cm) are guesses |
+| Lifting a face (0.4 s hold), dropping it on a slot (move or swap), hiding it on the extra side, Show hidden | Unverified | `tests/test_ring.py`, `tests/live/test_coin.py`, `tools/snippets/render_ui.py` (`ui_face_lift.png`, `ui_face_hide.png`) |
 | Undo on the left D-pad left, redo on D-pad right | Unverified | `tests/live/test_coin.py` covers the dispatch; the runtime binding of `dpad_left` and `dpad_right` has not been observed |
 | After a two-grip gesture the remaining grip does nothing until both are released | Unverified | `tests/test_navigation.py` covers it |
 | Haptic feedback (hover, activation, steps, grips, reset) | Unverified | calls are issued; the feel has not been judged |
@@ -58,8 +61,10 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 
 Start the viewer (workbench BlocksCAD, "Open XR viewer"), wear the headset until the session is `FOCUSED`, then check:
 
-1. Pressing the left D-pad left undoes and D-pad right redoes the last document change, with a haptic tick (the Edit faces do the same).
-2. After a two-grip gesture, releasing one grip first and moving the other hand does not move the model; after releasing both, a one-grip drag works again.
-3. The haptic ticks are noticeable and not annoying: hover over a face, activation, slider steps, grip start, scale doubling, reset.
-4. The Teleport tool brings the picked surface under the feet, with the laser and with the tip.
-5. In tip mode Select, Drag and the builders act on what the tip touches.
+1. Quick radial: hold `button1` of the right controller (A on the Steam Frame), move the hand towards an item, release; check that it is not triggered while a grip holds the world and that the dead zone and the ring size feel right.
+2. Faces: tap a face (it runs on release), hold a face for 0.4 s and drop it on another slot, on a filled slot (swap) and on the "Hide face" side; use Show hidden and Reset layout.
+3. Pressing the left D-pad left undoes and D-pad right redoes the last document change, with a haptic tick (the Edit faces do the same).
+4. After a two-grip gesture, releasing one grip first and moving the other hand does not move the model; after releasing both, a one-grip drag works again.
+5. The haptic ticks are noticeable and not annoying: hover over a face, activation, slider steps, grip start, scale doubling, reset.
+6. The Teleport tool brings the picked surface under the feet, with the laser and with the tip.
+7. In tip mode Select, Drag and the builders act on what the tip touches.

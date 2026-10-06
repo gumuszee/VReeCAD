@@ -19,7 +19,7 @@ A `Face` is a button: id, label and an action id such as "tool:teleport" or "vie
 (COLS x ROWS), each holding a face id or None. The panels stand on the sides of the carousel around the palette controller. A side
 holds rows of panels: `Page.side` is the side, `Page.row` the row on it (0 is the bottom row, nearest the user, higher rows are
 further forward), and the order of the pages in the layout is the order inside a row, left to right. The `Layout` is the ordered
-list of pages; panels and faces are the parts the user can rearrange."""
+list of pages plus the ids of the faces the user has hidden; panels and faces are the parts the user can rearrange."""
 
 import json
 import os
@@ -49,6 +49,12 @@ class Page:
         self.slots = (list(self.slots) + [None] * SLOTS)[:SLOTS]
 
 
+def _slider_row(page, slot, wide):
+    """Whether a slot lies in a row of its page that belongs to a slider (`wide` holds the ids of the sliders)."""
+    first = page.slots[slot // COLS * COLS]
+    return first is not None and first in wide
+
+
 def without_page(sides, page):
     """The structure `sides` (side -> rows -> page indexes) as it is drawn while `page` is lifted off it: the page is gone, rows that
     become empty are gone, a side that becomes empty stays (as a place to drop the page back)."""
@@ -58,6 +64,7 @@ def without_page(sides, page):
 @dataclass
 class Layout:
     pages: List[Page] = field(default_factory=list)
+    hidden: List[str] = field(default_factory=list)   # faces taken off the panels by the user; they stay out of `add_missing`
 
     def __post_init__(self):
         self.normalize()
@@ -121,7 +128,7 @@ class Layout:
         """Place the faces of the `default` layout that this layout lacks (faces added since it was saved) in the first free slot of
         the page of the same name, else of the first page with room. Faces in `wide` (sliders) need a whole free row and go in its
         first slot. Returns whether anything was added."""
-        present = {f for p in self.pages for f in p.slots if f}
+        present = {f for p in self.pages for f in p.slots if f} | set(self.hidden)
         changed = False
         for default_page in default.pages:
             for face in default_page.slots:
@@ -133,7 +140,8 @@ class Layout:
                         rows = [r for r in range(ROWS) if all(s is None for s in page.slots[r * COLS:(r + 1) * COLS])]
                         slot = rows[0] * COLS if rows else None
                     else:
-                        slot = page.slots.index(None) if None in page.slots else None
+                        free = [i for i, f in enumerate(page.slots) if f is None and not _slider_row(page, i, wide)]
+                        slot = free[0] if free else None
                     if slot is not None:
                         page.slots[slot] = face
                         present.add(face)
@@ -151,14 +159,48 @@ class Layout:
     def remove(self, page, slot):
         self.pages[page].slots[slot] = None
 
+    def can_move_face(self, src_page, src_slot, dst_page, dst_slot, wide=()):
+        """Whether the face in a slot can go to another slot: it needs a face of its own (not a slider, which is dragged, not lifted),
+        and the target must not lie in a row that belongs to a slider (`wide` holds the ids of the sliders)."""
+        face = self.pages[src_page].slots[src_slot]
+        if face is None or face in wide or (src_page, src_slot) == (dst_page, dst_slot):
+            return False
+        return not _slider_row(self.pages[dst_page], dst_slot, wide)
+
+    def move_face(self, src_page, src_slot, dst_page, dst_slot, wide=()):
+        """Move a face to another slot; a face already there changes places with it. Returns whether anything moved."""
+        if not self.can_move_face(src_page, src_slot, dst_page, dst_slot, wide):
+            return False
+        self.swap(src_page, src_slot, dst_page, dst_slot)
+        return True
+
+    def hide_face(self, page, slot, wide=()):
+        """Take a face off its panel; it stays hidden until `show_hidden` (sliders cannot be hidden). Returns whether it was hidden."""
+        face = self.pages[page].slots[slot]
+        if face is None or face in wide:
+            return False
+        self.remove(page, slot)
+        if face not in self.hidden:
+            self.hidden.append(face)
+        return True
+
+    def show_hidden(self, default, wide=()):
+        """Put every hidden face back into a free slot (the page it belongs to in `default` when that has room). Returns whether
+        anything came back."""
+        hidden, self.hidden = self.hidden, []
+        self.add_missing(default, wide)
+        self.hidden = [f for f in hidden if not any(f in p.slots for p in self.pages)]
+        return len(self.hidden) < len(hidden)
+
     def to_json(self):
-        return json.dumps({"version": 3, "pages": [{"name": p.name, "side": p.side, "row": p.row, "slots": p.slots}
-                                                    for p in self.pages]}, indent=1)
+        return json.dumps({"version": 4, "hidden": self.hidden,
+                           "pages": [{"name": p.name, "side": p.side, "row": p.row, "slots": p.slots} for p in self.pages]}, indent=1)
 
     @classmethod
     def from_json(cls, text, known_faces=None):
         """Parse a layout; ids that are not in `known_faces` (when given) become empty slots, so a layout saved with a
-        newer or different set of faces still loads. Older files without sides or rows load with a side per page and one row."""
+        newer or different set of faces still loads. Older files without sides, rows or hidden faces load with a side per page, one
+        row and no hidden faces."""
         data = json.loads(text)
         pages = []
         for page in data["pages"]:
@@ -169,7 +211,8 @@ class Layout:
                               row if isinstance(row, int) else None))
         if not pages:
             raise ValueError("layout without pages")
-        return cls(pages)
+        hidden = [f for f in data.get("hidden", []) if isinstance(f, str) and (known_faces is None or f in known_faces)]
+        return cls(pages, hidden)
 
 
 def user_layout_path():

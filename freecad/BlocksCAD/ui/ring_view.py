@@ -51,7 +51,7 @@ def _plate(parent, w, h, rgb, x=0.0, y=0.0, z=0.0):
 
 
 def _text(parent, lines, x, y, z, rgb, justification=coin.SoText3.CENTER, factor=1.0):
-    """Text lines centred vertically around y; returns the colour node."""
+    """Text lines centred vertically around y; returns the text node."""
     sep = coin.SoSeparator()
     sep.addChild(_at(x, y + (len(lines) - 1) * 0.5 * style.LINE_HEIGHT * factor - 0.0035 * factor, z))
     material = style.color(rgb)
@@ -62,7 +62,7 @@ def _text(parent, lines, x, y, z, rgb, justification=coin.SoText3.CENTER, factor
     text.justification = justification
     sep.addChild(text)
     parent.addChild(sep)
-    return material
+    return text
 
 
 class _Cell:
@@ -98,11 +98,14 @@ class _Cell:
             self.label = label
             self._write(label)
 
-    def set_state(self, hover, active, has_face):
-        color = style.EMPTY if not has_face else style.ACTIVE if active else style.HOVER if hover else style.FACE
+    def set_state(self, hover, active, has_face, lifted=False, target=False):
+        """`lifted`: the face is held in the hand (its place is dimmed); `target`: a lifted face would land here."""
+        color = (style.EMPTY if not has_face or lifted else style.GRAB if target else style.ACTIVE if active
+                 else style.HOVER if hover else style.FACE)
         self.plate_color.rgb = coin.SbColor(*color)
         if self.text_color is not None:
-            self.text_color.rgb = coin.SbColor(*(style.TEXT_ON_ACTIVE if active else style.TEXT))
+            self.text_color.rgb = coin.SbColor(*(style.TEXT_ON_ACTIVE if (active or target) and not lifted
+                                                 else style.TEXT_DIM if lifted else style.TEXT))
 
 
 class _SliderRow:
@@ -178,7 +181,9 @@ class _Panel:
 
 
 class _Ghost:
-    """The empty slot at the end of a side that a lifted panel can be dropped on."""
+    """The empty side at the end of the carousel while something is lifted: a panel dropped on it gets a side of its own, a face
+    dropped on it is hidden."""
+    PANEL_LABEL, FACE_LABEL = "Drop here", "Hide face"
 
     def __init__(self):
         self.switch = coin.SoSwitch()
@@ -187,8 +192,14 @@ class _Ghost:
         self.transform = coin.SoTransform()
         sep.addChild(self.transform)
         self.color = _plate(sep, rg.PANEL_W, rg.PANEL_H, style.DROP, 0.0, 0.0, -DEPTH)
-        _text(sep, ["Drop here"], 0.0, 0.0, 0.0005, style.TEXT, factor=1.2)
+        self.text = _text(sep, [self.PANEL_LABEL], 0.0, 0.0, 0.0005, style.TEXT, factor=1.2)
+        self.label = self.PANEL_LABEL
         self.switch.addChild(sep)
+
+    def set_label(self, label):
+        if label != self.label:
+            self.label = label
+            self.text.string = label
 
 
 class _Card:
@@ -322,7 +333,8 @@ class RingView:
                 active = face is not None and face.action in active_actions
                 if face is not None and labels and face.id in labels:
                     cell.set_label(labels[face.id])
-                cell.set_state(hovered, active, face is not None)
+                cell.set_state(hovered, active, face is not None, result.lifted_face == (index, slot),
+                               result.face_target == (index, slot))
         for side, ghost_view in self._ghosts.items():
             if side not in ring.ghosts:
                 ghost_view.switch.whichChild = coin.SO_SWITCH_NONE
@@ -333,6 +345,7 @@ class RingView:
             view = self._ghosts[side]
             view.switch.whichChild = coin.SO_SWITCH_ALL
             self._place(view.transform, ghost, ring.origin, ring.fade)
+            view.set_label(_Ghost.FACE_LABEL if result.lifted_face is not None else _Ghost.PANEL_LABEL)
             over = result.drop_marker is not None and result.drop_marker[0] is None and result.drop_marker[2] == side
             view.color.rgb = coin.SbColor(*(style.HOVER if over else style.DROP))
         marker = result.drop_marker
@@ -340,9 +353,15 @@ class RingView:
             self._marker.show(ring.poses[marker[0]], marker[1], ring.origin, ring.fade)
         else:
             self._marker.switch.whichChild = coin.SO_SWITCH_NONE
-        if result.lifted is not None and result.lift_point is not None:
+        card = None
+        if result.lifted is not None:
+            card = layout.pages[result.lifted].name
+        elif result.lifted_face is not None:
+            face = faces.get(layout.face_at(*result.lifted_face))
+            card = (labels or {}).get(face.id, face.label) if face is not None else None
+        if card is not None and result.lift_point is not None:
             self._card.switch.whichChild = coin.SO_SWITCH_ALL
-            self._card.text.string = layout.pages[result.lifted].name
+            self._card.text.string = card
             up = (0.0, 1.0, 0.0)
             point = mu.add(result.lift_point, mu.mul(up, 0.04))
             self._card.transform.translation.setValue(*point)

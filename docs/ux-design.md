@@ -56,7 +56,7 @@ The carousel is a prism around the long axis of the palette controller. It is at
 - **Panels** are pages of faces (4 columns by 3 rows, face edge 5 cm) with a title bar and nothing else, so no panel space is spent on indicators. A side carries rows of panels: panels next to each other in a row, rows above each other (the first row nearest the user, further rows further forward). The prism radius grows with the number of sides and the width of the panels so that sides do not overlap.
 - **Stick left/right turns the carousel** one side per flick (snap with a haptic tick and a short ease). No button is held. Sides that face away from the user are drawn but cannot be pointed at.
 - **Visibility:** the carousel fades in when the head looks at the controller (gaze cone of 35 degrees at 0.12 to 0.95 m) and fades out otherwise; it is hidden while gripping. Palette hand `button1` pins it visible or releases it.
-- **Pointing:** the tool hand points with its laser or its tip (see Pointer below). The face under the pointer highlights and a haptic tick marks the change; the trigger activates it.
+- **Pointing:** the tool hand points with its laser or its tip (see Pointer below). The face under the pointer highlights and a haptic tick marks the change. A face is pressed with the trigger and activates when the trigger is released over the same face within 0.4 s; a pointer that leaves the face before the release cancels the press, and a longer hold lifts the face (see Moving and hiding faces).
 
 ### Panels (initial)
 
@@ -64,7 +64,7 @@ The carousel is a prism around the long axis of the palette controller. It is at
 |---|---|
 | Tools | Teleport, Line, Cube, Select, Drag, Working plane (the inherited tools, until replaced) |
 | Edit | Undo, Redo, Delete |
-| View | Reset view, Overlays (Model tree and Tasks), Work plane, Reload scene, Reset layout |
+| View | Reset view, Overlays (Model tree and Tasks), Work plane, Reload scene, Reset layout, Show hidden |
 | Session | Pointer (laser or tip), Close VR, and the sliders Angle and Length (tip angle and tip length) |
 
 Planned: Create (primitives, milestone M1), Modify (push/pull, boolean, mirror, pattern), Values (numeric keypad, variables, milestone M3), Settings (handedness, comfort, snapping).
@@ -75,7 +75,7 @@ A slider is a face that takes a whole row of its panel: the label with the curre
 
 ### Rearranging panels
 
-Each panel has a title bar with a grip mark on its right. The layout is a JSON document (`%APPDATA%\BlocksCAD\layout.json`, version 3): the panels in order, the side and the row of each panel and the face ids in each slot. Defaults come from code. The initial layout has one panel per side.
+Each panel has a title bar with a grip mark on its right. The layout is a JSON document (`%APPDATA%\BlocksCAD\layout.json`, version 4): the panels in order, the side and the row of each panel, the face ids in each slot and the ids of the hidden faces. Defaults come from code. The initial layout has one panel per side.
 
 1. Point the tool hand at a title bar (it highlights) and **hold the trigger**: the panel lifts off the carousel and follows the laser as a small card. The panels close up and one extra empty side ("Drop here") is offered at the end of the carousel.
 2. **Turn the carousel** with the palette stick while holding, to bring the target side to the front (only sides facing the user can be pointed at).
@@ -86,7 +86,16 @@ Each panel has a title bar with a grip mark on its right. The layout is a JSON d
 4. **Release the trigger** to drop the panel. Releasing over nothing cancels.
 5. The layout is saved on every change. Stacking panels in rows and columns on one side puts every module in reach without turning the carousel. The **Reset layout** face restores the defaults and removes the saved file.
 
-Moving single faces between slots and panels, and hiding faces, is part of U3.
+### Moving and hiding faces
+
+A single face is lifted the same way as a panel, with the trigger held on it:
+
+1. Point at a face and **hold the trigger for 0.4 s**: a haptic pulse marks the lift, the face lifts off its slot as a card that follows the pointer, and its slot dims. One extra empty side ("Hide face") is offered at the end of the carousel.
+2. **Aim at a slot** of any panel on the sides facing the user (turn the carousel with the palette stick while holding, as for panels): the slot lights orange. A face already in the slot changes places with the lifted face; an empty slot takes it. Slots in a row that belongs to a slider are not offered, and the slot the face came from is not a target.
+3. **Release the trigger** to drop the face. Releasing over nothing, over the source slot or over a refused slot cancels. Dropped on the empty side, the face is hidden: it leaves the panels and the quick radial.
+4. The layout is saved on every change. The **Show hidden** face (View panel) puts every hidden face back into a free slot, on its home panel when that has room; **Reset layout** restores the defaults and unhides everything. Loading a saved layout never places hidden faces again.
+
+Sliders are dragged with the trigger, so they cannot be lifted or hidden; they move with their panel.
 
 ## Pointer
 
@@ -107,7 +116,7 @@ Every controller has a pointer pose derived from its aim pose and three settings
 
 | Input | Action |
 |---|---|
-| Trigger | primary action of the tool; press a face when pointing (laser) or touching (tip) at the carousel; hold on a title bar to lift a panel |
+| Trigger | primary action of the tool; press and release on a face when pointing (laser) or touching (tip) at the carousel to activate it; hold on a face to lift it, on a title bar to lift a panel |
 | Grip | grab the world or an object |
 | Stick up/down | tool option (size, segments, grid step) with a live readout |
 | Stick left/right | tool option 2 (cycle shape or mode) |
@@ -117,8 +126,13 @@ Every controller has a pointer pose derived from its aim pose and three settings
 
 ### Quick radial
 
-A pin-cushion like Open Brush's: holding tool hand `button1` (outside navigation) opens a radial of the favourite faces (default: the last six used) around the controller.
-The item is chosen by the **direction the hand moves** from the spot where the button was pressed (no stick needed); releasing the button activates it.
+A pin-cushion like Open Brush's: holding tool hand `button1` (outside navigation) opens a radial of the favourite faces around the controller.
+
+- **Items:** the six faces activated last (from the carousel or the radial), newest first, padded from the defaults (Undo, Redo, Reset view, Delete, Overlays, Pointer) when fewer than six were used. Hidden faces, sliders, Reset layout and Close VR are never offered. The list is kept in `settings.json`.
+- **Choosing:** the item is chosen by the **direction the hand moves** from the spot where the button went down, seen from the head and measured in the plane facing the head (no stick needed). The first item is straight up, the others follow clockwise. Nothing is chosen within 3 cm of the start (dead zone). A haptic tick marks every change of the choice; the chosen item lights up and a dot follows the hand inside the ring.
+- **Release** of the button activates the chosen item; a release inside the dead zone cancels.
+- **Drawing:** a ring of faces with the size and the look of the palette faces (ring radius 7.5 cm), 5 cm in front of the hand towards the head, drawn over the model. The plane is fixed when the radial opens.
+- **Blocked:** the radial does not open while a grip holds the world (there `button1` is the level modifier) or while a slider is dragged, a panel or a face is lifted, or a face is pressed. A grip pressed while it is open cancels it. While it is open the tool hand's pointer does not touch the carousel and its trigger belongs to the interface.
 
 ## Palette hand
 
@@ -142,13 +156,13 @@ The colours, the font and the text size are defined once in `ui/style.py`. Contr
 
 ## Implementation plan (UX milestones, before M1)
 
-U1 and U2 are implemented (verification state in `verification.md`); U3 and U4 are planned.
+U1, U2 and U3 are implemented (verification state in `verification.md`); U4 is planned.
 
 | U | Deliverable |
 |---|---|
 | U1 | World navigation: one-grip drag, one-grip hold with rotation, two-grip move/rotate/scale, free orbit and the level modifier, held 1 : 1 lock, home reset, scale ruler with document units, haptics; `core/navigation.py` and `core/units.py` (pure math, unit tested); the stick locomotion and the quick menu are removed |
 | U2 | Panel system: `ui/` faces, panels, the carousel on the controller with every side visible, rows and columns of panels and rearranging, gaze visibility, laser, ray hover and press, haptics, undo and redo on `aux1` and `aux2`; inherited tools as faces; the first radial palette is removed |
-| U3 | Quick radial; moving single faces between slots and panels; hiding faces |
+| U3 | Quick radial (`ui/radial.py`, `ui/radial_view.py`); moving single faces between slots and panels; hiding faces and showing them again; a face activates on release |
 | U4 | Tool hand options with readouts, undo/redo on `button2`, toasts, tooltips |
 
 Every U step is tested through the Sim backend (scripted hands, offscreen render) and then checked in the headset by the owner (`verification.md`).

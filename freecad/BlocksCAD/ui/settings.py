@@ -16,11 +16,13 @@
 """User settings of the interface, stored as JSON (`%APPDATA%\\BlocksCAD\\settings.json`). No Coin, OpenXR or FreeCAD imports.
 
 The pointer settings: the mode ("laser" or "tip"), the tilt of the tip below the controller axis in degrees and the distance of the
-tip from the controller in metres (docs/ux-design.md, Pointer)."""
+tip from the controller in metres (docs/ux-design.md, Pointer), and the ids of the faces used last, which fill the quick radial
+(docs/ux-design.md, Quick radial)."""
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from typing import List
 
 MODES = ("laser", "tip")
 ANGLE_RANGE = (-90.0, 90.0)
@@ -36,12 +38,14 @@ class Settings:
     pointer_mode: str = "laser"
     tip_angle: float = 15.0       # degrees; positive tilts the pointer down from the controller axis
     tip_length: float = 0.04      # metres from the controller to the tip
+    recent: List[str] = field(default_factory=list)   # ids of the faces used last, newest first
 
     def __post_init__(self):
         if self.pointer_mode not in MODES:
             self.pointer_mode = "laser"
         self.tip_angle = _clamp(float(self.tip_angle), *ANGLE_RANGE)
         self.tip_length = _clamp(float(self.tip_length), *LENGTH_RANGE)
+        self.recent = [f for f in self.recent if isinstance(f, str)] if isinstance(self.recent, list) else []
 
     def toggle_mode(self):
         self.pointer_mode = "tip" if self.pointer_mode == "laser" else "laser"
@@ -52,7 +56,7 @@ class Settings:
     @classmethod
     def from_json(cls, text):
         data = json.loads(text)
-        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length") if k in data}
+        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length", "recent") if k in data}
         return cls(**known)
 
 

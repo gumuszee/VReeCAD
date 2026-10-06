@@ -1,6 +1,6 @@
 # BlocksCAD design
 
-Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction. The interface foundation is implemented and verified in the headset: grip navigation (U1), the palette carousel with panels, sliders and arrangement (U2) and the laser and tip pointer. U3, U4 and M1 are next. Open checks are listed in `verification.md`.
+Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction. The interface foundation is implemented: grip navigation (U1), the palette carousel with panels, sliders and arrangement (U2) and the laser and tip pointer are verified in the headset; the quick radial and the moving and hiding of single faces (U3) are tested in the Sim and wait for the headset. U4 and M1 are next. Open checks are listed in `verification.md`.
 Inspiration: Open Blocks' simple direct manipulation; substance: real parametric CAD in FreeCAD.
 
 ## Decisions (from the project owner, 2026-10-06)
@@ -28,7 +28,7 @@ profiles.py abstract input -> OpenXR path per interaction profile (data, see inp
 gltf.py     GLB reader;  render/  gltf_coin.py (glTF -> Coin3D), controller_shape.py (generated), offscreen.py (image render)
 commonXR.py XRwidget: OpenXR session, swapchains, Coin scene, render loop, inherited interact_* handlers (to be split: rig*)
 core/       mathutil.py (vector/quaternion math), navigation.py (grip navigation, home pose), units.py (measurement systems, ruler ticks); snapping*, transactions*
-ui/         controller.py (navigation + carousel + ruler + actions), ring.py (carousel logic and geometry), ring_view.py, ruler.py, pointer.py (laser and tip), pointing.py (pointer pose), settings.py (user settings), style.py (colours, font), layout.py (faces, panels, sides, JSON), defaults.py; numeric keypad*, quick radial*, tool tips*, toasts*
+ui/         controller.py (navigation + carousel + ruler + actions), ring.py (carousel logic and geometry), ring_view.py, radial.py (quick radial logic and favourites), radial_view.py, ruler.py, pointer.py (laser and tip), pointing.py (pointer pose), settings.py (user settings), style.py (colours, font), layout.py (faces, panels, sides, hidden faces, JSON), defaults.py; numeric keypad*, tool tips*, toasts*
 tools/      base.py, registry.py, manager.py, legacy.py (the six inherited modes as tools); new tools: one module each
 core/*      picking/highlight, preview ghosts, transactions (undo), units, parameter binding (further modules)
 cad/*       thin wrappers creating/editing FreeCAD features (Part primitives, Sketcher, PartDesign, booleans, Attacher)
@@ -66,7 +66,8 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 | M | Deliverable |
 |---|---|
 | U1, U2, pointer | **UX foundation, implemented**: world navigation, palette carousel with faces, panels and sliders, laser and tip pointer. See `ux-design.md` |
-| U3, U4 | **UX foundation, planned** (before M1): quick radial, moving single faces, hiding faces, tool options with readouts, undo/redo on `button2`, toasts, tooltips. See `ux-design.md` |
+| U3 | **UX foundation, implemented**: quick radial on `button1` of the tool hand, moving single faces between slots and panels, hiding faces and showing them again, faces activate on trigger release. See `ux-design.md` |
+| U4 | **UX foundation, planned** (before M1): tool options with readouts, undo/redo on `button2`, toasts, tooltips. See `ux-design.md` |
 | M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools |
 | M1 | Primitives (box, cylinder, cone, sphere, torus, wedge, prism) with snap grid, ghost preview, live dimension, undo/redo |
 | M2 | Selection/hover highlight (vertex/edge/face/object), Grab tool (move/rotate, two-hand scale -> parameters), world navigation |

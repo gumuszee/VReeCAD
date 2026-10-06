@@ -228,6 +228,109 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual([t.root.whichChild.getValue() for t in self.s.ui.tips], [coin.SO_SWITCH_ALL] * 2)   # navigating: both tips
         self.assertEqual(self.s.ui.ruler.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
 
+    def settle(self, n=30):
+        for _ in range(n):
+            self.s.frame(0.02)
+
+    def show_carousel(self):
+        """The head looks at the left controller: the carousel is visible; the tool hand rests away from it. The pointer points
+        straight along the controller, so aiming at a point hits it."""
+        self.s.ui.settings.tip_angle = 0.0
+        self.s.input.set_head(position=(0.0, 1.6, 0.0), look_at_point=(-0.25, 1.2, -0.35))
+        self.s.input.set_hand(1, position=(0.3, 1.0, -0.2), point_at=(0.3, 1.0, -2.0))
+        self.settle()
+
+    def aim_at_slot(self, slot, page=0):
+        from freecad.BlocksCAD.ui import layout as lay, ring as rg
+        pose = self.s.ui.ring.poses[page]
+        x = (slot % lay.COLS - (lay.COLS - 1) / 2) * (rg.CELL + rg.GAP)
+        y = ((lay.ROWS - 1) / 2 - slot // lay.COLS) * (rg.CELL + rg.GAP) + rg.GRID_Y
+        point = tuple(c + u * x + v * y for c, u, v in zip(pose.centre, pose.u, pose.v))
+        self.s.input.set_hand(1, position=tuple(c + n * 0.3 for c, n in zip(point, pose.n)), point_at=point)
+        self.s.frame(0.02)
+
+    def test_a_face_runs_when_the_trigger_is_released_over_it_and_the_quick_radial_remembers_it(self):
+        self.show_carousel()
+        ui = self.s.ui
+        self.assertEqual(ui.radial_items()[:2], ["doc.undo", "doc.redo"])
+        page = [p.name for p in ui.layout.pages].index("Edit")
+        ui.layout.move_page(page, 0)                                             # next to Tools, on the side at the front
+        self.settle(5)
+        page = [p.name for p in ui.layout.pages].index("Edit")
+        redo = ui.layout.pages[page].slots.index("doc.redo")
+        self.aim_at_slot(redo, page)
+        self.s.input.set_hand(1, trigger=1.0)
+        self.s.frame(0.02)
+        self.assertEqual(self.calls, [])
+        self.assertTrue(self.s.ui_update.consume_trigger)
+        self.s.input.set_hand(1, trigger=0.0)
+        self.s.frame(0.02)
+        self.assertEqual((self.calls, self.s.ui_update.activated), (["redo"], "doc:redo"))
+        self.assertEqual(ui.radial_items()[:2], ["doc.redo", "doc.undo"])        # the face used last comes first
+
+    def test_holding_button1_of_the_tool_hand_opens_the_radial_and_moving_chooses_a_face(self):
+        from pivy import coin
+        self.show_carousel()
+        ui = self.s.ui
+        first = ui.radial_items()[0]
+        self.assertEqual(first, "doc.undo")
+        self.s.input.set_hand(1, button1=True)
+        self.s.frame(0.02)
+        self.assertEqual(ui.radial_view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.assertTrue(self.s.ui_update.consume_trigger)
+        position = self.s.input.hands[1].aim.position
+        self.s.input.set_hand(1, position=(position[0], position[1] + 0.06, position[2]))     # up: the first item
+        self.s.frame(0.02)
+        self.assertTrue(ui.radial.is_open)
+        self.s.input.set_hand(1, button1=False)
+        self.s.frame(0.02)
+        self.assertEqual(ui.radial_view.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        self.assertEqual(self.calls, ["undo"])
+
+    def test_the_radial_does_not_open_while_the_world_is_held(self):
+        from pivy import coin
+        self.show_carousel()
+        self.s.input.set_hand(0, grip=1.0)
+        self.s.input.set_hand(1, button1=True)
+        self.s.frame(0.02)
+        self.assertEqual(self.s.ui.radial_view.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        self.assertTrue(self.s.ui.navigator.level)                                # button1 is the level modifier then
+
+    def test_a_face_held_on_is_lifted_and_dropped_on_a_slot_or_on_the_empty_side_to_hide_it(self):
+        self.show_carousel()
+        ui = self.s.ui
+        tools = [p.name for p in ui.layout.pages].index("Tools")
+        face = ui.layout.face_at(tools, 0)
+        self.assertIsNotNone(face)
+        free = ui.layout.pages[tools].slots.index(None)
+        self.aim_at_slot(0, tools)
+        self.s.input.set_hand(1, trigger=1.0)
+        self.settle(30)                                                          # longer than the hold time
+        self.assertEqual(ui.ring.lifted_face, (tools, 0))
+        self.assertEqual(self.calls, [])
+        self.aim_at_slot(free, tools)
+        self.s.input.set_hand(1, trigger=0.0)
+        self.s.frame(0.02)
+        self.assertEqual((ui.layout.face_at(tools, free), ui.layout.face_at(tools, 0)), (face, None))
+        # lift it again and drop it on the empty side that hides it
+        self.aim_at_slot(free, tools)
+        self.s.input.set_hand(1, trigger=1.0)
+        self.settle(30)
+        self.assertEqual(ui.ring.lifted_face, (tools, free))
+        self.s.input.set_hand(0, stick=(-1.0, 0.0))
+        self.s.frame(0.02)
+        self.s.input.set_hand(0, stick=(0.0, 0.0))
+        self.settle(40)
+        ghost = ui.ring.ghosts[max(ui.ring.ghosts)]
+        self.s.input.set_hand(1, position=tuple(c + n * 0.3 for c, n in zip(ghost.centre, ghost.n)), point_at=ghost.centre)
+        self.s.frame(0.02)
+        self.s.input.set_hand(1, trigger=0.0)
+        self.s.frame(0.02)
+        self.assertEqual((ui.layout.face_at(tools, free), ui.layout.hidden), (None, [face]))
+        self.assertNotIn(face, ui.radial_items())
+        ui.show_hidden()
+        self.assertEqual((ui.layout.hidden, ui.layout.face_at(tools, 0)), ([], face))
+
     def test_the_overlay_is_the_last_child_of_the_scene(self):
         self.assertEqual(self.s.scene.findChild(self.s.ui.overlay), self.s.scene.getNumChildren() - 1)
 

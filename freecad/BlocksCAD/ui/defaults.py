@@ -15,7 +15,7 @@
 # ***************************************************************************
 """The faces and the default layout. Tool faces are generated from the tool registry; the other faces are fixed.
 Action ids: "tool:<name>", "view:reset", "overlay:toggle", "plane:toggle", "scene:reload", "doc:undo", "doc:redo", "doc:delete",
-"app:close", and, handled by the UI controller itself, "layout:reset" and "pointer:mode".
+"app:close", and, handled by the UI controller itself, "layout:reset", "layout:show_hidden" and "pointer:mode".
 A slider is a face of kind "slider" (action "slider:<setting>"): it takes a whole row of its panel, so it sits in the first slot of a
 row and the other slots of that row stay empty. `SLIDERS` holds the range and step of each slider by face id."""
 
@@ -56,6 +56,7 @@ def build_faces(tool_names, tool_label):
         Face("view.reload", "Reload scene", "scene:reload"),
         Face("view.plane", "Work plane", "plane:toggle"),
         Face("view.layout", "Reset layout", "layout:reset"),
+        Face("view.hidden", "Show hidden", "layout:show_hidden"),
         Face("doc.undo", "Undo", "doc:undo"),
         Face("doc.redo", "Redo", "doc:redo"),
         Face("doc.delete", "Delete", "doc:delete"),
@@ -71,7 +72,7 @@ def default_layout(tool_names):
     return Layout([
         Page("Tools", [f"tool.{name}" for name in tool_names]),
         Page("Edit", ["doc.undo", "doc.redo", "doc.delete"]),
-        Page("View", ["view.reset", "view.overlay", "view.plane", "view.reload", "view.layout"]),
+        Page("View", ["view.reset", "view.overlay", "view.plane", "view.reload", "view.layout", "view.hidden"]),
         Page("Session", ["pointer.mode", "app.close", None, None,
                          "pointer.angle", None, None, None,
                          "pointer.length"]),

@@ -19,10 +19,13 @@ The carousel is a prism around the long axis of the palette hand's controller: t
 are visible, the side at the front stands on the thumb side of the controller facing up. Each side carries rows of panels (pages of
 faces): the first row is the bottom row nearest the user, further rows are further forward. The stick of the palette hand turns the
 carousel one side per flick, the carousel fades in while the head looks at the controller (or when pinned) and out otherwise, the
-tool hand's ray hovers faces and its trigger activates them. Holding the trigger on the title bar of a panel lifts the panel;
+tool hand's pointer hovers faces and its trigger activates them: a press on a face activates it when the trigger is released over
+the same face within `HOLD_LIFT` seconds, while a longer hold lifts the face. A lifted face goes to the slot it is released over (a
+face there changes places with it) or, released over the extra empty side offered while lifting, is hidden. Holding the trigger on
+the title bar of a panel lifts the panel;
 releasing it over the left or right half of another panel puts the panel next to it in its row, over the upper or lower part makes a
 new row above or below it, over the empty slot of an empty side gives the panel that side.
-`update` returns what the host needs: hover, activation, drop, haptics and the ray end point."""
+`update` returns what the host needs: hover, activation, drops, haptics and the ray end point."""
 
 import math
 from dataclasses import dataclass, field
@@ -54,6 +57,7 @@ EDGE_ZONE = 0.5        # while lifting: the outer quarter above and below a pane
 SLIDER_PAD = 0.014     # the track of a slider ends this far inside the grid
 TIP_FRONT = 0.03       # a tip within this distance in front of a panel touches it
 TIP_BEHIND = 0.015     # and this far behind its plate (pushing through)
+HOLD_LIFT = 0.4        # seconds the trigger is held on a face before the face is lifted
 
 DropTarget = Tuple[int, int, Optional[int], bool]    # (side, row, page to insert before or None, new row at `row`)
 
@@ -95,6 +99,11 @@ class RingResult:
     slider: Optional[Tuple[int, int, float]] = None   # (page, slot, position along the track) while a slider is dragged
     slider_done: Optional[Tuple[int, int]] = None     # (page, slot) of a slider released this frame
     dropped: Optional[tuple] = None              # (page, side, row, before, new_row): released onto a target this frame
+    lifted_face: Optional[Tuple[int, int]] = None     # (page, slot) of the face held by the trigger (being moved)
+    face_target: Optional[Tuple[int, int]] = None     # (page, slot) the lifted face would go to if released now
+    face_hide: bool = False                      # the lifted face is over the empty side that hides it
+    face_dropped: Optional[tuple] = None         # (page, slot, target page, target slot): released onto a slot, or onto the hiding side
+                                                 # (target page and slot None) this frame
     ray_end: Optional[Tuple[float, float, float]] = None
     haptics: List[tuple] = field(default_factory=list)   # (hand, amplitude, duration_s)
     consume_trigger: bool = False                # the tool hand's trigger belongs to the carousel this frame
@@ -132,6 +141,12 @@ class PaletteRing:
         self.hover = None
         self.hover_title = None
         self.lifted: Optional[int] = None
+        self.lifted_face: Optional[Tuple[int, int]] = None
+        self.can_lift = lambda page, slot: True          # set by the host: whether the slot holds a face that can be lifted
+        self.can_drop = lambda src, dst: True            # set by the host: whether a lifted face can go to a slot
+        self.press: Optional[Tuple[int, int]] = None     # (page, slot) of the face the trigger went down on
+        self._press_age = 0.0
+        self._press_dead = False                         # the pointer left the face: the press does nothing
         self.slider_rows: Dict[int, Dict[int, str]] = {}   # page -> row of the grid -> face id, for the rows that hold a slider
         self.slider_drag: Optional[Tuple[int, int]] = None  # (page, slot) of the slider being dragged
         self.poses: Dict[int, PanelPose] = {}
@@ -142,6 +157,7 @@ class PaletteRing:
         self._count = max(1, len(self.sides))
         self._known_count = None
         self._target: Optional[DropTarget] = None
+        self._face_target: Optional[Tuple[Optional[int], Optional[int]]] = None   # (page, slot), or (None, None) to hide
         self._lift_distance = 0.5
 
     # structure
@@ -149,7 +165,10 @@ class PaletteRing:
         self.sides = [[list(r) for r in s] for s in sides]
 
     def display_sides(self):
-        """The sides as drawn: without the lifted page, and while lifting with one empty side at the end to start a new side."""
+        """The sides as drawn: without the lifted page, and while lifting with one empty side at the end to start a new side (or, for
+        a lifted face, to hide it)."""
+        if self.lifted_face is not None:
+            return [[list(r) for r in side] for side in self.sides] + [[]]
         if self.lifted is None:
             return self.sides
         shown = lay.without_page(self.sides, self.lifted)
@@ -327,6 +346,7 @@ class PaletteRing:
 
     def _hide(self):
         self.hover = self.hover_title = self.lifted = self._target = self.slider_drag = None
+        self.lifted_face = self._face_target = self.press = None
         self.poses, self.ghosts = {}, {}
 
     def update(self, frame, navigating=False, pointers=None):
@@ -344,7 +364,7 @@ class PaletteRing:
         if "button1" in palette.pressed:
             self.pinned = not self.pinned
         self.layout_poses(pose)
-        want = (self.pinned or self.lifted is not None
+        want = (self.pinned or self.lifted is not None or self.lifted_face is not None
                 or self.wants_visible(self.origin, head, frame.head.orientation)) and not navigating
         self.fade = min(1.0, self.fade + FADE_RATE * dt) if want else max(0.0, self.fade - FADE_RATE * dt)
         if self.fade <= 0.0:
@@ -384,15 +404,20 @@ class PaletteRing:
         result.hover, result.hover_title = self.hover, self.hover_title
         self._target = None
 
-        if self.lifted is None:
+        if self.lifted_face is not None:
+            self._move_face(result, hit, tool, pointer)
+        elif self.press is not None:
+            self._hold_face(result, hit, tool, dt)
+            if hit is not None:
+                result.ray_end = hit.point
+        elif self.lifted is None:
             if hit is not None:
                 result.ray_end, result.consume_trigger = hit.point, True
                 if (self.hover, self.hover_title) != previous[:2]:
                     result.haptics.append((self.tool_hand, 0.15, 0.015))
                 if "trigger" in tool.pressed:
                     if hit.kind == "face":
-                        result.activated = self.hover
-                        result.haptics.append((self.tool_hand, 0.5, 0.04))
+                        self.press, self._press_age, self._press_dead = self.hover, 0.0, False
                     elif hit.kind == "slider":
                         self.slider_drag = self.hover
                         result.slider = (hit.page, hit.slot, hit.along)
@@ -424,5 +449,56 @@ class PaletteRing:
                     reach = self._lift_distance if hit is None else hit.distance
                     result.lift_point = mu.add(pointer.position, mu.mul(pointer.direction, reach))
         result.lifted = self.lifted
+        result.lifted_face = self.lifted_face
         result.drop_target = self._target
         return result
+
+    def _hold_face(self, result, hit, tool, dt):
+        """The trigger went down on a face: released over the same face soon it activates it, held long enough it lifts it, and a
+        pointer that wanders off the face makes the press do nothing."""
+        result.consume_trigger = True
+        on_face = self.hover == self.press
+        self._press_age += dt
+        if not tool.down("trigger"):
+            if on_face and not self._press_dead and self._press_age < HOLD_LIFT:
+                result.activated = self.press
+                result.haptics.append((self.tool_hand, 0.5, 0.04))
+            self.press = None
+        elif not on_face:
+            self._press_dead = True
+        elif not self._press_dead and self._press_age >= HOLD_LIFT and self.can_lift(*self.press):
+            self.lifted_face, self.press = self.press, None
+            self._lift_distance = hit.distance if hit is not None else self._lift_distance
+            self._face_target = None
+            result.haptics.append((self.tool_hand, 0.4, 0.04))
+
+    def _move_face(self, result, hit, tool, pointer):
+        """A face is lifted: the pointer chooses a slot (or the empty side that hides the face), releasing the trigger drops it."""
+        result.consume_trigger = True
+        previous = self._face_target
+        self._face_target = None
+        self.hover = None
+        result.hover = None
+        if hit is not None:
+            result.ray_end = hit.point
+            if hit.kind == "ghost":
+                self._face_target = (None, None)
+                result.drop_marker = (None, "", hit.side)
+            elif hit.kind in ("face", "slider") and (hit.page, hit.slot) != self.lifted_face:
+                if self.can_drop(self.lifted_face, (hit.page, hit.slot)):
+                    self._face_target = (hit.page, hit.slot)
+        if self._face_target != previous:
+            result.haptics.append((self.tool_hand, 0.15, 0.015))
+        if not tool.down("trigger"):
+            if self._face_target is not None:
+                result.face_dropped = self.lifted_face + self._face_target
+                result.haptics.append((self.tool_hand, 0.5, 0.04))
+            self.lifted_face = self._face_target = None
+        elif pointer.tracked:
+            if pointer.tip:
+                result.lift_point = pointer.position if hit is None else hit.point
+            else:
+                reach = self._lift_distance if hit is None else hit.distance
+                result.lift_point = mu.add(pointer.position, mu.mul(pointer.direction, reach))
+        result.face_target = self._face_target if self._face_target and self._face_target[0] is not None else None
+        result.face_hide = self._face_target == (None, None)
