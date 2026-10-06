@@ -119,10 +119,18 @@ class qtWidgetRender:
             SIGNAL("timeout()"),
             self.render_widget)
 
+    # The tree view dock was renamed from "Tree view" to "Model" (seen in FreeCAD 1.1.x),
+    # so accept alternative objectNames for the same panel.
+    WIDGET_NAME_ALIASES = {"Tree view": ("Tree view", "Model")}
+
     def find_widget_by_name(self, name):  # eg. Model (QDockWidget) - tree view
         mw = Gui.getMainWindow()
         # find Model (QDockWidget)
-        dock_widget = mw.findChild(QDockWidget, name)
+        dock_widget = None
+        for candidate in self.WIDGET_NAME_ALIASES.get(name, (name,)):
+            dock_widget = mw.findChild(QDockWidget, candidate)
+            if dock_widget:
+                break
         if not dock_widget:
             print(f"Qt Widget not found: {name}")
             return None
