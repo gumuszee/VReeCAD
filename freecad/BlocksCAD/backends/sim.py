@@ -118,6 +118,7 @@ class SimSession:
             model = build_fallback(side)
             sep.addChild(model.root)
             self.scene.addChild(sep)
+            self.ui.add_occluder(sep)
             self.hand_transforms.append(xf)
             self.hand_models.append(model)
         self.scene.addChild(self.ui.overlay)   # last: drawn over everything

@@ -412,6 +412,28 @@ class SimUiTest(unittest.TestCase):
         self.settle(int(2.0 / 0.02))
         self.assertEqual(ui.feedback._readout.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
 
+    def test_the_controller_hides_the_base_of_the_tip(self):
+        """The cone of the tip starts inside the controller model: that part must not show in the inverted colours."""
+        from freecad.BlocksCAD.ui import style
+        target = tuple(round(c * 255) for c in style.invert((0.4, 0.5, 0.65)))     # the inverted colour of the cone
+
+        def inverted_cone_pixels():
+            image = self.s.render("head", (400, 300))
+            return sum(1 for y in range(image.height()) for x in range(image.width())
+                       if all(abs(v - t) < 18 for v, t in zip((image.pixelColor(x, y).red(), image.pixelColor(x, y).green(),
+                                                              image.pixelColor(x, y).blue()), target)))
+
+        self.s.ui.settings.pointer_mode = "tip"
+        self.s.input.set_head(position=(0.55, 1.3, -0.25), look_at_point=(0.2, 1.2, -0.5))
+        self.s.input.set_hand(1, position=(0.2, 1.2, -0.5), point_at=(0.2, 1.2, -2.0))
+        self.settle(20)
+        hidden = inverted_cone_pixels()
+        self.s.ui.occluders.removeAllChildren()                                       # control: without the second pass
+        self.s.frame(0.02)
+        shown = inverted_cone_pixels()
+        self.assertLessEqual(hidden, 2)
+        self.assertGreater(shown, 10)
+
     def test_the_overlay_is_the_last_child_of_the_scene(self):
         self.assertEqual(self.s.scene.findChild(self.s.ui.overlay), self.s.scene.getNumChildren() - 1)
 

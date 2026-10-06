@@ -90,10 +90,21 @@ class UiController:
         self.root.addChild(self.view.root)
         self.overlay = coin.SoSeparator()
         self.overlay.ref()
-        self.overlay.addChild(self.ruler.root)
         self.overlay.addChild(self.pointer.root)
         for tip in self.tips:
             self.overlay.addChild(tip.root)
+        # the controller models are drawn again over the laser and the tips, so the controllers always hide them (`add_occluder`)
+        self.occluders = coin.SoSeparator()
+        pick = coin.SoPickStyle()
+        pick.style = coin.SoPickStyle.UNPICKABLE
+        self.occluders.addChild(pick)
+        depth = coin.SoDepthBuffer()
+        depth.test.setValue(True)
+        depth.function.setValue(coin.SoDepthBuffer.LEQUAL)
+        depth.getField("write").setValue(False)
+        self.occluders.addChild(depth)
+        self.overlay.addChild(self.occluders)
+        self.overlay.addChild(self.ruler.root)
         self.overlay.addChild(self.feedback.root)
         self.overlay.addChild(self.radial_view.root)
         self.active_actions = set()
@@ -106,6 +117,12 @@ class UiController:
         face_id = self.layout.face_at(page, slot)
         face = self.faces.get(face_id) if face_id else None
         return face.action if face else None
+
+    def add_occluder(self, node):
+        """Draw a scene node (the model of a controller) a second time over the laser and the tips, wherever it is visible in the
+        scene: the depth test against the depth the scene already wrote passes only where nothing is in front of it. The node is
+        shared, not copied, so it follows its original."""
+        self.occluders.addChild(node)
 
     def toast(self, text):
         """Show a short message in front of the head."""

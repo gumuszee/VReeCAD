@@ -527,6 +527,9 @@ class XRwidget(QOpenGLWidget):
         self.status_label.set_location(
             SbVec3f(-0.1, 0.0, 0.0), SbRotation(0, 0, 0, 0))
         self.labels_separator.addChild(self.status_label.get_scenegraph())
+        for con in self.xr_con:
+            # the controllers hide the laser and the tips, see UiController.add_occluder
+            self.ui.add_occluder(con.get_controller_scenegraph())
         for eye_index in range(2):
             self.root_scene[eye_index].ref()
             self.root_scene[eye_index].addChild(self.cgrp[eye_index])
