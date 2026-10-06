@@ -16,6 +16,7 @@ Diverging from upstream without merging back is allowed.
 | PyOpenGL | BSD-style | runtime dependency | none |
 | Open Blocks / Blocks by Google | Apache-2.0 (copyright "The Blocks Authors", Google LLC) | **inspiration only**; no code or assets from it are included | If we ever copy code/assets: keep Apache headers + NOTICE, mark changes; Apache-2.0 is compatible with LGPL-3.0 combined works. Ideas/UX concepts themselves are not covered by copyright. Never copy Google's logos/brand assets. |
 | freecad-mcp (dev tooling only) | MIT | third-party RPC addon used as a dev remote-control channel in `refs/`; not part of BlocksCAD | not distributed with the addon; no dependency from the addon |
+| Open Brush (formerly Tilt Brush) | Apache-2.0 (Icosa Foundation, The Tilt Brush Authors, Google LLC) | **behaviour reference only** (`refs/open-brush`); no code, shaders, icons or sounds are included | If code or assets are ever copied: keep the Apache header and NOTICE, mark changes. The control scheme is reimplemented from its observable behaviour. Do not use the "Tilt Brush" trademarks or the Open Brush logo. |
 | Open Blocks docs/brand | trademark guidelines | - | see below |
 
 ## Naming (flag for the owner)

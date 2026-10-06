@@ -31,6 +31,11 @@ if (-not (Test-Path "$RefsDir\OpenXR-Docs\.git")) {
     git -C "$RefsDir\OpenXR-Docs" sparse-checkout set specification/sources/chapters/extensions/ext specification/sources/chapters/extensions/valve 2>&1 | Out-Null
     "cloned $RefsDir\OpenXR-Docs (sparse: extension chapters)"
 } else { "have  $RefsDir\OpenXR-Docs" }
+if (-not (Test-Path "$RefsDir\open-brush\.git")) {
+    git clone --depth 1 --filter=blob:none --sparse https://github.com/icosa-foundation/open-brush "$RefsDir\open-brush" 2>&1 | Out-Null
+    git -C "$RefsDir\open-brush" sparse-checkout set Assets/Scripts 2>&1 | Out-Null
+    "cloned $RefsDir\open-brush (sparse: Assets/Scripts)"
+} else { "have  $RefsDir\open-brush" }
 
 Step "git remotes"
 if (-not (git -C $AddonDir remote | Select-String -SimpleMatch upstream)) {

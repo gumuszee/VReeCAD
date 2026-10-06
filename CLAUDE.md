@@ -5,7 +5,7 @@ Goal: parametric CAD modelling in VR on FreeCAD (installed 1.1.4) with Blocks-in
 direction `docs/design.md`; verification state `docs/verification.md`.
 
 ## Read first
-- `docs/design.md` (decisions D1-D6, architecture, controls, milestones) - the owner's answers there are binding.
+- `docs/design.md` (decisions D1-D7, architecture, milestones) and `docs/ux-design.md` (the Open Brush derived UI; reference code in `refs/open-brush`) - the owner's answers there are binding.
 - `docs/controller-models.md` and `docs/input-profiles.md` (runtime controller models, measured input components), `docs/setup.md` (environment + **gotchas**), `docs/toolbox.md` (existing tools - extend, don't reinvent), `docs/licensing.md`.
 - `docs/analysis-xr-workbench.md` before touching `freecad/BlocksCAD/`.
 

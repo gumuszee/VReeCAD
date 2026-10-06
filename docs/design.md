@@ -13,6 +13,7 @@ Inspiration: Open Blocks' simple direct manipulation; substance: real parametric
 | D4 | The addon is reworked freely; upstream is the starting point and is not merged from. (Licence check: `licensing.md`.) |
 | D5 | **No MCP / AI inside the addon, ever.** Any AI integration is a separate addon so VR works without AI. Dev tooling that talks to FreeCAD (`tools/`, MCP RPC addon) is development-only and the addon must not import it. |
 | D6 | Desktop mirror ("Enable mirror") is useful for testing/screenshots. Autonomous testing without a person moving in VR is a goal: see *Test strategy*. |
+| D7 | The UI is driven by the Open Brush control scheme (`ux-design.md`). The inherited interface is replaced: no upstream compatibility is kept, and the inherited tools remain only as faces until new tools replace them. |
 
 ## Architecture
 
@@ -38,21 +39,10 @@ Rules:
 - Everything created is a normal FreeCAD feature with meaningful properties/expressions.
 - Handedness is a preference (dominant = tool hand, other = palette hand).
 
-## Interaction design (hardware-agnostic, 5 inputs per hand)
+## Interaction design
 
-Dominant hand = **tool hand**: the controller tip is the cursor (touch/near geometry; ray for far targets).
-Off hand = **palette hand**: carries the tool belt and info.
-
-| Input | Dominant (tool) hand | Off (palette) hand |
-|---|---|---|
-| Trigger | primary action of active tool (place, drag, confirm) | secondary/modifier action of the tool (e.g. hold to disable snap, second point) ; UI "click" when pointing at a panel |
-| Grip | grab object / grab world (move, rotate; with both grips: scale/rotate world) | grab world / second hand for scale |
-| Face button 1 (A / X) | confirm / cycle sub-mode of the tool (e.g. pad<->pocket) | open radial tool palette (hold, stick selects, release picks) |
-| Face button 2 (B / Y) | undo (tap) / redo (hold) | open value panel (keypad) for the active parameter |
-| Thumbstick | tool option: grid size / segments / snap angle (up-down), cycle shape (left-right) | locomotion: move + snap/smooth turn (comfort option) |
-| Stick click | reset view / re-centre | toggle snapping guides |
-
-The two buttons are abstract (`button1`, `button2`): the mapping to physical controls is data-driven per interaction profile (`input-profiles.md`) and remappable in preferences. The Steam Frame left controller uses its D-pad directions as buttons; Vive/WMR use `menu` and trackpad click.
+The interface is specified in [ux-design.md](ux-design.md): the Open Brush control scheme adapted to CAD (palette ring on the off hand, grip navigation with two-hand
+move/rotate/scale, quick radial, modular faces and pages with a user layout). Hardware independence rests on the five abstract inputs per hand (`input-profiles.md`).
 
 ### The Blocks-like core: "move points"
 A parametric solid made of **editable points**: `BlocksCAD::Block` (FeaturePython, a polyhedron: `Vertices` (VectorList) + `Faces` (index lists), solid built with OCCT).
@@ -74,6 +64,7 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 ## Tool roadmap (milestones)
 | M | Deliverable |
 |---|---|
+| U1 to U4 | **UX foundation** (before M1): world navigation, palette ring with faces and pages, quick radial, layout customization, tool options. See `ux-design.md` |
 | M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools; radial palette skeleton |
 | M1 | Primitives (box, cylinder, cone, sphere, torus, wedge, prism) with snap grid, ghost preview, live dimension, undo/redo |
 | M2 | Selection/hover highlight (vertex/edge/face/object), Grab tool (move/rotate, two-hand scale -> parameters), world navigation |

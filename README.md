@@ -24,7 +24,7 @@ package.xml, LICENSE, Resources/, freecad/BlocksCAD/   the addon (FreeCAD loads 
 docs/       design, licensing, verification status, setup + gotchas, toolbox index, analyses of upstream/Open Blocks
 tests/      unit tests (pure Python, `tests/live/` needs the FreeCAD GUI)
 tools/      dev tooling (PowerShell/Python): bootstrap, launch FreeCAD, remote control, probes, test helpers
-refs/       read-only reference clones of FreeCAD, freecad-xr-workbench, open-blocks, freecad-mcp, OpenXR-Docs (git-ignored)
+refs/       read-only reference clones of FreeCAD, freecad-xr-workbench, open-blocks, freecad-mcp, OpenXR-Docs, open-brush (git-ignored)
 CLAUDE.md   guidance for AI coding sessions working on this repo
 ```
 
@@ -40,5 +40,5 @@ Requires an OpenXR runtime with `XR_KHR_opengl_enable` (SteamVR, Monado, ...), p
 (installed into FreeCAD's Python by the bootstrap script).
 
 ## Docs
-[design](docs/design.md) · [controller models](docs/controller-models.md) · [input profiles](docs/input-profiles.md) · [verification](docs/verification.md) · [licensing](docs/licensing.md) · [setup & gotchas](docs/setup.md) · [toolbox](docs/toolbox.md) ·
+[design](docs/design.md) · [UX design](docs/ux-design.md) · [controller models](docs/controller-models.md) · [input profiles](docs/input-profiles.md) · [verification](docs/verification.md) · [licensing](docs/licensing.md) · [setup & gotchas](docs/setup.md) · [toolbox](docs/toolbox.md) ·
 [analysis: upstream addon](docs/analysis-xr-workbench.md) · [analysis: Open Blocks](docs/analysis-open-blocks.md)
