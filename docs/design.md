@@ -27,9 +27,10 @@ input.py    InputFrame: head pose, per hand {aim/grip pose, trigger, grip, stick
 profiles.py abstract input -> OpenXR path per interaction profile (data, see input-profiles.md)
 gltf.py     GLB reader;  render/  gltf_coin.py (glTF -> Coin3D), controller_shape.py (generated), offscreen.py (image render)
 commonXR.py XRwidget: OpenXR session, swapchains, Coin scene, render loop, inherited interact_* handlers (to be split: rig*)
-ui/         palette.py + palette_view.py (radial palette); panels*, numeric keypad*, value field*, tool tips*, toasts*
+core/       mathutil.py (vector/quaternion math), navigation.py (grip navigation); snapping*, transactions*, units*
+ui/         controller.py (navigation + ring + actions), ring.py (ring logic), ring_view.py, layout.py (faces, pages, JSON), defaults.py, readout.py; numeric keypad*, quick radial*, tool tips*, toasts*
 tools/      base.py, registry.py, manager.py, legacy.py (the six inherited modes as tools); new tools: one module each
-core/*      snapping, picking/highlight, preview ghosts, transactions (undo), units, parameter binding
+core/*      picking/highlight, preview ghosts, transactions (undo), units, parameter binding (further modules)
 cad/*       thin wrappers creating/editing FreeCAD features (Part primitives, Sketcher, PartDesign, booleans, Attacher)
 ```
 
@@ -65,7 +66,7 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 | M | Deliverable |
 |---|---|
 | U1 to U4 | **UX foundation** (before M1): world navigation, palette ring with faces and pages, quick radial, layout customization, tool options. See `ux-design.md` |
-| M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools; radial palette skeleton |
+| M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools |
 | M1 | Primitives (box, cylinder, cone, sphere, torus, wedge, prism) with snap grid, ghost preview, live dimension, undo/redo |
 | M2 | Selection/hover highlight (vertex/edge/face/object), Grab tool (move/rotate, two-hand scale -> parameters), world navigation |
 | M3 | Value panel: keypad + expressions + variables spreadsheet; property editing from VR |

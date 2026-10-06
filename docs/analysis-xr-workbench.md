@@ -19,11 +19,10 @@ The controller tools (teleport, line, cube, select, drag, working plane), Qt ove
 | `input.py`, `profiles.py` | `InputFrame` / `HandInput` / `InputTracker` (hardware independent input with edge events) and the per-profile mapping of the abstract inputs to OpenXR paths |
 | `backends/` | `openxr_input.py` (action set, bindings, polling, haptics), `openxr_models.py` (runtime controller models), `sim.py` (scripted head and controllers) |
 | `render/` | `gltf_coin.py` (glTF to Coin3D), `controller_shape.py` (generated controller), `offscreen.py` (headless render to an image) |
-| `tools/`, `ui/` | Tool base class, registry, manager and the inherited modes as tools; radial palette logic and view |
+| `tools/`, `ui/` | Tool base class, registry, manager and the inherited modes as tools; palette ring logic, layout and view, the UI controller |
 | `gltf.py` | GLB reader (node tree, triangle meshes, materials, embedded images) |
 | `controllerXR.py` | `xrController`: Coin node for the controller (generated shape or runtime model) + picking ray; button state machine `AnInpEv` (JUST_PRESSED/PRESSED/JUST_RELEASED/RELEASED); `find_picked_coin_object` (ray pick on any Coin graph) |
-| `movementXR.py` | Arch/Free/keyboard locomotion -> `world_transform` SoTransform |
-| `menuCoin.py` | Minimal in-world Coin menu: `buttonWidget`, `sliderWidget`, `labelWidget`, `coinMenu`, `mainCoinMenu` (left trigger), `editCoinMenu` (shown near the right hand after selecting an object) |
+| `menuCoin.py` | Minimal in-world Coin widgets: `buttonWidget`, `sliderWidget`, `labelWidget`, `coinMenu`, `editCoinMenu` (shown near the right hand after selecting an object) |
 | `previewCoin.py` | Coin overlays: polyline preview, working plane, length/coordinate labels |
 | `qtWidgetRender.py` | Renders Qt dock widgets (Model tree, Tasks) to textures on quads in the scene; ray emulates mouse |
 | `documentInteraction.py` | **Bridge to the FreeCAD document**, module-global state: polyline -> face, add/resize `Part::Box`, select (view picking), drag (Placement), PartDesign Pad/Pocket by dragging, body management |
@@ -31,8 +30,8 @@ The controller tools (teleport, line, cube, select, drag, working plane), Qt ove
 
 ### Control flow per frame
 `update_render` (timer) -> `poll_xr_events` -> `start_xr_frame` -> `update_xr_movement` (frame timing) -> `update_xr_views` (eye cameras, head pose) ->
-`update_xr_controls` (sync actions, `InputFrame`, controller models, grip navigation, palette, controller poses) ->
-`update_xr_interaction` (quick menu, Qt widgets, `tools.update(frame)`) -> Coin render per eye -> `end_xr_frame`; `update_gui` (title bar) runs on its own timer.
+`update_xr_controls` (sync actions, `InputFrame`, controller models, `update_ui`: grip navigation and palette ring, controller poses) ->
+`update_xr_interaction` (Qt widgets, `tools.update(frame)`) -> Coin render per eye -> `end_xr_frame`; `update_gui` (title bar) runs on its own timer.
 
 ### Interaction model
 - `InteractMode` enum: TELEPORT, LINE_BUILDER, CUBE_BUILDER, SELECT_MODE, DRAG_MODE, WORKING_PLANE; each names a registered tool, and `XRwidget.interact_mode` reads and writes the active tool of the `ToolManager`.

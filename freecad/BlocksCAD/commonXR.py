@@ -25,7 +25,6 @@
 
 import freecad.BlocksCAD.preferences as pref
 import freecad.BlocksCAD.controllerXR as conXR
-import freecad.BlocksCAD.movementXR as movXR
 import freecad.BlocksCAD.menuCoin as menuCoin
 import freecad.BlocksCAD.previewCoin as prCoin
 import freecad.BlocksCAD.documentInteraction as docInter
@@ -33,17 +32,16 @@ import freecad.BlocksCAD.qtWidgetRender as qWRen
 from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
-from freecad.BlocksCAD.ui.palette import RadialPalette
-from freecad.BlocksCAD.ui.readout import Readout
+from freecad.BlocksCAD.ui.controller import UiController
 from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.core.navigation import Navigator, WorldPose, format_scale
-from freecad.BlocksCAD.ui.palette_view import PaletteView
+from freecad.BlocksCAD.core.navigation import WorldPose
 import freecad.BlocksCAD.tools.legacy  # registers the inherited tools
 from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
 from freecad.BlocksCAD.backends.openxr_models import RuntimeModels
 from freecad.BlocksCAD.render.gltf_coin import load_glb
 from freecad.BlocksCAD.render.controller_shape import animate as animate_fallback
 from math import tan, pi
+import FreeCAD as App
 import FreeCADGui as Gui
 from pivy.coin import SoTransform
 from pivy.coin import SoTranslation
@@ -503,8 +501,7 @@ class XRwidget(QOpenGLWidget):
         self.world_transform = SoTransform()
         self.world_separator = SoSeparator()
         self.nav_transform = SoTransform()  # world navigation (grips), see core/navigation.py
-        self.navigator = Navigator()
-        self.nav_readout = Readout()
+        self.setup_ui()
         self.world_separator.addChild(self.nav_transform)
         self.world_separator.addChild(self.doc_xr_transform)
         self.world_separator.addChild(self.sg)  # add FreeCAD active scenegraph
@@ -529,14 +526,6 @@ class XRwidget(QOpenGLWidget):
         self.status_label.set_location(
             SbVec3f(-0.1, 0.0, 0.0), SbRotation(0, 0, 0, 0))
         self.labels_separator.addChild(self.status_label.get_scenegraph())
-        self.palette = RadialPalette([(n, tool_registry.label_of(n)) for n in tool_registry.names()])
-        self.palette_view = PaletteView(self.palette)
-        self.palette_separator = SoSeparator()
-        self.palette_separator.addChild(self.xr_con[self.primary_con].get_global_transf())
-        palette_offset = SoTranslation()
-        palette_offset.translation.setValue(0.0, 0.1, 0.06)
-        self.palette_separator.addChild(palette_offset)
-        self.palette_separator.addChild(self.palette_view.root)
         for eye_index in range(2):
             self.root_scene[eye_index].ref()
             self.root_scene[eye_index].addChild(self.cgrp[eye_index])
@@ -551,15 +540,12 @@ class XRwidget(QOpenGLWidget):
                     self.sgrp[eye_index].addChild(
                         # ray for controller
                         self.xr_con[hand].get_ray_scenegraph())
-            # add menus
-            self.sgrp[eye_index].addChild(
-                self.con_menu.get_menu_scenegraph())
+            # edit menu (shown after selecting an object)
             self.sgrp[eye_index].addChild(
                 self.edit_menu.get_menu_scenegraph())
             # and labels
             self.sgrp[eye_index].addChild(self.labels_separator)
-            self.sgrp[eye_index].addChild(self.palette_separator)
-            self.sgrp[eye_index].addChild(self.nav_readout.root)
+            self.sgrp[eye_index].addChild(self.ui.root)
             # add world (scene without controllers and gui elements)
             self.sgrp[eye_index].addChild(self.world_separator)
             # add geometry preview objects
@@ -593,14 +579,11 @@ class XRwidget(QOpenGLWidget):
             if self.xr_con[hand].get_ray_scenegraph():
                 self.tpp_sgrp.addChild(
                     self.xr_con[hand].get_ray_scenegraph())
-        self.tpp_sgrp.addChild(
-            self.con_menu.get_menu_scenegraph())
         self.tpp_sgrp.addChild(self.world_separator)
         self.tpp_sgrp.addChild(
             self.geo_prev.get_scenegraph())
         self.tpp_sgrp.addChild(self.qt_widgets_separator)
-        self.tpp_sgrp.addChild(self.palette_separator)
-        self.tpp_sgrp.addChild(self.nav_readout.root)
+        self.tpp_sgrp.addChild(self.ui.root)
         # setup additional framebuffer for the TPP camera
         self.ctx.makeCurrent(self.offs_surface)
         w = self.size().width()
@@ -631,25 +614,51 @@ class XRwidget(QOpenGLWidget):
                 self.secondary_con,
                 ray=True,
                 log_level=self.log_level)]
-        # create movement object for world transformation based on controller
-        # input
-        self.mov_xr = movXR.xrMovement()
 
     def setup_menus(self):
-        # initialize menus floating in the 3D view
-        self.con_menu = menuCoin.mainCoinMenu()
+        # the edit menu floats in the 3D view after an object is selected
         self.edit_menu = menuCoin.editCoinMenu()
-        self.hide_menu_timer = QTimer()
-        self.hide_menu_timer.setSingleShot(True)
-        QObject.connect(
-            self.hide_menu_timer,
-            SIGNAL("timeout()"),
-            self.con_menu.hide_menu)
         # this function may by unavailable in older FreeCAD versions
         self.view = Gui.ActiveDocument.ActiveView
         self.picking_available = "getObjectInfoRay" in dir(self.view)
-        if self.picking_available:
-            self.con_menu.add_picking_buttons()
+
+    def setup_ui(self):
+        """The palette ring, grip navigation and their actions (docs/ux-design.md)."""
+        actions = {f"tool:{name}": (lambda n=name: self.select_tool(n)) for name in tool_registry.names()}
+        actions.update({
+            "view:reset": lambda: self.ui.navigator.request_reset(),
+            "overlay:toggle": self.toggle_overlays,
+            "scene:reload": self.reload_scenegraph,
+            "plane:toggle": lambda: self.geo_prev.toggle_working_plane(),
+            "doc:undo": self.undo,
+            "doc:redo": self.redo,
+            "doc:delete": self.delete_selection,
+            "app:close": lambda: QTimer.singleShot(0, close_xr_viewer),
+        })
+        self.ui = UiController(tool_registry.names(), tool_registry.label_of, actions,
+                               palette_hand=self.primary_con, tool_hand=self.secondary_con)
+        self.navigator = self.ui.navigator
+        self.ui_ray_shown = False
+
+    def toggle_overlays(self):
+        for w in self.qt_widget_renders:
+            w.toggle_widget()
+
+    def undo(self):
+        doc = App.ActiveDocument
+        if doc is not None and doc.UndoCount:
+            doc.undo()
+            doc.recompute()
+
+    def redo(self):
+        doc = App.ActiveDocument
+        if doc is not None and doc.RedoCount:
+            doc.redo()
+            doc.recompute()
+
+    def delete_selection(self):
+        docInter.delete_sel_obj()
+        docInter.clear_selection()
 
     def setup_qt_widgets(self):
         # initialize 2D Qt widgets rendering in the 3D space
@@ -664,8 +673,6 @@ class XRwidget(QOpenGLWidget):
 
     def read_preferences(self):
         # read from user preferences
-        self.user_mov_speed = pref.preferences().GetInt("LinearSpeed", 50) / 100
-        self.user_rot_speed = pref.preferences().GetInt("RotationalSpeed", 50) / 100
         self.pick_camera.height = pref.preferences().GetInt("PickingRadius", 20) / 1000
         sf = 0.001
         self.doc_xr_transform.scaleFactor.setValue(sf, sf, sf)
@@ -677,26 +684,6 @@ class XRwidget(QOpenGLWidget):
         self.light.intensity.setValue(self.directional_light_intensity)
         self.sample_count = pref.preferences().GetInt(
             "MSAA", 4)  # MSAA number of samples, requires restart
-        movement_type = pref.preferences().GetString(
-            "Movement", "ARCH")
-        self.mov_xr.set_movement_type(movement_type)
-        # preselecting button in the VR menu
-        if (movement_type == "FREE"):
-            self.con_menu.select_widget_by_name("free_mov_button")
-        elif (movement_type == "ARCH"):
-            self.con_menu.select_widget_by_name("arch_mov_button")
-        self.lock_to_floor = pref.preferences().GetBool("LockToFloor", False)
-        self.con_menu.lock_floor_button.select(self.lock_to_floor)
-        self.con_menu.select_widget_by_name(
-            "lin_speed_slider", self.user_mov_speed)
-        self.con_menu.select_widget_by_name(
-            "rot_speed_slider", self.user_rot_speed)
-        self.con_menu.select_widget_by_name(
-            "pick_radius_slider", self.pick_camera.height.getValue() * 10)
-        # 10 percent of slider is equal 1:1 scale (after m to mm conversion)
-        self.con_menu.select_widget_by_name(
-            "scale_slider", sf * 100)
-        self.con_menu.select_widget_by_name("teleport_mode_button")
         if self.tpp_camera:
             self.tpp_camera.heightAngle.setValue(
                 pref.preferences().GetFloat("TPPCamVFov", 42.88) * pi / 180)
@@ -1096,11 +1083,7 @@ class XRwidget(QOpenGLWidget):
         self.input_tracker.update(frame)
         self.input_frame = frame
         self.update_controller_models(frame)
-        self.update_navigation(frame)
-        picked = self.palette.update(frame.hands[self.primary_con])
-        if picked is not None:
-            self.select_tool(picked)
-        self.palette_view.update()
+        ui_update = self.update_ui(frame)
         for hand in range(self.hand_count):
             h = frame.hands[hand]
             con = self.xr_con[hand]
@@ -1108,7 +1091,9 @@ class XRwidget(QOpenGLWidget):
                 con.show_controller()
                 con.update_pose(h.aim.position, h.aim.orientation, self.world_transform)
                 con.update_lever(h.stick[0], h.stick[1])
-                con.update_grab(h.trigger)
+                # a trigger pressed on a face of the palette belongs to the palette, not to the active tool
+                owned = ui_update.consume_trigger and hand == self.secondary_con
+                con.update_grab(0.0 if owned else h.trigger)
             else:
                 con.hide_controller()
 
@@ -1534,112 +1519,6 @@ class XRwidget(QOpenGLWidget):
                 con.hide_ray()
                 self.geo_prev.make_plane_pickable(True)
 
-    def check_menu_selection(self):
-        # menu implementation, hidden by default, shows if trigger pressed
-        hand = self.primary_con
-        con = self.xr_con[hand]
-        if con.get_ray_scenegraph():
-            # if just pressed
-            if (con.get_buttons_states().grab_ev ==
-                    conXR.AnInpEv.JUST_PRESSED):
-                # menus are independent from controller gizmos
-                # location stays after showing the menu
-                pos = con.get_global_transf().translation
-                rot = con.get_global_transf().rotation
-                # do not update location if still visible
-                if (self.hide_menu_timer.remainingTime() <= 0):
-                    self.con_menu.update_location(pos, rot)
-                self.hide_menu_timer.stop()
-                self.con_menu.show_menu()
-                con.show_ray()
-                # when the menu is invoked, current document interaction
-                # like drawing something is accepted and finished
-                self.geo_prev.clean_polyline_preview()
-                self.geo_prev.clean_feature_preview()
-                docInter.finish_building()
-            # if pressed
-            elif (con.get_buttons_states().grab_ev ==
-                  conXR.AnInpEv.PRESSED):
-                # show the ray
-                con.find_picked_coin_object(
-                    self.con_menu.get_menu_scenegraph(),
-                    self.vp_reg,
-                    self.near_plane,
-                    self.far_plane)
-            # if just released
-            elif (con.get_buttons_states().grab_ev ==
-                  conXR.AnInpEv.JUST_RELEASED):
-                # traverse menu scenegraph
-                menu_picked_point, menu_picked_p_coords = con.find_picked_coin_object(
-                    self.con_menu.get_menu_scenegraph(), self.vp_reg, self.near_plane, self.far_plane)
-                if (menu_picked_point):
-                    tail = con.get_picked_tail()
-                    coords = con.get_picked_tex_coords()
-                    widget = self.con_menu.find_picked_widget(tail, coords)
-                    self.process_menu_selection(widget)
-                con.hide_ray()
-                # hide delay allows user to see what he has chosen
-                self.hide_menu_timer.start(2000)
-
-    def process_menu_selection(self, widget):
-        name = widget.name
-        if (name == "free_mov_button"):
-            pref.preferences().SetString(
-                "Movement", "FREE")
-            self.mov_xr.set_movement_type("FREE")
-        elif (name == "arch_mov_button"):
-            pref.preferences().SetString(
-                "Movement", "ARCH")
-            self.mov_xr.set_movement_type("ARCH")
-            rot = self.world_transform.rotation.getValue()
-            rot = self.mov_xr.reset_rot_axis(rot, SbVec3f(0, 1, 0))
-            self.world_transform.rotation.setValue(rot)
-        elif (name == "lock_floor_button"):
-            self.lock_to_floor = not self.lock_to_floor
-            pref.preferences().SetBool(
-                "LockToFloor", self.lock_to_floor)
-            self.con_menu.lock_floor_button.select(self.lock_to_floor)
-        elif (name == "lin_speed_slider"):
-            self.user_mov_speed = widget.value
-            pref.preferences().SetInt("LinearSpeed",
-                                      round(self.user_mov_speed * 100))
-        elif (name == "rot_speed_slider"):
-            self.user_rot_speed = widget.value
-            pref.preferences().SetInt("RotationalSpeed",
-                                      round(self.user_rot_speed * 100))
-        elif (name == "pick_radius_slider"):
-            self.pick_camera.height = widget.value / 10
-            pref.preferences().SetInt("PickingRadius",
-                                      round(self.pick_camera.height.getValue() * 1000))
-        elif (name == "scale_slider"):
-            sf = widget.value / 100
-            self.doc_xr_transform.scaleFactor.setValue(sf, sf, sf)
-        elif (name == "teleport_mode_button"):
-            self.select_tool("teleport")
-        elif (name == "working_plane_button"):
-            self.select_tool("working_plane")
-        elif (name == "toggle_plane_button"):
-            self.geo_prev.toggle_working_plane()
-            self.con_menu.toggle_plane_button.select(False)
-        elif (name == "line_builder_button"):
-            self.select_tool("line_builder")
-        elif (name == "cube_builder_button"):
-            self.select_tool("cube_builder")
-        elif (name == "pick_sel_button"):
-            self.select_tool("select_mode")
-        elif (name == "pick_drag_button"):
-            self.select_tool("drag_mode")
-        elif (name == "toggle_overlay_button"):
-            for w in self.qt_widget_renders:
-                w.toggle_widget()
-            self.con_menu.toggle_overlay_button.select(False)
-        elif (name == "scale_reset_button"):
-            sf = 0.001
-            self.doc_xr_transform.scaleFactor.setValue(sf, sf, sf)
-            self.con_menu.select_widget_by_name(
-                "scale_slider", sf * 100)
-            self.con_menu.scale_reset_button.select(False)
-
     def select_tool(self, name):
         """Activate a registered tool and apply the side effects the inherited modes need (status text, builder mode)."""
         self.tools.activate(name)
@@ -1728,27 +1607,21 @@ class XRwidget(QOpenGLWidget):
         self.nav_transform.rotation.setValue(*world.rotation)
         self.nav_transform.scaleFactor.setValue(world.scale, world.scale, world.scale)
 
-    def update_navigation(self, frame):
-        """Grip navigation of the world: one grip drags, two grips move, rotate and scale (docs/ux-design.md)."""
-        events = self.navigator.update(frame)
+    def update_ui(self, frame):
+        """One frame of the user interface: grip navigation, palette ring, haptics, ray and trigger ownership."""
+        self.ui.active_actions = {f"tool:{self.tools.active_name}"}
+        update = self.ui.update(frame)
         self.apply_navigation()
-        for event in events:
-            kind = event[0]
-            if kind == "grab":
-                self.haptic_both(0.25, 0.03)
-            elif kind == "tick":
-                for hand in event[1]:
-                    self.haptic(hand, 0.6, 0.04)
-            elif kind == "reset":
-                self.haptic_both(0.7, 0.12)
-        if self.navigator.state == "two":
-            left = Navigator.hand_position(frame.hands[0])
-            right = Navigator.hand_position(frame.hands[1])
-            middle = mu.lerp(left, right, 0.5)
-            self.nav_readout.show(format_scale(self.navigator.world.scale), mu.add(middle, (0.0, 0.1, 0.0)),
-                                  frame.head.position)
-        else:
-            self.nav_readout.hide()
+        for hand, amplitude, duration in update.haptics:
+            self.haptic(hand, amplitude, duration)
+        tool_con = self.xr_con[self.secondary_con]
+        if update.ray_end is not None:
+            tool_con.show_ray_ext(SbVec3f(*update.ray_end))
+            self.ui_ray_shown = True
+        elif self.ui_ray_shown:
+            tool_con.hide_ray()
+            self.ui_ray_shown = False
+        return update
 
     def haptic(self, hand, amplitude, duration_s):
         try:
@@ -1764,8 +1637,6 @@ class XRwidget(QOpenGLWidget):
         if pref.pref_updated:
             self.read_preferences()
             pref.reset_upd_flag()
-        self.check_menu_selection()  # quick setting menu, primary (left) controller
-
         if self.update_qt_widgets():  # Qt widgets renders, secondary controller
             return
         # interaction modes, secondary (right) controller
@@ -2042,15 +1913,6 @@ class XRwidget(QOpenGLWidget):
 
     def offs_log_message(self, message):
         print(f"Offscreen context OpenGL debug: {message.message()}")
-
-    # getting key events requires widget's focus
-    # widget have to be shown, and get focus after user clicking in it
-    def keyPressEvent(self, event):
-        self.mov_xr.key_pressed(event.key())
-
-    def keyReleaseEvent(self, event):
-        self.mov_xr.key_released(event.key())
-
 
 xr_dock_w = None
 

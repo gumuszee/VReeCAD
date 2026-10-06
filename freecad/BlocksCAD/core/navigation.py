@@ -110,6 +110,12 @@ class Navigator:
     def resetting(self):
         return self._reset_from is not None
 
+    def request_reset(self):
+        """Animate the view back to the origin at scale 1 : 1 (the stick click of a gripping hand does the same)."""
+        if self.world != IDENTITY and not self.resetting:
+            self._reset_from, self._reset_t = self.world, 0.0
+            self.state, self._anchor = "idle", None
+
     def update(self, frame, blocked=(False, False)) -> List[tuple]:
         """Advance with one `InputFrame`. `blocked[i]` excludes hand i (for example while it grabs an object).
         Returns events: ("grab", n_hands), ("release",), ("tick", hand_indexes) and ("reset",)."""

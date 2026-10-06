@@ -18,6 +18,8 @@ for _name in ("support", "test_gltf", "test_coin"):
     sys.modules.pop(_name, None)
 for _name in ("freecad.BlocksCAD.core.mathutil", "freecad.BlocksCAD.core.navigation", "freecad.BlocksCAD.input", "freecad.BlocksCAD.gltf", "freecad.BlocksCAD.render.gltf_coin",
               "freecad.BlocksCAD.render.controller_shape", "freecad.BlocksCAD.render.offscreen",
+              "freecad.BlocksCAD.ui.layout", "freecad.BlocksCAD.ui.ring", "freecad.BlocksCAD.ui.ring_view",
+              "freecad.BlocksCAD.ui.defaults", "freecad.BlocksCAD.ui.readout", "freecad.BlocksCAD.ui.controller",
               "freecad.BlocksCAD.backends.sim"):
     if _name in sys.modules:
         importlib.reload(sys.modules[_name])

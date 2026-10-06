@@ -26,7 +26,6 @@ metres and Z up to Y up.
 import math
 
 from freecad.BlocksCAD.core.mathutil import look_at, quat_from_axis_angle, quat_multiply, rotate  # noqa: F401  (re-exported for scripts)
-from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.input import HandInput, InputFrame, InputTracker, Pose
 
 IPD = 0.064  # metres between the eyes
@@ -78,13 +77,19 @@ class SimInput:
 class SimSession:
     """Input plus a renderable scene. `document_scene` is the FreeCAD scene graph (millimetres, Z up) or None."""
 
-    def __init__(self, document_scene=None, profile="/interaction_profiles/valve/frame_controller_valve"):
+    def __init__(self, document_scene=None, profile="/interaction_profiles/valve/frame_controller_valve", actions=None):
         from pivy import coin
+        from freecad.BlocksCAD import tools
+        import freecad.BlocksCAD.tools.legacy  # noqa: F401  (registers the inherited tools)
         from freecad.BlocksCAD.render.controller_shape import build_fallback
+        from freecad.BlocksCAD.ui.controller import UiController
         self._coin = coin
         self.input = SimInput(profile)
         self.last_frame = None
-        self.events = []
+        self.ui_update = None
+        self.actions = {} if actions is None else actions
+        self.ui = UiController(tools.names(), tools.label_of, self.actions, use_user_layout=False)
+        self.navigator = self.ui.navigator
         self.scene = coin.SoSeparator()
         self.scene.ref()
         environment = coin.SoEnvironment()
@@ -93,7 +98,6 @@ class SimSession:
         light = coin.SoDirectionalLight()
         light.direction.setValue(-0.4, -0.8, -0.6)
         self.scene.addChild(light)
-        self.navigator = Navigator()
         self.nav_xf = coin.SoTransform()
         if document_scene is not None:
             doc = coin.SoSeparator()
@@ -106,6 +110,7 @@ class SimSession:
             self.scene.addChild(doc)
         self.hand_transforms = []
         self.hand_models = []
+        self.scene.addChild(self.ui.root)
         for side in ("left", "right"):
             sep = coin.SoSeparator()
             xf = coin.SoTransform()
@@ -120,7 +125,7 @@ class SimSession:
         """Advance the simulated time, pose the controller models and return the `InputFrame`."""
         from freecad.BlocksCAD.render.controller_shape import animate
         frame = self.input.frame(dt)
-        self.events = self.navigator.update(frame)
+        self.ui_update = self.ui.update(frame)
         world = self.navigator.world
         self.nav_xf.translation.setValue(*world.position)
         self.nav_xf.rotation.setValue(*world.rotation)
@@ -155,4 +160,5 @@ class SimSession:
         return both
 
     def close(self):
+        self.ui.close()
         self.scene.unref()

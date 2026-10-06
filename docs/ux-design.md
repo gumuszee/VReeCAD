@@ -2,7 +2,7 @@
 
 The interface of BlocksCAD follows the control scheme of [Open Brush](https://github.com/icosa-foundation/open-brush) (Apache-2.0), adapted to parametric CAD,
 with the direct, "hand is the cursor" feel of Open Blocks. Open Brush code and assets are used as a reference for behaviour only; nothing is copied.
-The inherited upstream interface (quick menu on the left trigger, stick locomotion, the first radial palette) is replaced, not extended.
+The upstream interface (quick menu on the left trigger, stick locomotion) is not part of BlocksCAD.
 
 ## Principles
 
@@ -92,6 +92,8 @@ Text is drawn from glyph outlines (Coin `SoText3`) at fixed height and sits on a
 Controllers keep the runtime-provided models.
 
 ## Implementation plan (UX milestones, before M1)
+
+U1 and U2 are implemented (verification state in `verification.md`); U3 and U4 are planned.
 
 | U | Deliverable |
 |---|---|

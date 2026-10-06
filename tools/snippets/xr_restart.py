@@ -8,8 +8,8 @@ cxr.close_xr_viewer()
 import freecad.BlocksCAD as _pkg
 _mods = ["core.mathutil", "core.navigation", "input", "profiles", "gltf", "render.gltf_coin", "render.controller_shape", "render.offscreen",
          "backends.openxr_models", "backends.openxr_input", "backends.sim",
-         "ui.palette", "ui.palette_view", "ui.readout", "tools.base", "tools.registry", "tools.manager", "tools", "tools.legacy",
-         "qtWidgetRender", "previewCoin", "menuCoin", "controllerXR", "movementXR", "documentInteraction", "commonXR"]
+         "ui.layout", "ui.ring", "ui.ring_view", "ui.defaults", "ui.readout", "ui.controller", "tools.base", "tools.registry", "tools.manager", "tools", "tools.legacy",
+         "qtWidgetRender", "previewCoin", "menuCoin", "controllerXR", "documentInteraction", "commonXR"]
 for _m in _mods:
     importlib.reload(importlib.import_module("freecad.BlocksCAD." + _m))
 import freecad.BlocksCAD.commonXR as cxr

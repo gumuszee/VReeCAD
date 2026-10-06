@@ -126,15 +126,8 @@ def yaw_between(a, b, up=(0.0, 1.0, 0.0)):
     return math.atan2(dot(up, cross(pa, pb)), dot(pa, pb))
 
 
-def look_at(position, target, up=(0.0, 1.0, 0.0)):
-    """Orientation (x, y, z, w) whose -Z axis points from `position` to `target`."""
-    f = normalize(sub(target, position))
-    z = mul(f, -1.0)
-    x = cross(up, z)
-    if length(x) < 1e-9:  # looking along the up axis
-        x = (1.0, 0.0, 0.0)
-    x = normalize(x)
-    y = cross(z, x)
+def quat_from_basis(x, y, z):
+    """Quaternion of the rotation whose columns are the orthonormal axes x, y, z."""
     m00, m01, m02 = x[0], y[0], z[0]
     m10, m11, m12 = x[1], y[1], z[1]
     m20, m21, m22 = x[2], y[2], z[2]
@@ -150,3 +143,14 @@ def look_at(position, target, up=(0.0, 1.0, 0.0)):
         return ((m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s)
     s = 2.0 * math.sqrt(1.0 + m22 - m00 - m11)
     return ((m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s)
+
+
+def look_at(position, target, up=(0.0, 1.0, 0.0)):
+    """Orientation (x, y, z, w) whose -Z axis points from `position` to `target`."""
+    f = normalize(sub(target, position))
+    z = mul(f, -1.0)
+    x = cross(up, z)
+    if length(x) < 1e-9:  # looking along the up axis
+        x = (1.0, 0.0, 0.0)
+    x = normalize(x)
+    return quat_from_basis(x, cross(z, x), z)

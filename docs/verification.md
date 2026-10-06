@@ -33,7 +33,9 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Runtime controller models: both interaction render models enumerated, GLB assets downloaded, node names read, model spaces located while `FOCUSED`, node animation reported | Verified | Steam Frame controllers, SteamVR 2.17.10; `controller-models.md` |
 | Runtime controller models parsed and built into Coin3D; rendered offscreen | Verified | `render/gltf_coin.py`, `tools/snippets/render_controller_models.py`; the Frame controller texture atlas is near black, so the model appears black |
 | Runtime controller models displayed at the controllers in the headset, animated with input | Unverified | owner check pending, see the in-headset checklist below |
-| Tool registry with the six inherited modes, `select_tool`, radial palette on the left hand (hold button1, stick selects, release picks) | Unverified in-headset | the viewer starts with the registry and the palette scene nodes; palette logic is unit tested |
+| Tool registry with the six inherited modes, `select_tool` | Unverified in-headset | the viewer starts with the registry; manager lifecycle is unit tested |
+| Palette ring (pages of faces around the left controller, stick flick turns it, gaze or button1 shows it, tool hand ray hovers and trigger activates a face): logic unit tested, rendered offscreen through the Sim session | Verified | `tests/test_ring.py`, `tools/snippets/render_ui.py` |
+| Palette ring in the headset (readability, gaze visibility, ray hover, activation, haptics) | Unverified | owner check pending, checklist items 3 and 4 |
 | Steam Frame controller input paths accepted by the runtime | Verified | `tools/xr_probe_paths.py`; `input-profiles.md` |
 | Steam Frame left D-pad directions work as buttons | Verified | owner-confirmed |
 | Dev remote control (`tools/fc_rpc.py`, MCP smoke test) | Verified | `tools/mcp_smoke_test.py` passes end to end |
@@ -47,6 +49,6 @@ Start the viewer (workbench BlocksCAD, "Open XR viewer"), wear the headset until
 
 1. Both controllers are drawn as the runtime models (Steam Frame shapes) at the hands, and the report view prints `Controller models from the runtime: ['left', 'right']`.
 2. Pulling a trigger, squeezing a grip, moving a stick and pressing buttons moves the matching parts of the models.
-3. Holding the left D-pad up (button1) opens the radial palette above the left controller; pushing the stick highlights an item; releasing picks it (status label changes).
-4. The right controller ray and the tools selected through the palette behave as the inherited modes did.
-5. Navigation: gripping with one hand drags the world with that hand; gripping with both hands moves, turns (about the vertical axis) and scales the world, a `N : 1` readout floats above the midpoint, haptic ticks occur when the scale passes a power of two; clicking the stick of a gripping hand animates the view back to the origin at scale 1 : 1; the teleport tool brings the picked surface under your feet. The thumbstick no longer moves you.
+3. Looking at the left controller fades in the palette ring above it (pages of labelled faces, page dots below); looking away fades it out; the left D-pad up (button1) pins and releases it.
+4. Flicking the left stick left or right turns the ring one page with a haptic tick. Pointing the right controller at a face highlights it (blue) with a tick, the trigger activates it (the active tool is orange, the status label changes). Faces: Tools (Teleport, Line, Cube, Select, Drag, Working plane), Edit (Undo, Redo, Delete), View (Reset view, Panels, Work plane, Reload scene), Session (Close VR). The labels are readable and do not overlap.
+5. Navigation: gripping with one hand drags the world with that hand; gripping with both hands moves, turns (about the vertical axis) and scales the world, a `N : 1` readout floats above the midpoint, haptic ticks occur when the scale passes a power of two; clicking the stick of a gripping hand animates the view back to the origin at scale 1 : 1; the teleport tool brings the picked surface under your feet. The thumbsticks do not move you.
