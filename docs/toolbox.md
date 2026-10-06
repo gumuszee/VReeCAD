@@ -1,0 +1,31 @@
+# Toolbox
+
+Every script we built, so nobody reinvents it. All paths relative to the repo root. Keep this table in sync when adding tools.
+
+| Tool | What it does | Usage |
+|---|---|---|
+| `tools/env.ps1` | Shared path variables (FreeCAD install, Mod dir, addon dirs). Dot-source it. Override FreeCAD path with `$env:BLOCADVR_FREECAD`. | `. tools\env.ps1` |
+| `tools/bootstrap.ps1` | Idempotent full environment setup (reference clones, pip deps, uv, junctions, dev-only MCP RPC auto-start + `.mcp.json`). | `tools\bootstrap.ps1` |
+| `tools/install-addons.ps1` | Junction our addons into `%APPDATA%\FreeCAD\v1-1\Mod` (no copying; `-Remove` unlinks). | `tools\install-addons.ps1` |
+| `tools/start-freecad.ps1` | Launch FreeCAD GUI detached with a log, wait until RPC `:9875` answers. | `tools\start-freecad.ps1 [-Wait 90] [-XrRuntime path.json]` |
+| `tools/fc_rpc.py` | Stdlib-only XML-RPC client for the running FreeCAD: `status`, `docs`, `objects <doc>`, `exec "<code>"`/`exec -f file`, `shot out.png [View]`. Importable (`exec_code`). Exit code reflects success. | `python tools\fc_rpc.py exec "print(App.ActiveDocument.Name)"` |
+| `tools/mcp_smoke_test.py` | Full-chain MCP test (MCP client -> server -> RPC -> GUI): builds a plate with a hole, checks volume, saves screenshot to `tools/logs/`. | `uv run --directory refs/freecad-mcp python ../../tools/mcp_smoke_test.py` |
+| `tools/xr_probe.py` | Standalone OpenXR check: runtime, `XR_KHR_opengl_enable`, instance (API 1.0 then newest), HMD system, GL requirements. Run with FreeCAD's Python. | `& "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" tools\xr_probe.py` |
+| `tools/snippets/report_view.py` | FreeCAD-side snippet: dump the Report view (where addon `print`s go). | `python tools\fc_rpc.py exec -f tools\snippets\report_view.py` |
+| `tools/snippets/xr_state.py` | FreeCAD-side: print live OpenXR session state (`SYNCHRONIZED`=headset off, `FOCUSED`=in use). | `... exec -f tools\snippets\xr_state.py` |
+| `tools/snippets/xr_restart.py` | FreeCAD-side: hot-reload addon modules and restart the XR viewer (fast edit loop; restart FreeCAD for class-identity changes). | `... exec -f tools\snippets\xr_restart.py` |
+
+> Everything under `tools/` is **development tooling**, not shipped with the addon. `fc_rpc.py`, `mcp_smoke_test.py` and the MCP bits only exist to let a developer/agent remote-control a running FreeCAD; the addon never depends on them.
+
+## Edit loop for addon development
+
+1. Edit files in `freecad/BlocksCAD/`.
+2. `python tools\fc_rpc.py exec -f tools\snippets\xr_restart.py` (headset on), watch `report_view.py` for errors.
+3. If module-level state/classes changed in a way reload can't handle: close FreeCAD, `tools\start-freecad.ps1`.
+
+## Conventions
+
+- Every reusable script lives in `tools/` with a header comment (purpose, usage) and a row in the table above.
+- FreeCAD-side snippets (run inside the GUI) -> `tools/snippets/`; they use underscore-prefixed names to avoid polluting the shared RPC namespace.
+- Throw-away experiments go to the session scratchpad, not the repo. Logs/screenshots -> `tools/logs/` (git-ignored).
+- Design decisions live in `docs/design.md`, verification state in `docs/verification.md`, environment facts and gotchas in `docs/setup.md`.
