@@ -1,9 +1,11 @@
 import contextlib
 import io
+import math
 import unittest
 
 import support  # noqa: F401
 from freecad.BlocksCAD.backends.sim import SimInput
+from freecad.BlocksCAD.cad import meshes
 from freecad.BlocksCAD.cad import primitives as prim
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import snapping, stage
@@ -98,6 +100,59 @@ class ParametersTest(unittest.TestCase):
         self.assertEqual(prim.describe("Box", (10, 20, 30), lambda v: f"{v:g} mm"), "Box: 10 mm x 20 mm x 30 mm")
 
 
+class MeshTest(unittest.TestCase):
+    LO, SIZE = (10.0, 20.0, 30.0), (40.0, 60.0, 80.0)
+    EXPECTED = {   # volume of the shape in a 40 x 60 x 80 box, polygonal meshes are a little under the exact solids
+        "Box": 40 * 60 * 80, "Cylinder": math.pi * 20 ** 2 * 80, "Cone": math.pi * 20 ** 2 * 80 / 3,
+        "Sphere": 4 / 3 * math.pi * 20 ** 3, "Torus": 2 * math.pi ** 2 * 12 * 8 ** 2, "Wedge": 40 * 60 * 80 / 2,
+        "Prism": 3 * math.sqrt(3) / 2 * 20 ** 2 * 80}
+
+    def test_every_mesh_encloses_the_shape_with_outward_faces(self):
+        for name in prim.SHAPES:
+            mesh = meshes.build(name, self.LO, self.SIZE)
+            self.assertAlmostEqual(meshes.volume(mesh) / self.EXPECTED[name], 1.0, delta=0.035, msg=name)   # positive: outward winding
+
+    def test_triangles_agree_with_their_normals_and_the_normals_are_unit_vectors(self):
+        for name in prim.SHAPES:
+            mesh = meshes.build(name, self.LO, self.SIZE)
+            self.assertEqual(len(mesh.points), len(mesh.normals), name)
+            for n in mesh.normals:
+                self.assertAlmostEqual(mu.length(n), 1.0, places=6, msg=name)
+            for a, b, c in mesh.triangles:
+                self.assertTrue(all(0 <= i < len(mesh.points) for i in (a, b, c)), name)
+                face = mu.cross(mu.sub(mesh.points[b], mesh.points[a]), mu.sub(mesh.points[c], mesh.points[a]))
+                self.assertGreater(mu.dot(face, mu.add(mesh.normals[a], mu.add(mesh.normals[b], mesh.normals[c]))), 0.0, name)
+
+    def test_the_mesh_stays_inside_the_box_and_the_outline_lies_on_it(self):
+        for name in prim.SHAPES:
+            mesh = meshes.build(name, self.LO, self.SIZE)
+            self.assertTrue(mesh.outline, name)
+            for point in mesh.points + [p for curve in mesh.outline for p in curve]:
+                for axis in range(3):
+                    self.assertGreaterEqual(point[axis], self.LO[axis] - 1e-6, name)
+                    self.assertLessEqual(point[axis], self.LO[axis] + self.SIZE[axis] + 1e-6, name)
+
+    def test_the_structure_does_not_change_with_the_size_so_nothing_flickers(self):
+        for name in prim.SHAPES:
+            reference = meshes.build(name, self.LO, self.SIZE)
+            for size in ((10.0, 10.0, 10.0), (200.0, 30.0, 500.0), (10.0, 10.0, 400.0)):
+                other = meshes.build(name, self.LO, size)
+                self.assertEqual(other.triangles, reference.triangles, f"{name} {size}")
+                self.assertEqual([len(c) for c in other.outline], [len(c) for c in reference.outline], f"{name} {size}")
+
+    def test_a_flat_torus_and_a_thin_box_still_build(self):
+        for name in prim.SHAPES:
+            mesh = meshes.build(name, (0.0, 0.0, 0.0), (100.0, 100.0, 2.0))
+            self.assertGreater(meshes.volume(mesh), 0.0, name)
+
+    def test_building_is_fast_enough_for_every_frame(self):
+        import time
+        start = time.perf_counter()
+        for name in prim.SHAPES:
+            meshes.build(name, self.LO, self.SIZE)
+        self.assertLess(time.perf_counter() - start, 0.25)       # all seven together, well under a frame budget each
+
+
 class FakeGhost:
     def __init__(self):
         self.calls = []
@@ -108,8 +163,8 @@ class FakeGhost:
     def hide_marker(self):
         self.calls.append(("hide_marker",))
 
-    def show_shape(self, points, triangles):
-        self.calls.append(("shape", len(points), len(triangles)))
+    def show_shape(self, mesh):
+        self.calls.append(("shape", len(mesh.points), len(mesh.triangles)))
 
     def show_box(self, lo, size):
         self.calls.append(("box", lo, size))
@@ -142,7 +197,7 @@ class ToolTest(unittest.TestCase):
             "toast": self.toasts.append,
             "readout": self.readouts.append,
             "create": lambda doc, shape, lo, size: self.created.append((doc, shape, lo, size)),
-            "mesh": lambda shape, lo, size: ([(0, 0, 0)] * 8, [(0, 1, 2)] * 12),
+            "mesh": lambda shape, lo, size: meshes.Mesh([(0, 0, 0)] * 8, [(0, 0, 1)] * 8, [(0, 1, 2)] * 12),
         })
         self.tool = PrimitiveTool(context)
 

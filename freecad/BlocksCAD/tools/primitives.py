@@ -25,9 +25,9 @@ Services (`ToolContext.services`; every one is optional so the tool also runs in
   cursor(hand) -> stage point of the tip of that hand        to_document(point) -> document millimetres
   document() -> the active FreeCAD document or None          trigger_free() -> False while the interface owns the trigger
   ghost -> `render.ghost.Ghost`                              toast(text), readout(text or None), format_length(mm)
-  create(doc, shape, lo, size), mesh(shape, lo, size)        replace the `cad.primitives` functions (tests)"""
+  create(doc, shape, lo, size), mesh(shape, lo, size)        replace `cad.primitives.create` and `cad.meshes.build` (tests)"""
 
-from freecad.BlocksCAD.cad import primitives
+from freecad.BlocksCAD.cad import meshes, primitives
 from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.tools.base import Tool, ToolOption
 from freecad.BlocksCAD.tools.registry import register
@@ -125,8 +125,7 @@ class PrimitiveTool(Tool):
             key = (shape, lo, size)
             if key != self._built:
                 self._built = key
-                points, triangles = self._service("mesh", primitives.mesh)(shape, lo, size)
-                ghost.show_shape(points, triangles)
+                ghost.show_shape(self._service("mesh", meshes.build)(shape, lo, size))
                 ghost.show_box(lo, size)
         if readout is not None:
             readout(primitives.describe(shape, size, self._format))

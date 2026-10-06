@@ -17,10 +17,9 @@
 
 `parameters` turns a shape and the box (lowest corner and size, document millimetres) into the properties and the placement of a
 FreeCAD feature (`Part::Box`, `Part::Cylinder`, ...). It is pure Python, so the sizing rules are unit tested without FreeCAD.
-`create` makes the feature in one transaction (one undo step), `shape` and `mesh` build the same shape without a document for the
-ghost preview. FreeCAD is imported inside the functions that need it."""
+`create` makes the feature in one transaction (one undo step); the preview mesh is built by `meshes.build` from the same
+parameters. FreeCAD is imported inside the functions that need it."""
 
-import math
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
 
@@ -92,39 +91,3 @@ def create(doc, shape, lo, size):
         doc.abortTransaction()
         raise
     return obj
-
-
-def shape(shape_name, lo, size):
-    """The solid (a `Part.Shape` in document coordinates) that `create` would make, built without a document."""
-    import FreeCAD as App
-    import Part
-    spec = parameters(shape_name, lo, size)
-    p = spec.props
-    if spec.type == "Part::Box":
-        solid = Part.makeBox(p["Length"], p["Width"], p["Height"])
-    elif spec.type == "Part::Cylinder":
-        solid = Part.makeCylinder(p["Radius"], p["Height"])
-    elif spec.type == "Part::Cone":
-        solid = Part.makeCone(p["Radius1"], p["Radius2"], p["Height"])
-    elif spec.type == "Part::Sphere":
-        solid = Part.makeSphere(p["Radius"])
-    elif spec.type == "Part::Torus":
-        solid = Part.makeTorus(p["Radius1"], p["Radius2"])
-    elif spec.type == "Part::Wedge":
-        solid = Part.makeWedge(p["Xmin"], p["Ymin"], p["Zmin"], p["Z2min"], p["X2min"],
-                               p["Xmax"], p["Ymax"], p["Zmax"], p["Z2max"], p["X2max"])
-    else:
-        radius, sides = p["Circumradius"], int(p["Polygon"])
-        points = [App.Vector(radius * math.cos(2 * math.pi * i / sides), radius * math.sin(2 * math.pi * i / sides), 0.0)
-                  for i in range(sides)]
-        solid = Part.Face(Part.makePolygon(points + points[:1])).extrude(App.Vector(0.0, 0.0, p["Height"]))
-    solid.Placement = _placement(spec)
-    return solid
-
-
-def mesh(shape_name, lo, size):
-    """(points, triangles) of the shape for the preview: points are (x, y, z) tuples in document millimetres, triangles index them."""
-    solid = shape(shape_name, lo, size)
-    tolerance = max(max(size) / 60.0, 0.02)
-    points, triangles = solid.tessellate(tolerance)
-    return [(v.x, v.y, v.z) for v in points], [tuple(t) for t in triangles]

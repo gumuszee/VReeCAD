@@ -204,7 +204,7 @@ try:
     for _ in range(3):
         _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_primitive_marker.png"))
-    for _shape in ("Cylinder", "Torus", "Wedge"):
+    for _shape in ("Cylinder", "Prism", "Torus", "Sphere", "Wedge"):
         _tool.values["shape"] = _shape
         _cursor((200.0, -60.0, 0.0), trigger=1.0)
         _cursor((320.0, 60.0, 80.0), trigger=1.0)

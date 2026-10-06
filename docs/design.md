@@ -31,7 +31,7 @@ core/       mathutil.py (vector/quaternion math), navigation.py (grip navigation
 ui/         controller.py (navigation + carousel + ruler + actions), ring.py (carousel logic and geometry), ring_view.py, radial.py (quick radial logic and favourites), radial_view.py, ruler.py, pointer.py (laser and tip), pointing.py (pointer pose), settings.py (user settings), style.py (colours, font), layout.py (faces, panels, sides, hidden faces, JSON), defaults.py; options.py (tool options on the stick), undo_button.py, toast.py (toasts, tooltip timing), feedback_view.py (toasts, tooltip, readout); numeric keypad*
 tools/      base.py (Tool, ToolOption, hint), registry.py, manager.py, legacy.py (the six inherited modes as tools), primitives.py (the Create tool); new tools: one module each
 core/*      picking/highlight, transactions (undo), parameter binding (further modules); render/ghost.py (the preview of a shape being made)
-cad/*       thin wrappers creating/editing FreeCAD features: primitives.py (Part primitives, implemented); Sketcher, PartDesign, booleans, Attacher (planned)
+cad/*       thin wrappers creating/editing FreeCAD features: primitives.py (Part primitives, implemented), meshes.py (preview meshes of the primitives, pure Python); Sketcher, PartDesign, booleans, Attacher (planned)
 ```
 
 Rules:

@@ -460,15 +460,19 @@ class PrimitiveLiveTest(unittest.TestCase):
         b = shape.optimalBoundingBox(False, False)     # the analytic tight box (the default one of a curved solid is loose)
         return tuple(round(v, 2) for v in (b.XMin, b.YMin, b.ZMin)), tuple(round(v, 2) for v in (b.XLength, b.YLength, b.ZLength))
 
-    def test_every_shape_is_made_inside_its_box_and_the_preview_is_the_same_solid(self):
-        from freecad.BlocksCAD.cad import primitives as prim
+    def test_every_shape_is_made_inside_its_box_and_the_preview_mesh_matches_the_feature(self):
+        from freecad.BlocksCAD.cad import meshes, primitives as prim
         for name in prim.SHAPES:
             obj = prim.create(self.doc, name, self.LO, self.SIZE)
             lo, size = self.bounds(obj.Shape)
-            ghost = prim.shape(name, self.LO, self.SIZE)
+            mesh = meshes.build(name, self.LO, self.SIZE)
             self.assertTrue(obj.Shape.isValid(), name)
-            self.assertAlmostEqual(obj.Shape.Volume, ghost.Volume, places=3, msg=name)
-            self.assertEqual(self.bounds(ghost), self.bounds(obj.Shape), name)
+            self.assertAlmostEqual(meshes.volume(mesh) / obj.Shape.Volume, 1.0, delta=0.035, msg=name)
+            for axis in range(3):                                           # the polygonal preview fills the same box
+                low = min(p[axis] for p in mesh.points)
+                high = max(p[axis] for p in mesh.points)
+                self.assertAlmostEqual(low, lo[axis], delta=0.02 * self.SIZE[axis], msg=name)
+                self.assertAlmostEqual(high - low, size[axis], delta=0.02 * self.SIZE[axis], msg=name)
             for axis in range(3):                                           # inside the box, and touching it where the shape fills it
                 self.assertGreaterEqual(lo[axis], self.LO[axis] - 1e-6, name)
                 self.assertLessEqual(lo[axis] + size[axis], self.LO[axis] + self.SIZE[axis] + 1e-6, name)
@@ -554,6 +558,29 @@ class PrimitiveLiveTest(unittest.TestCase):
             s.actions["doc:undo"] = lambda: self.doc.undo()
             s.ui._run("doc:undo", s.ui_update)
             self.assertEqual(len(self.doc.Objects), 0)
+        finally:
+            s.close()
+
+    def test_dragging_a_torus_updates_the_preview_quickly(self):
+        import time
+        from freecad.BlocksCAD.core import stage
+        s = sim.SimSession(None)
+        try:
+            s.ui.settings.pointer_mode = "tip"
+            s.ui.settings.tip_angle = 0.0
+            s.select_tool("primitive")
+            s.tool_manager.active.values["shape"] = "Torus"
+            s.tool_manager.active.values["grid"] = "1 mm"           # every step of the hand is a new box: the worst case
+            s.input.set_hand(1, position=stage.to_stage(s.navigator.world, (0.0, 0.0, 0.0)), trigger=1.0)
+            s.frame(0.02)
+            durations = []
+            for i in range(1, 41):
+                s.input.set_hand(1, position=stage.to_stage(s.navigator.world, (i * 2.0, i * 1.5, i)), trigger=1.0)
+                start = time.perf_counter()
+                s.frame(0.02)
+                durations.append(time.perf_counter() - start)
+            self.assertLess(sum(durations) / len(durations), 0.012)
+            self.assertLess(max(durations), 0.05)
         finally:
             s.close()
 

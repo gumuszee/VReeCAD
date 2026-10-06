@@ -13,16 +13,24 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""Coin3D drawing of the preview of a shape that is being made (docs/design.md, Interaction design): a translucent ghost of the
-shape, the outline of the box a drag spans, and a cross at the snapped point where a press would start. The scene graph is in
-document millimetres, so a host puts `Ghost.root` where the document scene is (under the navigation and document transforms)."""
+"""Coin3D drawing of the preview of a shape that is being made (docs/design.md, Interaction design): a lit translucent body, the
+outline curves of the shape, the outline of the box a drag spans, and a cross at the snapped point where a press would start.
+The scene graph is in document millimetres, so a host puts `Ghost.root` where the document scene is (under the navigation and
+document transforms).
+
+Depth is easy to misjudge with a flat translucent shape, so the body is lit and only its front faces are drawn (one layer, no
+internal geometry; it writes no depth, so the layers never fight), and the outline curves are drawn twice: bright where they
+lie in front of the model and dim where they are hidden by it."""
 
 from pivy import coin
 
 from freecad.BlocksCAD.ui import style
 
 BODY = (0.35, 0.65, 1.0)
-BODY_TRANSPARENCY = 0.55
+BODY_TRANSPARENCY = 0.4
+EDGE = (0.92, 0.96, 1.0)
+EDGE_HIDDEN = (0.25, 0.4, 0.65)
+EDGE_WIDTH = 2.0
 OUTLINE = (0.95, 0.65, 0.10)
 MARKER = (0.95, 0.65, 0.10)
 
@@ -49,19 +57,60 @@ class Ghost:
         self._body = coin.SoSwitch()
         self._body.whichChild = coin.SO_SWITCH_NONE
         body = coin.SoSeparator()
+        shaded = coin.SoLightModel()
+        shaded.model = coin.SoLightModel.PHONG
+        body.addChild(shaded)
         material = coin.SoMaterial()
         material.diffuseColor.setValue(*BODY)
+        material.ambientColor.setValue(*(0.6 * c for c in BODY))
+        material.specularColor.setValue(0.35, 0.35, 0.35)
+        material.shininess.setValue(0.3)
         material.transparency.setValue(BODY_TRANSPARENCY)
         body.addChild(material)
         transparency = coin.SoTransparencyType()
         transparency.value = coin.SoTransparencyType.BLEND
         body.addChild(transparency)
+        depth = coin.SoDepthBuffer()              # test against the model, write nothing: translucent layers never fight
+        depth.test.setValue(True)
+        depth.getField("write").setValue(False)
+        body.addChild(depth)
+        hints = coin.SoShapeHints()               # a closed solid with outward counter-clockwise faces: only the front is drawn
+        hints.vertexOrdering = coin.SoShapeHints.COUNTERCLOCKWISE
+        hints.shapeType = coin.SoShapeHints.SOLID
+        hints.faceType = coin.SoShapeHints.CONVEX
+        body.addChild(hints)
         self._body_points = coin.SoCoordinate3()
         body.addChild(self._body_points)
+        self._body_normals = coin.SoNormal()
+        body.addChild(self._body_normals)
+        binding = coin.SoNormalBinding()
+        binding.value = coin.SoNormalBinding.PER_VERTEX_INDEXED
+        body.addChild(binding)
         self._body_faces = coin.SoIndexedFaceSet()
         body.addChild(self._body_faces)
         self._body.addChild(body)
         self.root.addChild(self._body)
+
+        self._edges = coin.SoSwitch()
+        self._edges.whichChild = coin.SO_SWITCH_NONE
+        edges = coin.SoSeparator()
+        style_node = coin.SoDrawStyle()
+        style_node.lineWidth = EDGE_WIDTH
+        edges.addChild(style_node)
+        self._edge_points = coin.SoCoordinate3()
+        edges.addChild(self._edge_points)
+        self._edge_lines = coin.SoIndexedLineSet()
+        for hidden_pass in (True, False):          # the dim pass has no depth test, the bright one over it only where nothing is in front
+            sep = coin.SoSeparator()
+            depth_pass = coin.SoDepthBuffer()
+            depth_pass.test.setValue(not hidden_pass)
+            depth_pass.getField("write").setValue(False)
+            sep.addChild(depth_pass)
+            sep.addChild(style.color(EDGE_HIDDEN if hidden_pass else EDGE))
+            sep.addChild(self._edge_lines)
+            edges.addChild(sep)
+        self._edges.addChild(edges)
+        self.root.addChild(self._edges)
 
         self._box = coin.SoSwitch()
         self._box.whichChild = coin.SO_SWITCH_NONE
@@ -103,16 +152,29 @@ class Ghost:
     def hide_marker(self):
         self._marker.whichChild = coin.SO_SWITCH_NONE
 
-    def show_shape(self, points, triangles):
-        """The translucent body: `points` are (x, y, z) tuples, `triangles` index them."""
+    def show_shape(self, mesh):
+        """The body and the outline curves of a `cad.meshes.Mesh`."""
         indices = []
-        for a, b, c in triangles:
+        for a, b, c in mesh.triangles:
             indices += [a, b, c, -1]
-        self._body_points.point.setValues(0, len(points), points)
-        self._body_points.point.setNum(len(points))
+        self._body_points.point.setValues(0, len(mesh.points), mesh.points)
+        self._body_points.point.setNum(len(mesh.points))
+        self._body_normals.vector.setValues(0, len(mesh.normals), mesh.normals)
+        self._body_normals.vector.setNum(len(mesh.normals))
         self._body_faces.coordIndex.setValues(0, len(indices), indices)
         self._body_faces.coordIndex.setNum(len(indices))
+        self._body_faces.normalIndex.setValues(0, len(indices), indices)
+        self._body_faces.normalIndex.setNum(len(indices))
+        points, lines = [], []
+        for curve in mesh.outline:
+            lines += list(range(len(points), len(points) + len(curve))) + [-1]
+            points += curve
+        self._edge_points.point.setValues(0, len(points), points)
+        self._edge_points.point.setNum(len(points))
+        self._edge_lines.coordIndex.setValues(0, len(lines), lines)
+        self._edge_lines.coordIndex.setNum(len(lines))
         self._body.whichChild = coin.SO_SWITCH_ALL
+        self._edges.whichChild = coin.SO_SWITCH_ALL
 
     def show_box(self, lo, size):
         """The outline of the box with lowest corner `lo` and edge lengths `size`."""
@@ -122,6 +184,7 @@ class Ghost:
 
     def hide_shape(self):
         self._body.whichChild = coin.SO_SWITCH_NONE
+        self._edges.whichChild = coin.SO_SWITCH_NONE
         self._box.whichChild = coin.SO_SWITCH_NONE
 
     def hide(self):
