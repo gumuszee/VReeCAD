@@ -27,11 +27,11 @@ Handedness is a preference; the roles swap as a whole.
 
 Derived from Open Brush's world transform, with a free orbit:
 
-- **One grip on empty space:** the world follows the hand (translation 1:1).
+- **One grip on empty space:** the world is held in the hand: it follows the position and the rotation of the hand and turns about the hand.
 - **Both grips:** two-point transform. The pivot is the midpoint between the hands; the world scales by the ratio of the hand distance, rotates with the line between the hands and moves with the midpoint. Scale is clamped to 1:100 .. 100:1.
-- **Free orbit (default):** the rotation is the shortest rotation that turns the old hand line into the new one, so the model tips over in every direction.
-- **Level (hold button1 of the tool hand, A on the Steam Frame):** the rotation is limited to the vertical axis, so the bottom of the model stays down. Pressing or releasing the modifier mid gesture starts a new gesture from the current pose; nothing jumps. The mode is shown on the ruler plate.
-- **Snap to 1:1 (button2 of the tool hand, B on the Steam Frame, while gripping):** the scale animates to 1 : 1 about the hands (the world point between the hands stays between them), then the gesture continues.
+- **Free orbit (default):** with one grip the world takes the full rotation of the hand; with two grips it takes the shortest rotation that turns the old hand line into the new one. The model tips over in every direction.
+- **Level (hold button1 of the tool hand, A on the Steam Frame):** the rotation is limited to the vertical axis (one grip: the yaw of the hand), so the bottom of the model stays down. Pressing or releasing the modifier mid gesture starts a new gesture from the current pose; nothing jumps. The mode is shown on the plate.
+- **Hold 1:1 (hold button2 of the tool hand, B on the Steam Frame, while gripping):** the scale animates to 1 : 1 about the hands (the world point between the hands stays between them) and stays at 1 : 1 for as long as the button is held, however the hands move; the world still follows them. Releasing the button lets the hand distance scale the world again, starting from 1 : 1.
 - **Reset (stick click of a gripping hand, or the Reset view face):** animates to the home pose: scale 1 : 1, the document origin 1 m in front of the head (horizontally), at 75 % of the head height above the floor (chest height when standing), turned so that the front view of the document (looking along the document Y axis) points away from the head.
 - While a grip navigates, the carousel hides and the tool is inactive. A haptic tick marks every doubling or halving of the scale.
 - A grip pressed on an object grabs that object instead (milestone M2).
@@ -42,18 +42,19 @@ While both grips hold the world, a line joins the hands and reads as a ruler in 
 
 - **Ticks** stand at round lengths of the model as it is at the current scale (1, 2, 5 times a power of ten of the unit), about 7 cm apart on the stage, with a labelled tick at every step and unlabelled ticks between them. The ruler starts at 0 at the left hand.
 - **Units** follow the `UnitSystem` property of the active document: metric systems label in micrometres, millimetres, centimetres (Building Euro), metres and kilometres; imperial systems in thou, inches, feet and miles.
-- **Summary plate** below the line: the scale ratio (`4 : 1` when the model is enlarged, `1 : 4` when shrunk), the length between the hands in the document unit, and the rotation mode (free orbit or level).
+- **Summary plate** below the line: the scale ratio (`4 : 1` when the model is enlarged, `1 : 4` when shrunk), the length between the hands in the document unit, and the modes (free orbit or level, and 1 : 1 locked).
+- **One grip** has no span to measure: the scale ratio and the modes float above the gripping hand.
 - The ruler is drawn on top of everything (no depth test) with a dark outline, so the model never hides it and it reads on light and dark backgrounds. It uses the interface font.
 
 ## Palette carousel (palette hand)
 
 The carousel is a prism around the long axis of the palette controller. It is attached to the controller: it follows the position and the rotation of the hand (Open Brush's wand panels).
 
-- **Geometry.** The axis runs along the controller from the grip point forward (the carousel centre is 9 cm in front of the grip point). The side at the front stands on the thumb side of the controller, facing up when the controller is held upright, with its top edge pointing the way the controller points. The other sides stand around the axis at equal angles; they shrink away as they turn from the front. Rolling the wrist rolls the carousel.
-- **Panels** are pages of faces (4 columns by 3 rows, face edge 5 cm) with a title bar and side dots. A side carries one panel, or several panels next to each other (two per row, further rows away from the user). The prism radius grows with the number of sides and the width of the panels so that sides do not overlap.
-- **Stick left/right turns the carousel** one side per flick (snap with a haptic tick and a short ease). No button is held.
+- **Geometry.** The axis runs along the controller from the grip point forward (the carousel centre is 9 cm in front of the grip point). The side at the front stands on the thumb side of the controller, facing up when the controller is held upright, with its top edge pointing the way the controller points. The other sides stand around the axis at equal angles, and **all sides are visible at all times**. Rolling the wrist rolls the carousel.
+- **Panels** are pages of faces (4 columns by 3 rows, face edge 5 cm) with a title bar and side dots. A side carries rows of panels: panels next to each other in a row, rows above each other (the first row nearest the user, further rows further forward). The prism radius grows with the number of sides and the width of the panels so that sides do not overlap.
+- **Stick left/right turns the carousel** one side per flick (snap with a haptic tick and a short ease). No button is held. Sides that face away from the user are drawn but cannot be pointed at.
 - **Visibility:** the carousel fades in when the head looks at the controller (gaze cone of 35 degrees at 0.12 to 0.95 m) and fades out otherwise; it is hidden while gripping. Palette hand `button1` pins it visible or releases it.
-- **Pointing:** the tool hand's ray hits a face; the face highlights and a haptic tick marks the change; the trigger activates it.
+- **Pointing:** while the carousel is shown the tool hand carries a laser: a thin beam on top of the scene that ends in a dot at the point it hits (a fixed 0.6 m beam when it hits nothing). The face under the dot highlights and a haptic tick marks the change; the trigger activates it.
 
 ### Panels (initial)
 
@@ -68,12 +69,16 @@ Planned: Create (primitives, milestone M1), Modify (push/pull, boolean, mirror, 
 
 ### Rearranging panels
 
-Each panel has a title bar with a grip mark on its right. The layout is a JSON document (`%APPDATA%\BlocksCAD\layout.json`, version 2): the panels in order, the side of each panel and the face ids in each slot. Defaults come from code. The initial layout has one panel per side.
+Each panel has a title bar with a grip mark on its right. The layout is a JSON document (`%APPDATA%\BlocksCAD\layout.json`, version 3): the panels in order, the side and the row of each panel and the face ids in each slot. Defaults come from code. The initial layout has one panel per side.
 
-1. Point the tool hand at a title bar (it highlights) and **hold the trigger**: the panel lifts off the carousel and follows the ray as a small card. The sides close up, an empty slot ("Drop here") appears at the end of the front side and one extra empty side is offered at the end of the carousel.
-2. **Turn the carousel** with the palette stick while holding, to bring the target side to the front.
-3. **Release the trigger** over a panel to put the lifted panel in front of it on that side, over the empty slot to append it to the side, or over the empty extra side to give it a side of its own. Releasing over nothing cancels.
-4. The layout is saved on every change. Stacking all panels on one side puts every module in reach without turning the carousel. The **Reset layout** face restores the defaults and removes the saved file.
+1. Point the tool hand at a title bar (it highlights) and **hold the trigger**: the panel lifts off the carousel and follows the laser as a small card. The panels close up and one extra empty side ("Drop here") is offered at the end of the carousel.
+2. **Turn the carousel** with the palette stick while holding, to bring the target side to the front (only sides facing the user can be pointed at).
+3. **Aim at a panel** to choose where the lifted panel goes; an orange bar shows the place and the panel under the laser lights up:
+   - the left or right half of the panel: next to it in its row, in front of it (left) or after it (right);
+   - the upper or lower quarter of the panel: a new row above or below it;
+   - the empty slot of an empty side: that side, alone.
+4. **Release the trigger** to drop the panel. Releasing over nothing cancels.
+5. The layout is saved on every change. Stacking panels in rows and columns on one side puts every module in reach without turning the carousel. The **Reset layout** face restores the defaults and removes the saved file.
 
 Moving single faces between slots and panels, and hiding faces, is part of U3.
 
@@ -86,8 +91,8 @@ Moving single faces between slots and panels, and hiding faces, is part of U3.
 | Stick up/down | tool option (size, segments, grid step) with a live readout |
 | Stick left/right | tool option 2 (cycle shape or mode) |
 | Stick click | confirm the pending value / reset the option |
-| Button 1 | held while navigating with both grips: level rotation. Otherwise: hold for the quick radial (below) |
-| Button 2 | pressed while navigating: snap the scale to 1 : 1. Otherwise: undo (tap), redo (hold) |
+| Button 1 | held while navigating (one or two grips): level rotation. Otherwise: hold for the quick radial (below) |
+| Button 2 | held while navigating: scale locked at 1 : 1. Otherwise: undo (tap), redo (hold) |
 
 ### Quick radial
 
@@ -120,8 +125,8 @@ U1 and U2 are implemented (verification state in `verification.md`); U3 and U4 a
 
 | U | Deliverable |
 |---|---|
-| U1 | World navigation: one-grip drag, two-grip move/rotate/scale with free orbit and the level modifier, 1 : 1 snap, home reset, scale ruler with document units, haptics; `core/navigation.py` and `core/units.py` (pure math, unit tested); the stick locomotion and the quick menu are removed |
-| U2 | Panel system: `ui/` faces, panels, the carousel on the controller with stacking and rearranging, gaze visibility, ray hover and press, haptics, undo and redo on `aux1` and `aux2`; inherited tools as faces; the first radial palette is removed |
+| U1 | World navigation: one-grip drag, one-grip hold with rotation, two-grip move/rotate/scale, free orbit and the level modifier, held 1 : 1 lock, home reset, scale ruler with document units, haptics; `core/navigation.py` and `core/units.py` (pure math, unit tested); the stick locomotion and the quick menu are removed |
+| U2 | Panel system: `ui/` faces, panels, the carousel on the controller with every side visible, rows and columns of panels and rearranging, gaze visibility, laser, ray hover and press, haptics, undo and redo on `aux1` and `aux2`; inherited tools as faces; the first radial palette is removed |
 | U3 | Quick radial; moving single faces between slots and panels; hiding faces |
 | U4 | Tool hand options with readouts, undo/redo on `button2`, toasts, tooltips |
 

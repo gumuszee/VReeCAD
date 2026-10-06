@@ -82,3 +82,5 @@ prototypes (`ctypes.cast(xr.get_instance_proc_addr(...), xr.PFN_...)`):
 
 - `...\SteamVR\resources\rendermodels\` and `...\drivers\frame_controller\resources\rendermodels\` hold the legacy OpenVR format (OBJ + PNG/TGA + a JSON of component pivots).
   They are proprietary assets of the SteamVR installation, SteamVR-only, and are not read by the addon.
+
+The model list is enumerated after the first successful action sync and again on `XrEventDataInteractionRenderModelsChangedEXT`; because the runtime does not always send that event for a controller that was asleep at the start, the count of offered models is also compared with the loaded models once per second and the list is enumerated again when they differ.

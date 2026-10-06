@@ -17,11 +17,13 @@
 """World navigation with the grips (docs/ux-design.md, Navigation).
 
 The world pose maps world coordinates to stage coordinates: stage = position + rotation * (scale * world).
-One grip on empty space drags the world with the hand. Both grips transform it with two points: the pivot is the midpoint of the
-hands, the scale follows the ratio of the hand distance, the rotation follows the line between the hands. The rotation is a free
-orbit (the shortest rotation that turns the old hand line into the new one); while the modifier button (button1 of the tool hand) is
-held it is limited to the vertical axis, so the bottom of the model stays down. Button2 of the tool hand snaps the scale to 1 : 1
-about the hands. Gestures are computed from the pose at grab time and the hand positions at that moment, so no error accumulates;
+One grip on empty space holds the world in the hand: it follows the position and the rotation of the hand, turning about the hand.
+Both grips transform it with two points: the pivot is the midpoint of the hands, the scale follows the ratio of the hand distance,
+the rotation follows the line between the hands. Rotation is a free orbit (one grip: the rotation of the hand; two grips: the
+shortest rotation that turns the old hand line into the new one); while the modifier button (button1 of the tool hand) is held it
+is limited to the vertical axis, so the bottom of the model stays down. While button2 of the tool hand is held the scale is locked
+at 1 : 1: it animates there about the hands when the button goes down, and the hand distance no longer scales the world until the
+button is released. Gestures are computed from the pose at grab time and the hand positions at that moment, so no error accumulates;
 a change of the gripping hands or of the rotation mode starts a new gesture. The stick click of a gripping hand resets the view
 with a short animation to the home pose: the origin in front of the head.
 """
@@ -73,9 +75,23 @@ def home_pose(head):
     return WorldPose(position, mu.quat_from_axis_angle(UP, yaw), 1.0)
 
 
-def one_point(world0, hand0, hand1):
-    """The world follows one hand: translation by the hand movement."""
-    return WorldPose(mu.add(world0.position, mu.sub(hand1, hand0)), world0.rotation, world0.scale)
+def yaw_part(q, up=UP):
+    """The rotation of `q` about the axis `up` (the twist of the swing and twist decomposition)."""
+    along = mu.dot(q[:3], up)
+    twist = (up[0] * along, up[1] * along, up[2] * along, q[3])
+    if sum(c * c for c in twist) < 1e-12:
+        return mu.IDENTITY_QUAT
+    return mu.quat_normalize(twist)
+
+
+def one_point(world0, hand0, hand1, rot0=mu.IDENTITY_QUAT, rot1=mu.IDENTITY_QUAT, constrain_up=False):
+    """The world is held by one hand: it follows the movement of the hand and turns about the hand with the rotation of the hand
+    (`rot0` to `rot1`; only the rotation about the vertical axis when `constrain_up`)."""
+    delta = mu.quat_multiply(rot1, mu.quat_conjugate(rot0))
+    if constrain_up:
+        delta = yaw_part(delta)
+    position = mu.add(hand1, mu.rotate(delta, mu.sub(world0.position, hand0)))
+    return WorldPose(position, mu.quat_normalize(mu.quat_multiply(delta, world0.rotation)), world0.scale)
 
 
 def two_point(world0, left0, right0, left1, right1, up=UP, constrain_up=False, min_scale=0.01, max_scale=100.0):
@@ -132,7 +148,8 @@ class Navigator:
         self.gripping = (False, False)
         self.state = "idle"        # "idle", "one" or "two"
         self.level = False         # the rotation is limited to the vertical axis (modifier held)
-        self._anchor = None        # (world, hand positions at the start of the gesture)
+        self.scale_locked = False  # the scale is held at 1 : 1 (button2 held)
+        self._anchor = None        # (world, hand positions, hand rotations at the start of the gesture)
         self._reset_from = None
         self._reset_to = IDENTITY
         self._reset_t = 0.0
@@ -145,6 +162,14 @@ class Navigator:
     def hand_position(hand):
         pose = hand.grip_pose if hand.grip_pose.tracked else hand.aim
         return pose.position
+
+    @staticmethod
+    def hand_rotation(hand):
+        pose = hand.grip_pose if hand.grip_pose.tracked else hand.aim
+        return pose.orientation
+
+    def _make_anchor(self, hands):
+        return (self.world, tuple(self.hand_position(h) for h in hands), tuple(self.hand_rotation(h) for h in hands))
 
     @property
     def resetting(self):
@@ -211,7 +236,7 @@ class Navigator:
             self.state = {0: "idle", 1: "one", 2: "two"}[count]
             self._snap_t = None
             if count:
-                self._anchor = (self.world, tuple(self.hand_position(hands[i]) for i in range(2)))
+                self._anchor = self._make_anchor(hands)
                 events.append(("grab", count))
             else:
                 self._anchor = None
@@ -221,25 +246,35 @@ class Navigator:
         level = modifier.down("button1")
         if level != self.level:
             self.level = level
-            if self.state == "two":
+            if self.state != "idle":
                 # a new rotation mode starts a new gesture from the current pose, so nothing jumps
-                self._anchor = (self.world, tuple(self.hand_position(hands[i]) for i in range(2)))
+                self._anchor = self._make_anchor(hands)
                 events.append(("level", level))
 
+        locked = modifier.down("button2") and self._anchor is not None
+        if locked != self.scale_locked:
+            self.scale_locked = locked
+            if locked:
+                if abs(math.log(self.world.scale)) > 1e-3:
+                    self._snap_t = 0.0
+                    events.append(("snap",))
+            else:
+                self._snap_t = None
+                self._anchor = self._make_anchor(hands)    # the scale resumes from where it is
+
         if self._anchor is not None:
-            if "button2" in modifier.pressed and self._snap_t is None and abs(math.log(self.world.scale)) > 1e-3:
-                self._snap_t = 0.0
-                events.append(("snap",))
-            world0, (left0, right0) = self._anchor
+            world0, (left0, right0), (lrot0, rrot0) = self._anchor
             left1, right1 = (self.hand_position(hands[0]), self.hand_position(hands[1]))
             if self.state == "one":
                 i = 0 if gripping[0] else 1
                 a0, a1 = (left0, left1) if i == 0 else (right0, right1)
-                world = one_point(world0, a0, a1)
+                r0, r1 = (lrot0, self.hand_rotation(hands[0])) if i == 0 else (rrot0, self.hand_rotation(hands[1]))
+                world = one_point(world0, a0, a1, r0, r1, constrain_up=self.level)
                 pivot = a1
             else:
+                fixed = self.scale_locked and self._snap_t is None
                 world = two_point(world0, left0, right0, left1, right1, constrain_up=self.level,
-                                  min_scale=self.min_scale, max_scale=self.max_scale)
+                                  min_scale=1.0 if fixed else self.min_scale, max_scale=1.0 if fixed else self.max_scale)
                 pivot = mu.lerp(left1, right1, 0.5)
             if self._snap_t is not None:
                 self._snap_t = min(1.0, self._snap_t + frame.dt / self.SNAP_TIME)
@@ -249,7 +284,7 @@ class Navigator:
                 if self._snap_t >= 1.0:
                     self._snap_t = None
                     world = scale_about(world, pivot, 1.0 / world.scale)
-                    self._anchor = (world, (left1, right1))
+                    self._anchor = (world, (left1, right1), (self.hand_rotation(hands[0]), self.hand_rotation(hands[1])))
             self.world = world
             octave = math.floor(math.log2(self.world.scale) + 1e-9)
             if self._octave is not None and octave != self._octave and self._snap_t is None:

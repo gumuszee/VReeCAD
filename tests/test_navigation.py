@@ -193,7 +193,7 @@ class NavigatorTest(unittest.TestCase):
         self.step()
         self.assertTrue(close(self.nav.world.position, before.position, 1e-9))
 
-    def test_button2_snaps_the_scale_to_one_about_the_hands(self):
+    def test_holding_button2_locks_the_scale_at_one_about_the_hands(self):
         self.two_grips()
         self.sim.set_hand(0, position=(-0.4, 1.2, 0))
         self.sim.set_hand(1, position=(0.4, 1.2, 0))
@@ -203,16 +203,70 @@ class NavigatorTest(unittest.TestCase):
         self.sim.set_hand(1, button2=True)
         events = self.step()
         self.assertIn(("snap",), events)
-        self.sim.set_hand(1, button2=False)
+        self.assertTrue(self.nav.scale_locked)
         for _ in range(20):
             self.step()
         self.assertEqual(self.nav.world.scale, 1.0)
         self.assertTrue(close(self.nav.world.to_world((0.0, 1.2, 0.0)), under, 1e-9))
-        # the gesture continues from 1 : 1
-        self.sim.set_hand(0, position=(-0.2, 1.2, 0))
-        self.sim.set_hand(1, position=(0.2, 1.2, 0))
+        # while the button is held the hand distance no longer scales, but the world still follows the hands
+        self.sim.set_hand(0, position=(-0.1, 1.2, -0.5))
+        self.sim.set_hand(1, position=(0.1, 1.2, -0.5))
         self.step()
-        self.assertAlmostEqual(self.nav.world.scale, 0.5, places=6)   # the hands halved their distance
+        self.assertEqual(self.nav.world.scale, 1.0)
+        self.assertTrue(close(self.nav.world.to_stage(under), (0.0, 1.2, -0.5), 1e-9))
+        # released: the scale follows the hands again, from 1 : 1
+        self.sim.set_hand(1, button2=False)
+        self.step()
+        self.assertFalse(self.nav.scale_locked)
+        self.assertEqual(self.nav.world.scale, 1.0)
+        self.sim.set_hand(0, position=(-0.2, 1.2, -0.5))
+        self.sim.set_hand(1, position=(0.2, 1.2, -0.5))
+        self.step()
+        self.assertAlmostEqual(self.nav.world.scale, 2.0, places=6)   # the hands doubled the distance since the release
+
+    def test_button2_held_before_the_grip_locks_at_once(self):
+        self.sim.set_hand(1, button2=True)
+        self.step()
+        self.two_grips()
+        self.sim.set_hand(0, position=(-0.5, 1.2, 0))
+        self.step()
+        self.assertEqual(self.nav.world.scale, 1.0)
+
+    def test_one_grip_turns_the_world_with_the_hand_about_the_hand(self):
+        self.sim.set_hand(1, position=(0.3, 1.2, -0.4))
+        self.step()
+        self.sim.set_hand(1, grip=1.0)
+        self.step()
+        quarter = mu.quat_multiply(mu.quat_from_axis_angle((0, 1, 0), math.pi / 2), mu.quat_from_axis_angle((1, 0, 0), 0.3))
+        self.sim.set_hand(1, orientation=quarter)
+        self.step()
+        # the world point under the hand stays under the hand; the world turned with the hand
+        self.assertTrue(close(self.nav.world.to_stage(self.nav.world.to_world((0.3, 1.2, -0.4))), (0.3, 1.2, -0.4), 1e-9))
+        self.assertTrue(close(self.nav.world.rotation, mu.quat_normalize(quarter), 1e-9))
+        tilted = mu.rotate(self.nav.world.rotation, (0, 1, 0))
+        self.assertGreater(abs(tilted[2]) + abs(tilted[0]), 0.1)            # free orbit tilts the world
+
+    def test_one_grip_with_the_modifier_turns_about_the_vertical_axis_only(self):
+        self.sim.set_hand(1, position=(0.3, 1.2, -0.4))
+        self.step()
+        self.sim.set_hand(1, grip=1.0, button1=True)
+        self.step()
+        quarter = mu.quat_multiply(mu.quat_from_axis_angle((0, 1, 0), math.pi / 2), mu.quat_from_axis_angle((1, 0, 0), 0.3))
+        self.sim.set_hand(1, orientation=quarter)
+        self.step()
+        self.assertTrue(close(mu.rotate(self.nav.world.rotation, (0, 1, 0)), (0, 1, 0), 1e-9))
+        self.assertTrue(close(mu.rotate(self.nav.world.rotation, (0, 0, -1)), (-1, 0, 0), 1e-9))   # a quarter turn about up
+
+    def test_switching_the_modifier_with_one_grip_does_not_jump(self):
+        self.sim.set_hand(1, position=(0.3, 1.2, -0.4), grip=1.0)
+        self.step()
+        self.sim.set_hand(1, orientation=mu.quat_from_axis_angle((1, 0, 0), 0.5))
+        self.step()
+        before = self.nav.world
+        self.sim.set_hand(1, button1=True)
+        self.step()
+        self.assertTrue(close(self.nav.world.position, before.position, 1e-9))
+        self.assertTrue(close(self.nav.world.rotation, before.rotation, 1e-9))
 
     def test_button2_without_a_grip_does_nothing(self):
         self.sim.set_hand(1, button2=True)

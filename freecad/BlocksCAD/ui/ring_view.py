@@ -165,6 +165,36 @@ class _Card:
         self.switch.addChild(sep)
 
 
+class _Marker:
+    """The bar that shows where the lifted panel goes: beside the panel under the ray (left or right) or as a new row (above or below)."""
+    BAR = 0.008
+
+    def __init__(self):
+        self.switch = coin.SoSwitch()
+        self.switch.whichChild = coin.SO_SWITCH_NONE
+        sep = coin.SoSeparator()
+        self.transform = coin.SoTransform()
+        sep.addChild(self.transform)
+        sep.addChild(style.color(style.GRAB))
+        self.bar = coin.SoCube()
+        self.bar.depth = DEPTH
+        sep.addChild(self.bar)
+        self.switch.addChild(sep)
+
+    def show(self, pose, zone, origin, fade):
+        half = (rg.PANEL_W / 2 + rg.PANEL_GAP / 2, rg.PANEL_H / 2 + rg.PANEL_GAP / 2)
+        x, y, w, h = {"left": (-half[0], 0.0, self.BAR, rg.PANEL_H), "right": (half[0], 0.0, self.BAR, rg.PANEL_H),
+                      "above": (0.0, half[1], rg.PANEL_W, self.BAR), "below": (0.0, -half[1], rg.PANEL_W, self.BAR)}[zone]
+        self.bar.width, self.bar.height = w, h
+        centre = mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y)))
+        centre = mu.add(centre, mu.mul(pose.n, 0.003))
+        if fade < 1.0:
+            centre = mu.lerp(origin, centre, fade)
+        self.transform.translation.setValue(*centre)
+        self.transform.rotation.setValue(*mu.quat_from_basis(pose.u, pose.v, pose.n))
+        self.switch.whichChild = coin.SO_SWITCH_ALL
+
+
 class RingView:
     def __init__(self):
         self.root = coin.SoSwitch()
@@ -179,9 +209,12 @@ class RingView:
         sep.addChild(style.font())
         self._panels_sep = coin.SoSeparator()
         sep.addChild(self._panels_sep)
-        self._ghost = _Ghost()
+        self._ghosts = {}                # side -> ghost slot of an empty side
+        self._ghost_sep = coin.SoSeparator()
+        sep.addChild(self._ghost_sep)
+        self._marker = _Marker()
         self._card = _Card()
-        sep.addChild(self._ghost.switch)
+        sep.addChild(self._marker.switch)
         sep.addChild(self._card.switch)
         self.root.addChild(sep)
         self._panels = []
@@ -206,12 +239,11 @@ class RingView:
 
     @staticmethod
     def _place(transform, pose, origin, fade):
-        """Place a panel; it grows from the carousel axis while fading in and shrinks while its side turns away."""
+        """Place a panel; it grows from the carousel axis while the carousel fades in."""
         centre = pose.centre if fade >= 1.0 else mu.lerp(origin, pose.centre, fade)
         transform.translation.setValue(*centre)
         transform.rotation.setValue(*mu.quat_from_basis(pose.u, pose.v, pose.n))
-        appear = min(1.0, max(0.0, (pose.cos - rg.SHOW_COS) / (rg.FRONT_COS - rg.SHOW_COS)))
-        s = (0.5 + 0.5 * fade) * max(appear, 0.01)
+        s = 0.5 + 0.5 * fade
         transform.scaleFactor.setValue(s, s, s)
 
     def update(self, ring, result, layout, faces, head, active_actions=()):
@@ -232,20 +264,29 @@ class RingView:
             view.set_dots(len(sides), pose.side)
             title = style.HOVER if result.hover_title == index else style.PLATE
             view.title_color.rgb = coin.SbColor(*title)
-            target = result.drop_target is not None and result.drop_target[1] == index
-            view.back_color.rgb = coin.SbColor(*(style.DROP if target else style.PLATE))
+            under_ray = result.drop_marker is not None and result.drop_marker[0] == index
+            view.back_color.rgb = coin.SbColor(*(style.PLATE_LIT if under_ray else style.PLATE))
             for slot, (cell, face) in enumerate(view.cells):
                 hovered = result.hover == (index, slot)
                 active = face is not None and face.action in active_actions
                 cell.set_state(hovered, active, face is not None)
-        ghost = ring.ghost
-        if ghost is None:
-            self._ghost.switch.whichChild = coin.SO_SWITCH_NONE
+        for side, ghost_view in self._ghosts.items():
+            if side not in ring.ghosts:
+                ghost_view.switch.whichChild = coin.SO_SWITCH_NONE
+        for side, ghost in ring.ghosts.items():
+            if side not in self._ghosts:
+                self._ghosts[side] = _Ghost()
+                self._ghost_sep.addChild(self._ghosts[side].switch)
+            view = self._ghosts[side]
+            view.switch.whichChild = coin.SO_SWITCH_ALL
+            self._place(view.transform, ghost, ring.origin, ring.fade)
+            over = result.drop_marker is not None and result.drop_marker[0] is None and result.drop_marker[2] == side
+            view.color.rgb = coin.SbColor(*(style.HOVER if over else style.DROP))
+        marker = result.drop_marker
+        if marker is not None and marker[0] is not None and marker[0] in ring.poses:
+            self._marker.show(ring.poses[marker[0]], marker[1], ring.origin, ring.fade)
         else:
-            self._ghost.switch.whichChild = coin.SO_SWITCH_ALL
-            self._place(self._ghost.transform, ghost, ring.origin, ring.fade)
-            over = result.drop_target is not None and result.drop_target[1] is None and result.drop_target[0] == ghost.side
-            self._ghost.color.rgb = coin.SbColor(*(style.HOVER if over else style.DROP))
+            self._marker.switch.whichChild = coin.SO_SWITCH_NONE
         if result.lifted is not None and result.lift_point is not None:
             self._card.switch.whichChild = coin.SO_SWITCH_ALL
             self._card.text.string = layout.pages[result.lifted].name

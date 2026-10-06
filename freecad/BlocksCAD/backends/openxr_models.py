@@ -151,6 +151,10 @@ class RuntimeModels:
                 raise
         return sorted(self.models)
 
+    def available_count(self):
+        """Number of controller models the runtime offers now; differs from `len(models)` when a controller appeared or went away."""
+        return len(list(xr.enumerate_interaction_render_model_ids_ext(self.session, xr.InteractionRenderModelIdsEnumerateInfoEXT())))
+
     def locate(self, hand, base_space, time):
         """Pose of the model in `base_space` as (position, orientation), or None when it is not tracked
         (spaces are locatable only while the session is FOCUSED)."""

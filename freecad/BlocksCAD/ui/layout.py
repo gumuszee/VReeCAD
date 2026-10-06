@@ -16,14 +16,15 @@
 """Faces, pages and the palette layout (docs/ux-design.md, Layout and customization). Pure data, JSON serializable.
 
 A `Face` is a button: id, label and an action id such as "tool:teleport" or "view:reset". A `Page` is a panel: a grid of slots
-(COLS x ROWS), each holding a face id or None. The panels stand on the sides of the carousel around the palette controller; the pages
-with the same `side` share one side and are laid out next to each other there. The `Layout` is the ordered list of pages; panels
-and faces are the parts the user can rearrange."""
+(COLS x ROWS), each holding a face id or None. The panels stand on the sides of the carousel around the palette controller. A side
+holds rows of panels: `Page.side` is the side, `Page.row` the row on it (0 is the bottom row, nearest the user, higher rows are
+further forward), and the order of the pages in the layout is the order inside a row, left to right. The `Layout` is the ordered
+list of pages; panels and faces are the parts the user can rearrange."""
 
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 COLS, ROWS = 4, 3
 SLOTS = COLS * ROWS
@@ -41,9 +42,16 @@ class Page:
     name: str
     slots: List[Optional[str]] = field(default_factory=lambda: [None] * SLOTS)
     side: Optional[int] = None   # carousel side; None puts the page on a side of its own
+    row: Optional[int] = None    # row on the side; None puts the page in the bottom row
 
     def __post_init__(self):
         self.slots = (list(self.slots) + [None] * SLOTS)[:SLOTS]
+
+
+def without_page(sides, page):
+    """The structure `sides` (side -> rows -> page indexes) as it is drawn while `page` is lifted off it: the page is gone, rows that
+    become empty are gone, a side that becomes empty stays (as a place to drop the page back)."""
+    return [[row for row in ([i for i in r if i != page] for r in side) if row] for side in sides]
 
 
 @dataclass
@@ -54,45 +62,59 @@ class Layout:
         self.normalize()
 
     def normalize(self):
-        """Number the sides 0, 1, 2 ... in carousel order; a page without a side gets one of its own."""
+        """Number the sides 0, 1, 2 ... in carousel order and the rows of each side 0, 1, 2 ...; a page without a side gets one of
+        its own, a page without a row goes to the bottom row."""
         free = max([p.side for p in self.pages if p.side is not None], default=-1) + 1
         for page in self.pages:
             if page.side is None:
                 page.side, free = free, free + 1
-        rank = {side: i for i, side in enumerate(sorted({p.side for p in self.pages}))}
+            if page.row is None:
+                page.row = 0
+        side_rank = {side: i for i, side in enumerate(sorted({p.side for p in self.pages}))}
+        row_rank = {}
+        for side in side_rank:
+            for i, row in enumerate(sorted({p.row for p in self.pages if p.side == side})):
+                row_rank[(side, row)] = i
         for page in self.pages:
-            page.side = rank[page.side]
+            page.row = row_rank[(page.side, page.row)]
+            page.side = side_rank[page.side]
 
     def sides(self):
-        """The pages (as indexes) on each carousel side, in carousel order and, within a side, in layout order."""
+        """The pages (as indexes) on each carousel side: side -> rows from the bottom up -> pages from left to right."""
         result = [[] for _ in range(1 + max([p.side for p in self.pages], default=-1))]
         for index, page in enumerate(self.pages):
-            result[page.side].append(index)
+            rows = result[page.side]
+            while len(rows) <= page.row:
+                rows.append([])
+            rows[page.row].append(index)
         return result
 
-    def move_page(self, page, side, before=None):
-        """Move a page onto a carousel side (`side` equal to the number of sides makes a new side at the end), in front of the
-        page `before` on that side or after the last page of the side. Returns the new index of the page."""
-        moved = self.pages[page]
-        sides = self.sides()
-        target = [self.pages[i] for i in sides[side]] if side < len(sides) else []
-        anchor = self.pages[before] if before is not None else None
-        rest = [p for p in self.pages if p is not moved]
-        moved.side = target[0].side if target else len(sides)
-        if anchor is not None and anchor is not moved and any(anchor is p for p in target):
-            index = next(i for i, p in enumerate(rest) if p is anchor)
+    def move_page(self, page, side, row=0, before=None, new_row=False):
+        """Move a page. Indexes refer to the structure as drawn without the page (`without_page`): `side` equal to the number of
+        sides makes a new side at the end; `row` is a row of the side; the page goes in front of the page `before` of that row or
+        to its end; with `new_row` it forms a new row inserted at index `row`. Returns the new index of the page."""
+        structure = without_page(self.sides(), page)
+        if side >= len(structure):
+            structure.append([[page]])
         else:
-            last = [p for p in rest if p.side == moved.side]
-            if last:
-                index = next(i for i, p in enumerate(rest) if p is last[-1]) + 1
-            elif side < len(sides):
-                index = next(i for i, p in enumerate(self.pages) if p is moved)   # alone on its side: stays in place
+            rows = structure[side]
+            if new_row or not rows:
+                rows.insert(min(row, len(rows)), [page])
             else:
-                index = len(rest)
-        rest.insert(index, moved)
-        self.pages = rest
-        self.normalize()
-        return index
+                target = rows[min(row, len(rows) - 1)]
+                target.insert(target.index(before) if before in target else len(target), page)
+        order = []
+        side_id = 0
+        for rows in structure:
+            if not rows:
+                continue
+            for row_id, pages_in_row in enumerate(rows):
+                for index in pages_in_row:
+                    self.pages[index].side, self.pages[index].row = side_id, row_id
+                    order.append(index)
+            side_id += 1
+        self.pages = [self.pages[i] for i in order]
+        return order.index(page)
 
     def face_at(self, page, slot):
         return self.pages[page].slots[slot]
@@ -105,19 +127,21 @@ class Layout:
         self.pages[page].slots[slot] = None
 
     def to_json(self):
-        return json.dumps({"version": 2, "pages": [{"name": p.name, "side": p.side, "slots": p.slots} for p in self.pages]}, indent=1)
+        return json.dumps({"version": 3, "pages": [{"name": p.name, "side": p.side, "row": p.row, "slots": p.slots}
+                                                    for p in self.pages]}, indent=1)
 
     @classmethod
     def from_json(cls, text, known_faces=None):
         """Parse a layout; ids that are not in `known_faces` (when given) become empty slots, so a layout saved with a
-        newer or different set of faces still loads."""
+        newer or different set of faces still loads. Older files without sides or rows load with a side per page and one row."""
         data = json.loads(text)
         pages = []
         for page in data["pages"]:
             slots = [s if (isinstance(s, str) and (known_faces is None or s in known_faces)) else None
                      for s in page.get("slots", [])]
-            side = page.get("side")
-            pages.append(Page(str(page["name"]), slots, side if isinstance(side, int) else None))
+            side, row = page.get("side"), page.get("row")
+            pages.append(Page(str(page["name"]), slots, side if isinstance(side, int) else None,
+                              row if isinstance(row, int) else None))
         if not pages:
             raise ValueError("layout without pages")
         return cls(pages)

@@ -20,6 +20,7 @@ glyphs of about 9 mm. Everything is unlit so it never depends on the scene light
 from pivy import coin
 
 PLATE = (0.10, 0.11, 0.14)
+PLATE_LIT = (0.15, 0.17, 0.23)
 FACE = (0.20, 0.22, 0.28)
 EMPTY = (0.13, 0.14, 0.17)
 HOVER = (0.30, 0.45, 0.80)

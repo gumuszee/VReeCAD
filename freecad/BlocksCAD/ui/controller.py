@@ -29,6 +29,7 @@ from freecad.BlocksCAD.core import units
 from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.ui import defaults
 from freecad.BlocksCAD.ui import layout as lay
+from freecad.BlocksCAD.ui.pointer import Pointer
 from freecad.BlocksCAD.ui.ring import PaletteRing
 from freecad.BlocksCAD.ui.ring_view import RingView
 from freecad.BlocksCAD.ui.ruler import Ruler
@@ -56,6 +57,7 @@ class UiController:
         self.ring = PaletteRing(self.layout.sides(), palette_hand, tool_hand)
         self.view = RingView()
         self.ruler = Ruler()
+        self.pointer = Pointer()
         self.system = units.METRIC_MM
         self.mm_to_stage = mm_to_stage     # stage length of one document millimetre at world scale 1
         self.root = coin.SoSeparator()
@@ -64,6 +66,7 @@ class UiController:
         self.overlay = coin.SoSeparator()
         self.overlay.ref()
         self.overlay.addChild(self.ruler.root)
+        self.overlay.addChild(self.pointer.root)
         self.active_actions = set()
 
     def set_unit_system(self, name):
@@ -122,8 +125,8 @@ class UiController:
         out.haptics += result.haptics
         out.ray_end, out.consume_trigger = result.ray_end, result.consume_trigger
         if result.dropped is not None:
-            page, side, before = result.dropped
-            index = self.layout.move_page(page, side, before)
+            page, side, row, before, new_row = result.dropped
+            index = self.layout.move_page(page, side, row, before, new_row)
             self.ring.set_sides(self.layout.sides())
             self.ring.focus_side(self.layout.pages[index].side)
             self._save_layout()
@@ -140,11 +143,22 @@ class UiController:
                 self._run(action, out)
                 out.haptics.append((self.palette_hand, 0.4, 0.03))
 
-        if self.navigator.state == "two":
+        nav = self.navigator
+        if nav.state == "two":
             self.ruler.update(Navigator.hand_position(frame.hands[0]), Navigator.hand_position(frame.hands[1]), frame.head,
-                              self.navigator.world.scale, self.mm_to_stage, self.system, self.navigator.level)
+                              nav.world.scale, self.mm_to_stage, self.system, nav.level, nav.scale_locked)
+        elif nav.state == "one":
+            hand = frame.hands[0 if nav.gripping[0] else 1]
+            self.ruler.show_single(Navigator.hand_position(hand), frame.head, nav.world.scale, nav.level, nav.scale_locked)
         else:
             self.ruler.hide()
+
+        tool = frame.hands[self.tool_hand]
+        if self.ring.fade > 0.3 and tool.aim.tracked and not nav.navigating:
+            direction = mu.rotate(tool.aim.orientation, (0.0, 0.0, -1.0))
+            self.pointer.show(tool.aim.position, direction, result.ray_end)
+        else:
+            self.pointer.hide()
         return out
 
     def close(self):

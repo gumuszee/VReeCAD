@@ -99,6 +99,7 @@ class _Label:
         key = (tuple(lines), rgb, factor)
         if key != self._shown:
             self._shown = key
+            self.text.string.setNum(len(lines))      # drop the lines of a longer previous text
             self.text.string.setValues(0, len(lines), list(lines))
             self.color.rgb = coin.SbColor(*rgb)
             s = style.TEXT_SCALE * factor
@@ -142,7 +143,7 @@ class Ruler:
     def hide(self):
         self.root.whichChild = coin.SO_SWITCH_NONE
 
-    def update(self, left, right, head, scale, mm_to_stage, system, level):
+    def update(self, left, right, head, scale, mm_to_stage, system, level, locked=False):
         """Draw the ruler between the hand positions `left` and `right` (stage metres). `scale` is the world scale (stage metres per
         world metre), `mm_to_stage` the stage length of one document millimetre at scale 1, `head` an `input.Pose`."""
         span = mu.sub(right, left)
@@ -202,8 +203,24 @@ class Ruler:
         self._outline.set(outline)
         self._lines.set(bright)
         self._ratio.show([format_scale(scale)], mu.sub(middle, mu.mul(side, 0.055)), face, rgb=style.ACTIVE, factor=2.4)
-        self._info.show([units.format_length(length_mm, system), "level" if level else "free orbit"],
+        self._info.show([units.format_length(length_mm, system), mode_text(level, locked)],
                         mu.sub(middle, mu.mul(side, 0.125)), face, rgb=style.TEXT_DIM, factor=1.1)
+
+    def show_single(self, hand, head, scale, level, locked):
+        """With one grip there is no span to measure: only the scale ratio and the modes float above the gripping hand."""
+        self.root.whichChild = coin.SO_SWITCH_ALL
+        self._outline.set([])
+        self._lines.set([])
+        for label in self._labels:
+            label.hide()
+        face = mu.quat_multiply(mu.look_at(hand, head.position), mu.quat_from_axis_angle(UP, math.pi))
+        self._ratio.show([format_scale(scale)], mu.add(hand, (0.0, 0.12, 0.0)), face, rgb=style.ACTIVE, factor=2.4)
+        self._info.show([mode_text(level, locked)], mu.add(hand, (0.0, 0.065, 0.0)), face, rgb=style.TEXT_DIM, factor=1.1)
+
+
+def mode_text(level, locked):
+    """The rotation mode and the scale lock as shown on the plate."""
+    return ("level" if level else "free orbit") + (", 1 : 1 locked" if locked else "")
 
 
 def _tick(a, b, direction, width):

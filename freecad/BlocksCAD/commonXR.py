@@ -124,6 +124,8 @@ except ImportError:
     raise ImportError("pyopenxr is required!")
 
 
+MODEL_CHECK_FRAMES = 60  # frames between checks for controller models that appeared after the first enumeration
+
 ALL_SEVERITIES = (
     xr.DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
     | xr.DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT
@@ -641,7 +643,6 @@ class XRwidget(QOpenGLWidget):
         self.ui = UiController(tool_registry.names(), tool_registry.label_of, actions,
                                palette_hand=self.primary_con, tool_hand=self.secondary_con)
         self.navigator = self.ui.navigator
-        self.ui_ray_shown = False
 
     def toggle_overlays(self):
         for w in self.qt_widget_renders:
@@ -1024,6 +1025,7 @@ class XRwidget(QOpenGLWidget):
         if self.render_model_support:
             self.runtime_models = RuntimeModels(self.instance, self.session)
         self.models_refreshed = False
+        self.models_check = 0
 
     def prepare_tracker(self):
         # TPP camera
@@ -1116,6 +1118,15 @@ class XRwidget(QOpenGLWidget):
 
     def update_controller_models(self, frame):
         """Pose and animate the runtime-provided controller models, or animate the generated shapes."""
+        if self.runtime_models is not None and self.models_refreshed:
+            # a controller that was not active at the first enumeration (or a change event that never came) shows up here
+            self.models_check = (self.models_check + 1) % MODEL_CHECK_FRAMES
+            if self.models_check == 0:
+                try:
+                    if self.runtime_models.available_count() != len(self.runtime_models.models):
+                        self.models_refreshed = False
+                except Exception:
+                    pass
         if self.runtime_models is not None and not self.models_refreshed:
             # models exist after the first successful sync; the list is enumerated again on a change event
             self.models_refreshed = True
@@ -1621,13 +1632,6 @@ class XRwidget(QOpenGLWidget):
         self.apply_navigation()
         for hand, amplitude, duration in update.haptics:
             self.haptic(hand, amplitude, duration)
-        tool_con = self.xr_con[self.secondary_con]
-        if update.ray_end is not None:
-            tool_con.show_ray_ext(SbVec3f(*update.ray_end))
-            self.ui_ray_shown = True
-        elif self.ui_ray_shown:
-            tool_con.hide_ray()
-            self.ui_ray_shown = False
         return update
 
     def haptic(self, hand, amplitude, duration_s):

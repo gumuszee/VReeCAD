@@ -149,8 +149,34 @@ class SimUiTest(unittest.TestCase):
         shown = [label.text.string.getValues(0) for label in self.s.ui.ruler._labels if label.switch.whichChild.getValue() == coin.SO_SWITCH_ALL]
         self.assertTrue(shown[1][0].endswith(" in"))
         self.s.input.set_hand(0, grip=0.0)
+        self.s.input.set_hand(1, grip=0.0)
         self.s.frame()
         self.assertEqual(self.s.ui.ruler.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
+    def test_one_grip_shows_the_scale_and_the_mode_above_the_hand(self):
+        from pivy import coin
+        self.s.input.set_hand(1, position=(0.2, 1.2, -0.5))
+        self.s.frame()
+        self.s.input.set_hand(1, grip=1.0)
+        self.s.frame()
+        self.s.frame()
+        self.assertEqual(self.s.ui.ruler.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.assertEqual(list(self.s.ui.ruler._ratio.text.string.getValues(0)), ["1 : 1"])
+        self.assertEqual(list(self.s.ui.ruler._info.text.string.getValues(0)), ["free orbit"])
+        self.s.input.set_hand(1, button1=True, button2=True)
+        self.s.frame()
+        self.assertEqual(list(self.s.ui.ruler._info.text.string.getValues(0)), ["level, 1 : 1 locked"])
+
+    def test_the_laser_shows_while_the_carousel_is_visible(self):
+        from pivy import coin
+        self.s.input.set_head(position=(0.0, 1.6, 0.0), look_at_point=(-0.25, 1.2, -0.35))
+        for _ in range(30):
+            self.s.frame(0.02)
+        self.assertEqual(self.s.ui.pointer.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.s.input.set_head(look_at_point=(0.0, 1.6, 2.0))
+        for _ in range(30):
+            self.s.frame(0.02)
+        self.assertEqual(self.s.ui.pointer.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
 
     def test_the_overlay_is_the_last_child_of_the_scene(self):
         self.assertEqual(self.s.scene.findChild(self.s.ui.overlay), self.s.scene.getNumChildren() - 1)

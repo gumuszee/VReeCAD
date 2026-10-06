@@ -15,11 +15,12 @@ import freecad.BlocksCAD.ui.layout as _lay
 import freecad.BlocksCAD.ui.ring as _ring
 import freecad.BlocksCAD.ui.ring_view as _rv
 import freecad.BlocksCAD.ui.ruler as _ru
+import freecad.BlocksCAD.ui.pointer as _pt
 import freecad.BlocksCAD.ui.defaults as _df
 import freecad.BlocksCAD.ui.controller as _ctl
 import freecad.BlocksCAD.backends.sim as _sim
 import freecad.BlocksCAD.render.offscreen as _off
-for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _ru, _df, _ctl, _sim):
+for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _ru, _pt, _df, _ctl, _sim):
     importlib.reload(_m)
 from pivy import coin as _coin
 
@@ -75,23 +76,36 @@ try:
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_rolled.png"))
     _s.input.set_hand(0, orientation=_o)
 
-    # stack all panels on one side
-    for _name in ("Edit", "View", "Session"):
-        _s.ui.layout.move_page([page.name for page in _s.ui.layout.pages].index(_name), 0)
+    # Edit next to Tools, View as a row above them
+    _names = lambda: [page.name for page in _s.ui.layout.pages]
+    _s.ui.layout.move_page(_names().index("Edit"), 0)
+    _s.ui.layout.move_page(_names().index("View"), 0, 1, None, True)
     _s.input.set_hand(1, position=(0.25, 1.3, -0.25), point_at=(0.0, 1.3, -1.0))
     for _ in range(30):
         _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_stacked.png"))
-    print("sides:", _s.ui.layout.sides())
+    print("sides:", _s.ui.layout.sides(), _names())
 
-    # lift the Edit panel by its title bar and hold it over the empty slot
-    _pose = _s.ui.ring.poses[1]
+    # lift the Session panel by its title bar and hold it above the Tools panel (a new row)
+    _page = _names().index("Session")
+    _s.input.set_hand(0, stick=(1.0, 0.0))
+    _s.frame(0.02)
+    _s.input.set_hand(0, stick=(0.0, 0.0))
+    for _ in range(40):
+        _s.frame(0.02)
+    _pose = _s.ui.ring.poses[_page]
     _title = _mu.add(_pose.centre, _mu.mul(_pose.v, (_ring.TITLE_Y[0] + _ring.TITLE_Y[1]) / 2))
     _s.input.set_hand(1, position=_mu.add(_title, _mu.mul(_pose.n, 0.3)), point_at=_title, trigger=1.0)
     for _ in range(3):
         _s.frame(0.02)
-    _ghost = _s.ui.ring.ghost
-    _s.input.set_hand(1, position=_mu.add(_ghost.centre, _mu.mul(_ghost.n, 0.3)), point_at=_ghost.centre, trigger=1.0)
+    _s.input.set_hand(0, stick=(-1.0, 0.0))     # turn the carousel back to the Tools side while holding the panel
+    _s.frame(0.02)
+    _s.input.set_hand(0, stick=(0.0, 0.0))
+    for _ in range(40):
+        _s.frame(0.02)
+    _tools = _s.ui.ring.poses[_names().index("Tools")]
+    _above = _mu.add(_tools.centre, _mu.mul(_tools.v, 0.8 * _ring.PANEL_H / 2))
+    _s.input.set_hand(1, position=_mu.add(_above, _mu.mul(_tools.n, 0.3)), point_at=_above, trigger=1.0)
     _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_lift.png"))
     _s.input.set_hand(1, trigger=0.0)
@@ -127,6 +141,16 @@ try:
         _s.frame(0.02)
     _s.input.set_head(position=(0.0, 1.3, -0.4), look_at_point=(-0.1, 1.1, -1.3))
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_ruler_behind.png"))
+    # one grip: the scale and the modes float above the gripping hand, the world turns with the hand
+    _s.input.set_hand(0, grip=0.0)
+    _s.input.set_hand(1, position=(0.1, 1.0, -0.9), button2=True)
+    for _ in range(20):
+        _s.frame(0.02)
+    _s.input.set_hand(1, position=(0.1, 1.0, -0.9), orientation=_mu.quat_from_axis_angle((0, 0, 1), 0.5))
+    for _ in range(3):
+        _s.frame(0.02)
+    _s.input.set_head(position=(0.0, 1.3, -0.4), look_at_point=(0.1, 1.1, -0.9))
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_single.png"))
 finally:
     _s.close()
 print("renders in", _out, _log)

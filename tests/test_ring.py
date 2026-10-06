@@ -12,7 +12,7 @@ from freecad.BlocksCAD.ui import ring as rg
 
 CONTROLLER = (-0.2, 1.15, -0.35)
 HEAD = (0.0, 1.6, 0.0)
-SIDES = [[0], [1], [2]]
+SIDES = [[[0]], [[1]], [[2]]]        # side -> rows -> pages
 
 
 class RingTest(unittest.TestCase):
@@ -36,6 +36,11 @@ class RingTest(unittest.TestCase):
         y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP)
         return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.n
 
+    def panel_point(self, page, fx, fy):
+        """A point on a panel: fx and fy are fractions of its half width and half height."""
+        pose = self.ring.poses[page]
+        return mu.add(pose.centre, mu.add(mu.mul(pose.u, fx * rg.PANEL_W / 2), mu.mul(pose.v, fy * rg.PANEL_H / 2))), pose.n
+
     def aim_at(self, point, normal, distance=0.3):
         self.sim.set_hand(1, position=mu.add(point, mu.mul(normal, distance)), point_at=point)
 
@@ -43,6 +48,12 @@ class RingTest(unittest.TestCase):
         pose = self.ring.poses[page]
         y = (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2
         return mu.add(pose.centre, mu.mul(pose.v, y)), pose.n
+
+    def flick(self, x):
+        self.sim.set_hand(0, stick=(x, 0.0))
+        self.run_frames(1)
+        self.sim.set_hand(0, stick=(0.0, 0.0))
+        self.run_frames(60)
 
     def test_locate_slot(self):
         self.assertEqual(rg.PaletteRing.locate_slot(0.0, 0.0), 6)   # the centre lies between columns 1 and 2
@@ -111,6 +122,14 @@ class RingTest(unittest.TestCase):
         pose = self.ring.poses[0]
         self.assertLess(mu.length(mu.sub(pose.n, mu.rotate(roll, (0.0, 1.0, 0.0)))), 1e-6)
 
+    def test_every_side_is_drawn_at_the_same_time(self):
+        self.run_frames()
+        self.assertEqual(sorted(self.ring.poses), [0, 1, 2])
+        normals = [self.ring.poses[i].n for i in range(3)]
+        for a in range(3):
+            for b in range(a + 1, 3):
+                self.assertAlmostEqual(mu.dot(normals[a], normals[b]), math.cos(2 * math.pi / 3), places=6)
+
     def test_ray_hover_and_activate(self):
         self.run_frames()
         point, n = self.slot_point(5)
@@ -135,13 +154,15 @@ class RingTest(unittest.TestCase):
         self.assertIsNone(r.hover)
         self.assertFalse(r.consume_trigger)
 
-    def test_turned_away_sides_are_not_interactive(self):
+    def test_sides_turned_away_are_drawn_but_cannot_be_pointed_at(self):
         self.run_frames()
-        pose = self.ring.poses.get(1)            # side 1 is 120 degrees around: not drawn and never interactive
-        self.assertIsNone(pose)
-        self.sim.set_hand(0, stick=(1.0, 0.0))
-        self.run_frames(2)                       # mid turn: both sides are drawn but only the one near the front hovers
-        self.assertEqual(self.ring.index, 1)
+        pose = self.ring.poses[1]                # 120 degrees round: its back faces the user
+        self.aim_at(pose.centre, pose.n)
+        self.assertIsNone(self.run_frames(1).hover)
+        self.flick(1.0)                          # turned to the front, the same panel can be pointed at
+        point, n = self.slot_point(5, page=1)
+        self.aim_at(point, n)
+        self.assertEqual(self.run_frames(1).hover, (1, 5))
 
     def test_hidden_ring_has_no_hover(self):
         self.sim.set_head(look_at_point=(0.0, 1.6, 2.0))
@@ -149,25 +170,25 @@ class RingTest(unittest.TestCase):
         self.assertEqual(self.ring.poses, {})
         self.assertIsNone(self.run_frames(1).hover)
 
-    def test_panels_stacked_on_one_side_stand_next_to_each_other(self):
-        self.ring = rg.PaletteRing([[0, 1], [2]])
+    def test_panels_in_one_row_stand_next_to_each_other(self):
+        self.ring = rg.PaletteRing([[[0, 1]], [[2]]])
         self.run_frames()
         a, b = self.ring.poses[0], self.ring.poses[1]
         self.assertLess(mu.length(mu.sub(a.n, b.n)), 1e-9)
         gap = mu.sub(b.centre, a.centre)
         self.assertAlmostEqual(mu.dot(gap, a.u), rg.PANEL_W + rg.PANEL_GAP, places=6)
         self.assertAlmostEqual(mu.dot(gap, a.v), 0.0, places=6)
-        # both are interactive: a face of the second panel hovers
-        point, n = self.slot_point(3, page=1)
+        point, n = self.slot_point(3, page=1)    # a face of the second panel hovers
         self.aim_at(point, n)
         self.assertEqual(self.run_frames(1).hover, (1, 3))
 
-    def test_four_panels_on_one_side_make_two_rows(self):
-        self.ring = rg.PaletteRing([[0, 1, 2, 3]])
+    def test_rows_are_stacked_forward_from_the_bottom(self):
+        self.ring = rg.PaletteRing([[[0, 1], [2]]])
         self.run_frames()
-        poses = [self.ring.poses[i] for i in range(4)]
-        rows = {round(mu.dot(p.centre, poses[0].v), 4) for p in poses}
-        self.assertEqual(len(rows), 2)
+        p = [self.ring.poses[i] for i in range(3)]
+        self.assertAlmostEqual(mu.dot(mu.sub(p[2].centre, p[0].centre), p[0].v), rg.PANEL_H + rg.PANEL_GAP, places=6)
+        self.assertAlmostEqual(mu.dot(mu.sub(p[2].centre, p[0].centre), p[0].u), (rg.PANEL_W + rg.PANEL_GAP) / 2, places=6)
+        self.assertEqual((p[0].row, p[1].row, p[2].row), (0, 0, 1))
 
     def lift(self, page=0):
         point, n = self.title_point(page)
@@ -177,39 +198,59 @@ class RingTest(unittest.TestCase):
         self.sim.set_hand(1, trigger=1.0)
         return self.run_frames(1)
 
-    def test_lift_a_panel_and_drop_it_in_front_of_another(self):
+    def test_lift_a_panel_and_drop_it_next_to_another(self):
         self.run_frames()
         r = self.lift(0)
         self.assertEqual(self.ring.lifted, 0)
         self.assertTrue(r.consume_trigger)
         self.assertNotIn(0, self.ring.poses)     # the lifted panel leaves its side
-        self.sim.set_hand(0, stick=(1.0, 0.0))   # turn the carousel to side 1
-        self.run_frames(1)
-        self.sim.set_hand(0, stick=(0.0, 0.0))
-        self.run_frames(60)
+        self.flick(1.0)                          # turn the carousel to side 1
         self.assertEqual(self.ring.front_side(), 1)
-        point, n = self.slot_point(2, page=1)
+        point, n = self.panel_point(1, -0.5, 0.0)     # left half of the panel
         self.aim_at(point, n)
         r = self.run_frames(1)
-        self.assertEqual(r.drop_target, (1, 1))
+        self.assertEqual(r.drop_target, (1, 0, 1, False))
+        self.assertEqual(r.drop_marker, (1, "left", 1))
         self.assertIsNone(r.dropped)
         self.sim.set_hand(1, trigger=0.0)
         r = self.run_frames(1)
-        self.assertEqual(r.dropped, (0, 1, 1))
+        self.assertEqual(r.dropped, (0, 1, 0, 1, False))
         self.assertIsNone(self.ring.lifted)
 
-    def test_drop_on_the_empty_slot_appends_and_on_nothing_cancels(self):
-        self.ring = rg.PaletteRing([[0, 1], [2]])
+    def test_right_half_puts_the_panel_after_and_above_or_below_makes_a_row(self):
+        self.ring = rg.PaletteRing([[[0, 1]], [[2]]])
         self.run_frames()
         self.lift(1)
-        ghost = self.ring.ghost
-        self.assertIsNotNone(ghost)
+        point, n = self.panel_point(0, 0.5, 0.0)
+        self.aim_at(point, n)
+        self.assertEqual(self.run_frames(1).drop_target, (0, 0, None, False))    # after panel 0: the end of the row
+        point, n = self.panel_point(0, 0.0, 0.8)
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertEqual(r.drop_target, (0, 1, None, True))                      # a new row above
+        self.assertEqual(r.drop_marker, (0, "above", 0))
+        point, n = self.panel_point(0, 0.0, -0.8)
+        self.aim_at(point, n)
+        self.assertEqual(self.run_frames(1).drop_target, (0, 0, None, True))     # a new row below
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertEqual(self.run_frames(1).dropped, (1, 0, 0, None, True))
+
+    def test_drop_on_an_empty_side_and_on_nothing_cancels(self):
+        self.ring = rg.PaletteRing([[[0, 1]], [[2]]])
+        self.run_frames()
+        self.lift(1)
+        self.assertEqual(sorted(self.ring.ghosts), [2])          # the extra empty side at the end
+        self.flick(-1.0)                                         # turn it to the front
+        self.assertEqual(self.ring.front_side(), 2)
+        ghost = self.ring.ghosts[2]
         self.aim_at(ghost.centre, ghost.n)
         r = self.run_frames(1)
-        self.assertEqual(r.drop_target, (0, None))
+        self.assertEqual(r.drop_target, (2, 0, None, False))
         self.sim.set_hand(1, trigger=0.0)
-        self.assertEqual(self.run_frames(1).dropped, (1, 0, None))
+        self.assertEqual(self.run_frames(1).dropped, (1, 2, 0, None, False))
         # cancel: lift, point at nothing, release
+        self.flick(1.0)
+        self.run_frames()
         self.lift(0)
         self.sim.set_hand(1, position=(0.3, 1.5, -0.3), point_at=(0.3, 1.5, -2.0))
         self.run_frames(1)
@@ -219,7 +260,7 @@ class RingTest(unittest.TestCase):
         self.assertIsNone(self.ring.lifted)
 
     def test_lifting_offers_a_new_side(self):
-        self.ring = rg.PaletteRing([[0, 1], [2]])
+        self.ring = rg.PaletteRing([[[0, 1]], [[2]]])
         self.run_frames()
         self.lift(0)
         self.run_frames(2)
@@ -234,20 +275,25 @@ class LayoutTest(unittest.TestCase):
     def three(self):
         return lay.Layout([lay.Page("A"), lay.Page("B"), lay.Page("C")])
 
+    def names(self, layout):
+        return [p.name for p in layout.pages]
+
     def test_json_roundtrip_and_padding(self):
         layout = lay.Layout.from_json(self.make().to_json())
-        self.assertEqual([p.name for p in layout.pages], ["Tools", "View"])
+        self.assertEqual(self.names(layout), ["Tools", "View"])
         self.assertEqual(len(layout.pages[0].slots), lay.SLOTS)
         self.assertEqual(layout.face_at(0, 1), "b")
         self.assertIsNone(layout.face_at(1, 5))
 
-    def test_sides_survive_the_roundtrip_and_old_files_get_a_side_per_page(self):
+    def test_sides_and_rows_survive_the_roundtrip_and_old_files_get_a_side_per_page(self):
         layout = self.three()
-        layout.move_page(2, 0)
+        layout.move_page(2, 0, 0, None, True)        # C as a row above A
         again = lay.Layout.from_json(layout.to_json())
         self.assertEqual(again.sides(), layout.sides())
         old = json.dumps({"version": 1, "pages": [{"name": "A", "slots": []}, {"name": "B", "slots": []}]})
-        self.assertEqual(lay.Layout.from_json(old).sides(), [[0], [1]])
+        self.assertEqual(lay.Layout.from_json(old).sides(), [[[0]], [[1]]])
+        stacked = json.dumps({"version": 2, "pages": [{"name": "A", "side": 0}, {"name": "B", "side": 0}]})
+        self.assertEqual(lay.Layout.from_json(stacked).sides(), [[[0, 1]]])      # one row
 
     def test_unknown_faces_become_empty(self):
         layout = lay.Layout.from_json(self.make().to_json(), known_faces={"a", "c"})
@@ -261,34 +307,52 @@ class LayoutTest(unittest.TestCase):
         self.assertIsNone(layout.face_at(0, 0))
 
     def test_every_page_starts_on_its_own_side(self):
-        self.assertEqual(self.three().sides(), [[0], [1], [2]])
+        self.assertEqual(self.three().sides(), [[[0]], [[1]], [[2]]])
 
-    def test_move_page_onto_another_side(self):
+    def test_without_page(self):
+        sides = [[[0, 1], [2]], [[3]]]
+        self.assertEqual(lay.without_page(sides, 1), [[[0], [2]], [[3]]])
+        self.assertEqual(lay.without_page(sides, 2), [[[0, 1]], [[3]]])      # the empty row is gone
+        self.assertEqual(lay.without_page(sides, 3), [[[0, 1], [2]], []])    # the empty side stays
+
+    def test_move_page_next_to_another(self):
         layout = self.three()
-        layout.move_page(2, 0)                       # C joins the side of A, after it
-        self.assertEqual([p.name for p in layout.pages], ["A", "C", "B"])
-        self.assertEqual(layout.sides(), [[0, 1], [2]])
-        layout.move_page(2, 0, before=0)             # B in front of A
-        self.assertEqual([p.name for p in layout.pages], ["B", "A", "C"])
-        self.assertEqual(layout.sides(), [[0, 1, 2]])
+        layout.move_page(2, 0)                       # C joins the row of A, after it
+        self.assertEqual(self.names(layout), ["A", "C", "B"])
+        self.assertEqual(layout.sides(), [[[0, 1]], [[2]]])
+        layout.move_page(2, 0, 0, 0)                 # B in front of A
+        self.assertEqual(self.names(layout), ["B", "A", "C"])
+        self.assertEqual(layout.sides(), [[[0, 1, 2]]])
+
+    def test_move_page_above_and_below(self):
+        layout = self.three()
+        layout.move_page(1, 0, 1, None, True)        # B in a new row above A
+        self.assertEqual(self.names(layout), ["A", "B", "C"])
+        self.assertEqual(layout.sides(), [[[0], [1]], [[2]]])
+        layout.move_page(2, 0, 0, None, True)        # C in a new row below A and B
+        self.assertEqual(self.names(layout), ["C", "A", "B"])
+        self.assertEqual(layout.sides(), [[[0], [1], [2]]])
+        self.assertEqual([p.row for p in layout.pages], [0, 1, 2])
+        layout.move_page(0, 0, 3, None, True)        # C to the top (the page is removed first: three rows remain, so row 2)
+        self.assertEqual(self.names(layout), ["A", "B", "C"])
 
     def test_move_page_to_a_new_side_and_empty_sides_vanish(self):
         layout = self.three()
         layout.move_page(0, 3)                       # a new side at the end
-        self.assertEqual([p.name for p in layout.pages], ["B", "C", "A"])
-        self.assertEqual(layout.sides(), [[0], [1], [2]])
+        self.assertEqual(self.names(layout), ["B", "C", "A"])
+        self.assertEqual(layout.sides(), [[[0]], [[1]], [[2]]])
         layout = self.three()
         layout.move_page(1, 0)
-        self.assertEqual(layout.sides(), [[0, 1], [2]])
+        self.assertEqual(layout.sides(), [[[0, 1]], [[2]]])
         layout.move_page(0, 2)                       # A leaves for a new side, B stays alone on the first
-        self.assertEqual([p.name for p in layout.pages], ["B", "C", "A"])
-        self.assertEqual(layout.sides(), [[0], [1], [2]])
+        self.assertEqual(self.names(layout), ["B", "C", "A"])
+        self.assertEqual(layout.sides(), [[[0]], [[1]], [[2]]])
 
-    def test_move_page_before_itself_changes_nothing(self):
+    def test_move_page_back_onto_its_own_empty_side_changes_nothing(self):
         layout = self.three()
-        layout.move_page(1, 1, before=1)
-        self.assertEqual([p.name for p in layout.pages], ["A", "B", "C"])
-        self.assertEqual(layout.sides(), [[0], [1], [2]])
+        layout.move_page(1, 1)
+        self.assertEqual(self.names(layout), ["A", "B", "C"])
+        self.assertEqual(layout.sides(), [[[0]], [[1]], [[2]]])
 
     def test_load_falls_back_to_the_default(self):
         default = self.make()
