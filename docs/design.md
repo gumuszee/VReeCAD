@@ -84,7 +84,7 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 
 ## Test strategy (no human in the loop where possible)
 1. **Unit-ish**: tools driven by synthetic `InputFrame` sequences against a real FreeCAD document (headless `freecadcmd` or live via `fc_rpc`); assert feature types/properties/undo.
-2. **Visual**: Sim backend sets HMD/controller poses from a script and renders the scene offscreen (`SoOffscreenRenderer`) to PNG, optionally side-by-side stereo like the mirror window; I inspect the PNGs. Gives "move in VR space" for testing without anyone wearing the headset.
+2. **Visual**: the Sim backend sets HMD and controller poses from a script and renders the scene offscreen (`SoOffscreenRenderer`, raw RGB buffer saved through Qt; FreeCAD's Coin has no image-writer plugin) to PNG, optionally side-by-side stereo like the mirror window. This provides "movement in VR space" for testing without a headset; `tools/snippets/offscreen_render.py` renders the document scene from any eye pose.
 3. **In-headset checklist** per milestone, run by the owner; results are recorded in `verification.md`.
 4. Real-device facts that sims cannot prove (comfort, tracking, button feel) stay explicitly marked *unverified* until the owner confirms.
 
