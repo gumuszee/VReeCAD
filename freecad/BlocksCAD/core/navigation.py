@@ -24,7 +24,8 @@ shortest rotation that turns the old hand line into the new one); while the modi
 is limited to the vertical axis, so the bottom of the model stays down. While button2 of the tool hand is held the scale is locked
 at 1 : 1: it animates there about the hands when the button goes down, and the hand distance no longer scales the world until the
 button is released. Gestures are computed from the pose at grab time and the hand positions at that moment, so no error accumulates;
-a change of the gripping hands or of the rotation mode starts a new gesture. The stick click of a gripping hand resets the view
+a change of the gripping hands or of the rotation mode starts a new gesture. When one grip of a two-grip gesture is released first, the
+other grip does nothing until both grips are released (so the model does not drift while the hands let go one after the other). The stick click of a gripping hand resets the view
 with a short animation to the home pose: the origin in front of the head.
 """
 
@@ -156,6 +157,7 @@ class Navigator:
         self._reset_requested = False
         self._snap_t = None        # progress of the 1 : 1 snap, None when not snapping
         self._wait_release = False
+        self._two_latch = False    # after a two-grip gesture the remaining grip is ignored until both are released
         self._octave = None
 
     @staticmethod
@@ -177,7 +179,7 @@ class Navigator:
 
     @property
     def navigating(self):
-        return self.state != "idle" or self.resetting
+        return self.state != "idle" or self.resetting or self._two_latch
 
     def request_reset(self):
         """Animate the view back to the home pose at scale 1 : 1 (the stick click of a gripping hand does the same).
@@ -233,9 +235,18 @@ class Navigator:
 
         if gripping != self.gripping:
             count = sum(gripping)
-            self.state = {0: "idle", 1: "one", 2: "two"}[count]
+            was_two = self.state == "two"
+            if count != 1:
+                self._two_latch = False
+            elif was_two:
+                self._two_latch = True      # one grip left after two: it does nothing until every grip is released
+            self.state = "idle" if self._two_latch else {0: "idle", 1: "one", 2: "two"}[count]
             self._snap_t = None
-            if count:
+            if self._two_latch:
+                self._anchor = None
+                if was_two:
+                    events.append(("release",))
+            elif count:
                 self._anchor = self._make_anchor(hands)
                 events.append(("grab", count))
             else:

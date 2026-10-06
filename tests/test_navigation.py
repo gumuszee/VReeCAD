@@ -272,6 +272,48 @@ class NavigatorTest(unittest.TestCase):
         self.sim.set_hand(1, button2=True)
         self.assertEqual(self.step(), [])
 
+    def test_the_remaining_grip_does_nothing_after_a_two_grip_gesture_until_both_are_released(self):
+        self.two_grips()
+        self.sim.set_hand(0, position=(-0.4, 1.2, 0))
+        self.sim.set_hand(1, position=(0.4, 1.2, 0))
+        self.step()
+        before = self.nav.world
+        self.sim.set_hand(0, grip=0.0)                               # the left grip lets go first
+        events = self.step()
+        self.assertEqual(events, [("release",)])
+        self.assertEqual(self.nav.state, "idle")
+        self.assertTrue(self.nav.navigating)                         # the interface stays out of the way
+        self.sim.set_hand(1, position=(0.9, 1.6, -0.7), orientation=mu.quat_from_axis_angle((1, 0, 0), 1.0))
+        self.step()
+        self.assertEqual(self.nav.world, before)                     # the right hand still holds a grip but moves nothing
+        self.sim.set_hand(1, grip=0.0)
+        self.step()
+        self.assertFalse(self.nav.navigating)
+        self.sim.set_hand(1, grip=1.0)                               # a fresh single grip works again
+        self.assertEqual(self.step(), [("grab", 1)])
+        self.assertEqual(self.nav.state, "one")
+
+    def test_a_second_grip_during_the_latch_resumes_two_hand_navigation(self):
+        self.two_grips()
+        self.sim.set_hand(0, grip=0.0)
+        self.step()
+        self.sim.set_hand(0, grip=1.0)
+        self.assertEqual(self.step(), [("grab", 2)])
+        self.assertEqual(self.nav.state, "two")
+
+    def test_a_single_grip_after_a_release_is_not_latched_when_no_two_grip_came_before(self):
+        self.sim.set_hand(0, grip=1.0)
+        self.step()
+        self.sim.set_hand(1, grip=1.0)
+        self.step()
+        self.sim.set_hand(1, grip=0.0)
+        self.step()
+        self.assertEqual(self.nav.state, "idle")      # it was a two-grip gesture
+        self.sim.set_hand(0, grip=0.0)
+        self.step()
+        self.sim.set_hand(0, grip=1.0)
+        self.assertEqual(self.step(), [("grab", 1)])
+
     def test_format_scale(self):
         self.assertEqual(nav.format_scale(1.0), "1 : 1")
         self.assertEqual(nav.format_scale(4.0), "4 : 1")

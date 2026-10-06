@@ -30,8 +30,7 @@ DROP = (0.18, 0.36, 0.24)
 TEXT = (1.0, 1.0, 1.0)
 TEXT_DIM = (0.7, 0.75, 0.9)
 TEXT_ON_ACTIVE = (0.05, 0.05, 0.05)
-DOT = (0.4, 0.42, 0.5)
-DOT_ON = (0.95, 0.95, 1.0)
+GROOVE = (0.4, 0.42, 0.5)
 
 FONT = "Segoe UI:Bold"       # falls back to Coin's default font where the family is missing
 TEXT_SCALE = 0.0009           # label glyphs, about 9 mm

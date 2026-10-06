@@ -124,6 +124,7 @@ except ImportError:
     raise ImportError("pyopenxr is required!")
 
 
+TIP_REACH = 0.03  # metres in front of the tip that count as touching a model in tip mode
 MODEL_CHECK_FRAMES = 60  # frames between checks for controller models that appeared after the first enumeration
 
 ALL_SEVERITIES = (
@@ -1094,7 +1095,13 @@ class XRwidget(QOpenGLWidget):
             con = self.xr_con[hand]
             if h.aim.tracked:
                 con.show_controller()
-                con.update_pose(h.aim.position, h.aim.orientation, self.world_transform)
+                pointer = self.ui.pointer_poses[hand]
+                con.update_pose(h.aim.position, h.aim.orientation, self.world_transform, pointer.position, pointer.orientation)
+                tip_mode = self.ui.settings.pointer_mode == "tip"
+                con.ray_enabled = not tip_mode
+                con.reach = TIP_REACH if tip_mode else None
+                if tip_mode:
+                    con.hide_ray()
                 con.update_lever(h.stick[0], h.stick[1])
                 # a trigger pressed on a face of the palette belongs to the palette, not to the active tool
                 owned = ui_update.consume_trigger and hand == self.secondary_con

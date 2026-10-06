@@ -33,6 +33,7 @@ Derived from Open Brush's world transform, with a free orbit:
 - **Level (hold button1 of the tool hand, A on the Steam Frame):** the rotation is limited to the vertical axis (one grip: the yaw of the hand), so the bottom of the model stays down. Pressing or releasing the modifier mid gesture starts a new gesture from the current pose; nothing jumps. The mode is shown on the plate.
 - **Hold 1:1 (hold button2 of the tool hand, B on the Steam Frame, while gripping):** the scale animates to 1 : 1 about the hands (the world point between the hands stays between them) and stays at 1 : 1 for as long as the button is held, however the hands move; the world still follows them. Releasing the button lets the hand distance scale the world again, starting from 1 : 1.
 - **Reset (stick click of a gripping hand, or the Reset view face):** animates to the home pose: scale 1 : 1, the document origin 1 m in front of the head (horizontally), at 75 % of the head height above the floor (chest height when standing), turned so that the front view of the document (looking along the document Y axis) points away from the head.
+- **After a two-grip gesture** the grips rarely let go at the same moment. When one grip is released first, the other does nothing until both are released (the model does not drift while the hands let go one after the other); a new grip after both are released works as usual, and a second grip pressed while the first is still held resumes two-hand navigation.
 - While a grip navigates, the carousel hides and the tool is inactive. A haptic tick marks every doubling or halving of the scale.
 - A grip pressed on an object grabs that object instead (milestone M2).
 
@@ -51,10 +52,10 @@ While both grips hold the world, a line joins the hands and reads as a ruler in 
 The carousel is a prism around the long axis of the palette controller. It is attached to the controller: it follows the position and the rotation of the hand (Open Brush's wand panels).
 
 - **Geometry.** The axis runs along the controller from the grip point forward (the carousel centre is 9 cm in front of the grip point). The side at the front stands on the thumb side of the controller, facing up when the controller is held upright, with its top edge pointing the way the controller points. The other sides stand around the axis at equal angles, and **all sides are visible at all times**. Rolling the wrist rolls the carousel.
-- **Panels** are pages of faces (4 columns by 3 rows, face edge 5 cm) with a title bar and side dots. A side carries rows of panels: panels next to each other in a row, rows above each other (the first row nearest the user, further rows further forward). The prism radius grows with the number of sides and the width of the panels so that sides do not overlap.
+- **Panels** are pages of faces (4 columns by 3 rows, face edge 5 cm) with a title bar and nothing else, so no panel space is spent on indicators. A side carries rows of panels: panels next to each other in a row, rows above each other (the first row nearest the user, further rows further forward). The prism radius grows with the number of sides and the width of the panels so that sides do not overlap.
 - **Stick left/right turns the carousel** one side per flick (snap with a haptic tick and a short ease). No button is held. Sides that face away from the user are drawn but cannot be pointed at.
 - **Visibility:** the carousel fades in when the head looks at the controller (gaze cone of 35 degrees at 0.12 to 0.95 m) and fades out otherwise; it is hidden while gripping. Palette hand `button1` pins it visible or releases it.
-- **Pointing:** while the carousel is shown the tool hand carries a laser: a thin beam on top of the scene that ends in a dot at the point it hits (a fixed 0.6 m beam when it hits nothing). The face under the dot highlights and a haptic tick marks the change; the trigger activates it.
+- **Pointing:** the tool hand points with its laser or its tip (see Pointer below). The face under the pointer highlights and a haptic tick marks the change; the trigger activates it.
 
 ### Panels (initial)
 
@@ -63,7 +64,7 @@ The carousel is a prism around the long axis of the palette controller. It is at
 | Tools | Teleport, Line, Cube, Select, Drag, Working plane (the inherited tools, until replaced) |
 | Edit | Undo, Redo, Delete |
 | View | Reset view, Overlays (Model tree and Tasks), Work plane, Reload scene, Reset layout |
-| Session | Close VR |
+| Session | Pointer (laser or tip), Angle + and Angle - (tip angle), Length + and Length - (tip length), Close VR |
 
 Planned: Create (primitives, milestone M1), Modify (push/pull, boolean, mirror, pattern), Values (numeric keypad, variables, milestone M3), Settings (handedness, comfort, snapping).
 
@@ -82,11 +83,26 @@ Each panel has a title bar with a grip mark on its right. The layout is a JSON d
 
 Moving single faces between slots and panels, and hiding faces, is part of U3.
 
+## Pointer
+
+Every controller has a pointer pose derived from its aim pose and three settings, which the Session panel changes and `%APPDATA%\BlocksCAD\settings.json` keeps:
+
+- **Mode: laser or tip.** Both modes can be compared and switched at any time with the Pointer face.
+- **Angle:** the pointer is tilted down from the controller axis by this angle (steps of 5 degrees, -90 to 90, default 0). It follows the roll of the controller.
+- **Length:** the distance of the tip from the controller (steps of 1 cm, 0 to 40 cm, default 10 cm, shown in the document unit).
+
+**Laser.** A thin beam from the tool hand along the tilted aim direction, drawn on top of the scene and ending in a dot at the point it hits (0.6 m long when it hits nothing). Panels are pointed at with the ray; models are picked with the ray.
+
+**Tip.** Like the brush tip of Open Brush: a small sphere on a thin stem in front of both controllers, at the tip length along the tilted direction, drawn on top of the scene. The tip is the selector:
+
+- panels react to what the tip touches: a panel is touched when the tip is within 3 cm in front of its plate (or up to 1.5 cm behind it) and inside it; the sphere lights up while it touches; the trigger presses a face or lifts a panel by its title bar, as with the laser;
+- tools pick with the tip: the pointer pose of each hand (the tip position and the tilted orientation) replaces the aim pose for everything the tools do, and a model is picked only within 3 cm in front of the tip, so objects are selected by touching them. The inherited ray is not drawn.
+
 ## Tool hand
 
 | Input | Action |
 |---|---|
-| Trigger | primary action of the tool; press a face when pointing at the carousel; hold on a title bar to lift a panel |
+| Trigger | primary action of the tool; press a face when pointing (laser) or touching (tip) at the carousel; hold on a title bar to lift a panel |
 | Grip | grab the world or an object |
 | Stick up/down | tool option (size, segments, grid step) with a live readout |
 | Stick left/right | tool option 2 (cycle shape or mode) |

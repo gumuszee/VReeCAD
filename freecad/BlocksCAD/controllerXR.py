@@ -69,7 +69,10 @@ class xrController:
         self.iden = iden
         self.buttons_state = ButtonsState()
         self.con_localtransform = SoTransform()
-        self.con_transform = SoTransform()
+        self.con_transform = SoTransform()      # the pointer pose: what tools pick with (the aim pose, or the tip in tip mode)
+        self.aim_transform = SoTransform()      # the aim pose: where the generated controller shape is drawn
+        self.reach = None                       # metres a pick ray reaches (tip mode: the tip touches); None is unlimited
+        self.ray_enabled = True                 # tip mode shows no inherited ray
         if ray:
             self.ray_node = SoSwitch()
             self.add_picking_ray()
@@ -89,7 +92,7 @@ class xrController:
         con_sep.addChild(unpickable)
         self.fallback_switch = SoSwitch()
         fallback_sep = SoSeparator()
-        fallback_sep.addChild(self.con_transform)
+        fallback_sep.addChild(self.aim_transform)
         self.fallback_model = build_fallback("left" if self.iden == 0 else "right")
         fallback_sep.addChild(self.fallback_model.root)
         self.fallback_switch.addChild(fallback_sep)
@@ -176,18 +179,21 @@ class xrController:
     def get_ray_scenegraph(self):
         return self.ray_node
 
-    def update_pose(self, position, orientation, world_transform):
-        """Aim pose in the stage frame: position (x, y, z) and orientation quaternion (x, y, z, w)."""
-        con_rot = SbRotation(*orientation)
-        con_pos = SbVec3f(*position)
-        con_worldtransform = SoTransform()
-        con_worldtransform.copyFieldValues(world_transform)
-        self.con_localtransform.translation.setValue(con_pos)
-        self.con_localtransform.rotation.setValue(con_rot)
-        # combine real hmd and artificial (stick-driven) movement
-        con_worldtransform.combineLeft(self.con_localtransform)
-        self.con_transform.copyFieldValues(con_worldtransform)
-        self.con_transform.center.setValue(SbVec3f(0, 0, 0))
+    def update_pose(self, position, orientation, world_transform, pointer_position=None, pointer_orientation=None):
+        """Aim pose in the stage frame: position (x, y, z) and orientation quaternion (x, y, z, w). The pointer pose (laser origin
+        and direction, or the tip) defaults to the aim pose; picking and the tools use the pointer pose."""
+        self._set_transform(self.aim_transform, position, orientation, world_transform)
+        self._set_transform(self.con_transform, pointer_position or position, pointer_orientation or orientation, world_transform)
+
+    def _set_transform(self, target, position, orientation, world_transform):
+        self.con_localtransform.translation.setValue(SbVec3f(*position))
+        self.con_localtransform.rotation.setValue(SbRotation(*orientation))
+        combined = SoTransform()
+        combined.copyFieldValues(world_transform)
+        # combine real hmd and artificial movement
+        combined.combineLeft(self.con_localtransform)
+        target.copyFieldValues(combined)
+        target.center.setValue(SbVec3f(0, 0, 0))
 
     def find_ray_axis(self):
         rot = self.con_transform.rotation.getValue()
@@ -195,7 +201,7 @@ class xrController:
         return ray_axis
 
     def show_ray(self):
-        if (self.ray_node):
+        if self.ray_node and self.ray_enabled:
             self.ray_node.whichChild = SO_SWITCH_ALL
 
     def hide_ray(self):
@@ -205,7 +211,7 @@ class xrController:
     # this is used if the ray should show point calculated elsewhere
     # if there is no point it will show just ray, without sphere at the end
     def show_ray_ext(self, end_vec=None):
-        if not (self.ray_node):
+        if not (self.ray_node and self.ray_enabled):
             return SbVec3f(0, 0, 0)
         self.ray_node.whichChild = SO_SWITCH_ALL
         ray_axis = self.find_ray_axis()
@@ -235,6 +241,8 @@ class xrController:
         ray_axis = self.find_ray_axis()
         ray_start_vec = self.con_transform.translation.getValue()
         ray_end_vec = self.con_transform.translation.getValue() - ray_axis
+        if self.reach is not None:
+            far_plane = min(far_plane, self.reach)
 
         # picking ray
         con_pick_action = SoRayPickAction(vp_reg)

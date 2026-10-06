@@ -24,7 +24,6 @@ from freecad.BlocksCAD.ui import ring as rg
 from freecad.BlocksCAD.ui import style
 
 DEPTH = 0.004
-MAX_DOTS = 8
 TITLE_H = rg.TITLE_Y[1] - rg.TITLE_Y[0]
 TITLE_CENTRE = (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2
 
@@ -72,9 +71,32 @@ class _Cell:
         self.sep.addChild(_at(x, y, 0.0))
         self.plate_color = _plate(self.sep, rg.CELL, rg.CELL, style.FACE if face_label is not None else style.EMPTY)
         self.text_color = None
+        self.label = face_label
         if face_label is not None:
-            self.text_color = _text(self.sep, lay.wrap_label(face_label), 0.0, 0.0, DEPTH * 0.5 + 0.0005, style.TEXT)
+            text_sep = coin.SoSeparator()
+            self._text_move = _at(0.0, 0.0, DEPTH * 0.5 + 0.0005)
+            text_sep.addChild(self._text_move)
+            self.text_color = style.color(style.TEXT)
+            text_sep.addChild(self.text_color)
+            text_sep.addChild(style.text_scale())
+            self._text = coin.SoText3()
+            self._text.justification = coin.SoText3.CENTER
+            text_sep.addChild(self._text)
+            self.sep.addChild(text_sep)
+            self._write(face_label)
         parent.addChild(self.sep)
+
+    def _write(self, label):
+        lines = lay.wrap_label(label)
+        self._text_move.translation.setValue(0.0, (len(lines) - 1) * 0.5 * style.LINE_HEIGHT - 0.0035, DEPTH * 0.5 + 0.0005)
+        self._text.string.setNum(len(lines))
+        self._text.string.setValues(0, len(lines), lines)
+
+    def set_label(self, label):
+        """Change the text of the face (faces that show a value)."""
+        if self.text_color is not None and label != self.label:
+            self.label = label
+            self._write(label)
 
     def set_state(self, hover, active, has_face):
         color = style.EMPTY if not has_face else style.ACTIVE if active else style.HOVER if hover else style.FACE
@@ -97,37 +119,15 @@ class _Panel:
         _text(sep, [page.name], -rg.GRID_W / 2 + 0.008, TITLE_CENTRE, DEPTH * 0.5 + 0.0005, style.TEXT_DIM,
               coin.SoText3.LEFT)
         for i in (-1, 0, 1):   # grooves: the title bar is the handle for lifting the panel
-            _plate(sep, 0.016, 0.0016, style.DOT, rg.GRID_W / 2 - 0.016, TITLE_CENTRE + i * 0.006, DEPTH * 0.5)
-        self.dots = []
-        for _ in range(MAX_DOTS):
-            dot_switch = coin.SoSwitch()
-            dot_switch.whichChild = coin.SO_SWITCH_NONE
-            dot_sep = coin.SoSeparator()
-            move = _at(0.0, rg.DOT_Y, DEPTH * 0.5)
-            dot_sep.addChild(move)
-            material = style.color(style.DOT)
-            dot_sep.addChild(material)
-            sphere = coin.SoSphere()
-            sphere.radius = 0.0035
-            dot_sep.addChild(sphere)
-            dot_switch.addChild(dot_sep)
-            sep.addChild(dot_switch)
-            self.dots.append((dot_switch, move, material))
+            _plate(sep, 0.016, 0.0016, style.GROOVE, rg.GRID_W / 2 - 0.016, TITLE_CENTRE + i * 0.006, DEPTH * 0.5)
         self.cells = []
         for slot, face_id in enumerate(page.slots):
             col, row = slot % lay.COLS, slot // lay.COLS
             x = (col - (lay.COLS - 1) / 2) * (rg.CELL + rg.GAP)
-            y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP)
+            y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
             face = faces.get(face_id) if face_id else None
             self.cells.append((_Cell(sep, x, y, face.label if face else None), face))
         self.switch.addChild(sep)
-
-    def set_dots(self, count, current):
-        count = min(count, MAX_DOTS)
-        for i, (dot_switch, move, material) in enumerate(self.dots):
-            dot_switch.whichChild = coin.SO_SWITCH_ALL if i < count and count > 1 else coin.SO_SWITCH_NONE
-            move.translation.setValue((i - (count - 1) / 2) * 0.014, rg.DOT_Y, DEPTH * 0.5)
-            material.rgb = coin.SbColor(*(style.DOT_ON if i == current else style.DOT))
 
 
 class _Ghost:
@@ -246,14 +246,13 @@ class RingView:
         s = 0.5 + 0.5 * fade
         transform.scaleFactor.setValue(s, s, s)
 
-    def update(self, ring, result, layout, faces, head, active_actions=()):
+    def update(self, ring, result, layout, faces, head, active_actions=(), labels=None):
         if ring.fade <= 0.02:
             self.root.whichChild = coin.SO_SWITCH_NONE
             return
         if self.needs_build(layout):
             self.build(layout, faces)
         self.root.whichChild = coin.SO_SWITCH_ALL
-        sides = ring.display_sides()
         for index, view in enumerate(self._panels):
             pose = ring.poses.get(index)
             if pose is None:
@@ -261,7 +260,6 @@ class RingView:
                 continue
             view.switch.whichChild = coin.SO_SWITCH_ALL
             self._place(view.transform, pose, ring.origin, ring.fade)
-            view.set_dots(len(sides), pose.side)
             title = style.HOVER if result.hover_title == index else style.PLATE
             view.title_color.rgb = coin.SbColor(*title)
             under_ray = result.drop_marker is not None and result.drop_marker[0] == index
@@ -269,6 +267,8 @@ class RingView:
             for slot, (cell, face) in enumerate(view.cells):
                 hovered = result.hover == (index, slot)
                 active = face is not None and face.action in active_actions
+                if face is not None and labels and face.id in labels:
+                    cell.set_label(labels[face.id])
                 cell.set_state(hovered, active, face is not None)
         for side, ghost_view in self._ghosts.items():
             if side not in ring.ghosts:

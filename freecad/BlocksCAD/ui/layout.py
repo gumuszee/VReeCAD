@@ -116,6 +116,24 @@ class Layout:
         self.pages = [self.pages[i] for i in order]
         return order.index(page)
 
+    def add_missing(self, default):
+        """Place the faces of the `default` layout that this layout lacks (faces added since it was saved) in the first free slot of
+        the page of the same name, else of the first page with room. Returns whether anything was added."""
+        present = {f for p in self.pages for f in p.slots if f}
+        changed = False
+        for default_page in default.pages:
+            for face in default_page.slots:
+                if not face or face in present:
+                    continue
+                home = [p for p in self.pages if p.name == default_page.name]
+                for page in home + self.pages:
+                    if None in page.slots:
+                        page.slots[page.slots.index(None)] = face
+                        present.add(face)
+                        changed = True
+                        break
+        return changed
+
     def face_at(self, page, slot):
         return self.pages[page].slots[slot]
 

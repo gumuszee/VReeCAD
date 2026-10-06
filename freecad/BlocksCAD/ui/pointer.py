@@ -81,3 +81,62 @@ class Pointer:
         if end is not None:
             self._dot_xf.translation.setValue(*end)
         self.root.whichChild = coin.SO_SWITCH_ALL
+
+
+class TipMarker:
+    """The tip of a controller in tip mode (docs/ux-design.md, Pointer): a small sphere at the tip on a thin stem that joins it to the
+    controller, drawn on top of the scene. The sphere is highlighted while it touches something."""
+    STEM_RADIUS = 0.001
+    TIP_RADIUS = 0.006
+
+    def __init__(self):
+        self.root = coin.SoSwitch()
+        self.root.whichChild = coin.SO_SWITCH_NONE
+        sep = coin.SoSeparator()
+        pick = coin.SoPickStyle()
+        pick.style = coin.SoPickStyle.UNPICKABLE
+        sep.addChild(pick)
+        light = coin.SoLightModel()
+        light.model = coin.SoLightModel.BASE_COLOR
+        sep.addChild(light)
+        depth = coin.SoDepthBuffer()
+        depth.test.setValue(False)
+        depth.getField("write").setValue(False)
+        sep.addChild(depth)
+        stem = coin.SoSeparator()
+        stem.addChild(style.color((0.4, 0.5, 0.65)))
+        self._stem_xf = coin.SoTransform()
+        stem.addChild(self._stem_xf)
+        self._stem = coin.SoCylinder()
+        self._stem.radius = self.STEM_RADIUS
+        stem.addChild(self._stem)
+        sep.addChild(stem)
+        tip = coin.SoSeparator()
+        self._color = style.color(IDLE)
+        tip.addChild(self._color)
+        self._tip_xf = coin.SoTranslation()
+        tip.addChild(self._tip_xf)
+        sphere = coin.SoSphere()
+        sphere.radius = self.TIP_RADIUS
+        tip.addChild(sphere)
+        sep.addChild(tip)
+        self.root.addChild(sep)
+
+    def hide(self):
+        self.root.whichChild = coin.SO_SWITCH_NONE
+
+    def show(self, start, tip, touching=False):
+        """Draw the tip at `tip` with its stem from `start` (the controller)."""
+        span = mu.sub(tip, start)
+        length = mu.length(span)
+        if length > 1e-3:
+            direction = mu.mul(span, 1.0 / length)
+            self._stem.height = length
+            self._stem_xf.translation.setValue(*mu.add(start, mu.mul(span, 0.5)))
+            self._stem_xf.rotation.setValue(*mu.quat_between((0.0, 1.0, 0.0), direction))
+            self._stem_xf.scaleFactor.setValue(1.0, 1.0, 1.0)
+        else:
+            self._stem.height = 1e-4
+        self._tip_xf.translation.setValue(*tip)
+        self._color.rgb = coin.SbColor(*(HIT if touching else IDLE))
+        self.root.whichChild = coin.SO_SWITCH_ALL

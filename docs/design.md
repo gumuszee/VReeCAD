@@ -28,7 +28,7 @@ profiles.py abstract input -> OpenXR path per interaction profile (data, see inp
 gltf.py     GLB reader;  render/  gltf_coin.py (glTF -> Coin3D), controller_shape.py (generated), offscreen.py (image render)
 commonXR.py XRwidget: OpenXR session, swapchains, Coin scene, render loop, inherited interact_* handlers (to be split: rig*)
 core/       mathutil.py (vector/quaternion math), navigation.py (grip navigation, home pose), units.py (measurement systems, ruler ticks); snapping*, transactions*
-ui/         controller.py (navigation + carousel + ruler + actions), ring.py (carousel logic and geometry), ring_view.py, ruler.py, pointer.py (laser), style.py (colours, font), layout.py (faces, panels, sides, JSON), defaults.py; numeric keypad*, quick radial*, tool tips*, toasts*
+ui/         controller.py (navigation + carousel + ruler + actions), ring.py (carousel logic and geometry), ring_view.py, ruler.py, pointer.py (laser and tip), pointing.py (pointer pose), settings.py (user settings), style.py (colours, font), layout.py (faces, panels, sides, JSON), defaults.py; numeric keypad*, quick radial*, tool tips*, toasts*
 tools/      base.py, registry.py, manager.py, legacy.py (the six inherited modes as tools); new tools: one module each
 core/*      picking/highlight, preview ghosts, transactions (undo), units, parameter binding (further modules)
 cad/*       thin wrappers creating/editing FreeCAD features (Part primitives, Sketcher, PartDesign, booleans, Attacher)

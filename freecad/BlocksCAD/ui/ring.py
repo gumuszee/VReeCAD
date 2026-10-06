@@ -30,6 +30,7 @@ from typing import Dict, List, Optional, Tuple
 
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.ui import layout as lay
+from freecad.BlocksCAD.ui import pointing
 from freecad.BlocksCAD.ui.layout import COLS, ROWS
 
 CELL = 0.05            # metres, face edge
@@ -37,9 +38,9 @@ GAP = 0.008
 GRID_W = COLS * CELL + (COLS - 1) * GAP
 GRID_H = ROWS * CELL + (ROWS - 1) * GAP
 PANEL_W = GRID_W + 0.02
-PANEL_H = GRID_H + 0.08
-TITLE_Y = (GRID_H / 2 + 0.004, GRID_H / 2 + 0.036)   # title bar, the handle for lifting a panel
-DOT_Y = -(GRID_H / 2 + 0.022)
+PANEL_H = GRID_H + 0.05
+GRID_Y = -0.015        # centre of the grid of faces in panel coordinates (origin at the centre of the panel plate)
+TITLE_Y = (GRID_Y + GRID_H / 2 + 0.004, GRID_Y + GRID_H / 2 + 0.036)   # title bar, the handle for lifting a panel
 PANEL_GAP = 0.012
 FORWARD = 0.09         # distance of the carousel centre in front of the grip point, along the controller
 RADIUS_MIN = 0.09      # distance of the side planes from the controller axis
@@ -50,6 +51,8 @@ FADE_RATE = 8.0        # per second
 TURN_RATE = 14.0       # exponential approach rate of the carousel angle
 POINT_COS = -0.3       # sides turned further away than this cannot be pointed at
 EDGE_ZONE = 0.5        # while lifting: the outer quarter above and below a panel (fraction of its half height)
+TIP_FRONT = 0.03       # a tip within this distance in front of a panel touches it
+TIP_BEHIND = 0.015     # and this far behind its plate (pushing through)
 
 DropTarget = Tuple[int, int, Optional[int], bool]    # (side, row, page to insert before or None, new row at `row`)
 
@@ -211,11 +214,27 @@ class PaletteRing:
         rel = mu.sub(point, pose.centre)
         return mu.dot(rel, pose.u), mu.dot(rel, pose.v)
 
+    def _candidates(self):
+        return list(self.poses.items()) + [(None, p) for p in self.ghosts.values()]
+
+    def _make_hit(self, page, pose, point, distance):
+        """The `Hit` for a point on the plane of a panel (or ghost), or None when it lies outside the plate."""
+        x, y = self._locate(pose, point)
+        if abs(x) > PANEL_W / 2 or abs(y) > PANEL_H / 2:
+            return None
+        fy = y / (PANEL_H / 2)
+        zone = "above" if fy > EDGE_ZONE else "below" if fy < -EDGE_ZONE else "left" if x < 0 else "right"
+        if page is None:
+            return Hit("ghost", pose.side, 0, None, None, point, distance, zone)
+        if TITLE_Y[0] <= y <= TITLE_Y[1]:
+            return Hit("title", pose.side, pose.row, page, None, point, distance, zone)
+        slot = self.locate_slot(x, y - GRID_Y)
+        return Hit("face" if slot is not None else "body", pose.side, pose.row, page, slot, point, distance, zone)
+
     def hit_test(self, origin, direction):
         """Ray against the panels that face it. Returns the nearest `Hit` or None. Needs `layout_poses` first."""
-        candidates = list(self.poses.items()) + [(None, p) for p in self.ghosts.values()]
         best = None
-        for page, pose in candidates:
+        for page, pose in self._candidates():
             if pose.cos < POINT_COS:
                 continue
             denom = mu.dot(direction, pose.n)
@@ -224,20 +243,23 @@ class PaletteRing:
             t = mu.dot(mu.sub(pose.centre, origin), pose.n) / denom
             if t <= 0:
                 continue
-            point = mu.add(origin, mu.mul(direction, t))
-            x, y = self._locate(pose, point)
-            if abs(x) > PANEL_W / 2 or abs(y) > PANEL_H / 2:
+            hit = self._make_hit(page, pose, mu.add(origin, mu.mul(direction, t)), t)
+            if hit is not None and (best is None or t < best.distance):
+                best = hit
+        return best
+
+    def hit_tip(self, tip):
+        """The panel a tip point touches: within `TIP_FRONT` in front of its plate or `TIP_BEHIND` behind it. Returns the `Hit`
+        (the point is the tip projected onto the plate) or None."""
+        best = None
+        for page, pose in self._candidates():
+            if pose.cos < POINT_COS:
                 continue
-            fy = y / (PANEL_H / 2)
-            zone = "above" if fy > EDGE_ZONE else "below" if fy < -EDGE_ZONE else "left" if x < 0 else "right"
-            if page is None:
-                hit = Hit("ghost", pose.side, 0, None, None, point, t, zone)
-            elif TITLE_Y[0] <= y <= TITLE_Y[1]:
-                hit = Hit("title", pose.side, pose.row, page, None, point, t, zone)
-            else:
-                slot = self.locate_slot(x, y)
-                hit = Hit("face" if slot is not None else "body", pose.side, pose.row, page, slot, point, t, zone)
-            if best is None or t < best.distance:
+            d = mu.dot(mu.sub(tip, pose.centre), pose.n)
+            if d > TIP_FRONT or d < -TIP_BEHIND:
+                continue
+            hit = self._make_hit(page, pose, mu.sub(tip, mu.mul(pose.n, d)), abs(d))
+            if hit is not None and (best is None or abs(d) < best.distance):
                 best = hit
         return best
 
@@ -268,7 +290,8 @@ class PaletteRing:
         self.hover = self.hover_title = self.lifted = self._target = None
         self.poses, self.ghosts = {}, {}
 
-    def update(self, frame, navigating=False):
+    def update(self, frame, navigating=False, pointers=None):
+        """One frame. `pointers` holds the `pointing.PointerPose` of each hand; without it the tool hand casts a ray along its aim."""
         result = RingResult()
         palette, tool = frame.hands[self.palette_hand], frame.hands[self.tool_hand]
         pose = palette.grip_pose if palette.grip_pose.tracked else palette.aim
@@ -310,10 +333,10 @@ class PaletteRing:
         self.layout_poses(pose)
 
         # ray hover, activation and rearranging
+        pointer = pointers[self.tool_hand] if pointers is not None else pointing.pointer_pose(tool.aim)
         hit = None
-        if tool.aim.tracked and self.fade > 0.8:
-            direction = mu.rotate(tool.aim.orientation, (0.0, 0.0, -1.0))
-            hit = self.hit_test(tool.aim.position, direction)
+        if pointer.tracked and self.fade > 0.8:
+            hit = self.hit_tip(pointer.position) if pointer.tip else self.hit_test(pointer.position, pointer.direction)
         previous = (self.hover, self.hover_title, self._target)
         self.hover = (hit.page, hit.slot) if hit is not None and hit.kind == "face" else None
         self.hover_title = hit.page if hit is not None and hit.kind == "title" else None
@@ -349,9 +372,12 @@ class PaletteRing:
                     result.dropped = (page,) + target
                     result.haptics.append((self.tool_hand, 0.5, 0.04))
                 self._target = None
-            elif tool.aim.tracked:
-                direction = mu.rotate(tool.aim.orientation, (0.0, 0.0, -1.0))
-                result.lift_point = mu.add(tool.aim.position, mu.mul(direction, self._lift_distance if hit is None else hit.distance))
+            elif pointer.tracked:
+                if pointer.tip:
+                    result.lift_point = pointer.position if hit is None else hit.point
+                else:
+                    reach = self._lift_distance if hit is None else hit.distance
+                    result.lift_point = mu.add(pointer.position, mu.mul(pointer.direction, reach))
         result.lifted = self.lifted
         result.drop_target = self._target
         return result

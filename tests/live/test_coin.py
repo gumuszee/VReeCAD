@@ -108,6 +108,10 @@ class SimNavigationTest(unittest.TestCase):
             s.close()
 
 
+def sim_sub(a, b):
+    return tuple(x - y for x, y in zip(a, b))
+
+
 class SimUiTest(unittest.TestCase):
     def setUp(self):
         self.calls = []
@@ -177,6 +181,35 @@ class SimUiTest(unittest.TestCase):
         for _ in range(30):
             self.s.frame(0.02)
         self.assertEqual(self.s.ui.pointer.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
+    def test_tip_mode_shows_a_tip_on_both_controllers_instead_of_the_laser(self):
+        from pivy import coin
+        self.s.input.set_head(position=(0.0, 1.6, 0.0), look_at_point=(-0.25, 1.2, -0.35))
+        for _ in range(30):
+            self.s.frame(0.02)
+        self.assertEqual(self.s.ui.pointer.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.assertEqual([t.root.whichChild.getValue() for t in self.s.ui.tips], [coin.SO_SWITCH_NONE] * 2)
+        self.s.ui._change_pointer("pointer:mode")
+        self.s.frame(0.02)
+        self.assertEqual(self.s.ui.settings.pointer_mode, "tip")
+        self.assertEqual(self.s.ui.pointer.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        self.assertEqual([t.root.whichChild.getValue() for t in self.s.ui.tips], [coin.SO_SWITCH_ALL] * 2)
+        for hand in range(2):                      # the tip sits in front of the controller
+            aim = self.s.last_frame.hands[hand].aim
+            pointer = self.s.ui.pointer_poses[hand]
+            self.assertAlmostEqual(sum(c * c for c in sim_sub(pointer.position, aim.position)) ** 0.5, self.s.ui.settings.tip_length, places=6)
+
+    def test_the_pointer_faces_show_their_values_and_change_them(self):
+        self.assertEqual(self.s.ui.labels()["pointer.mode"], "Pointer: Laser")
+        self.assertEqual(self.s.ui.labels()["pointer.angle_up"], "Angle + 0\u00b0")
+        self.assertEqual(self.s.ui.labels()["pointer.length_up"], "Length + 100 mm")
+        self.s.ui._change_pointer("pointer:angle+")
+        self.s.ui._change_pointer("pointer:angle+")
+        self.s.ui._change_pointer("pointer:length-")
+        self.assertEqual(self.s.ui.labels()["pointer.angle_down"], "Angle - 10\u00b0")
+        self.assertEqual(self.s.ui.labels()["pointer.length_down"], "Length - 90 mm")
+        self.s.ui.set_unit_system("Imperial decimal (in, lb)")
+        self.assertEqual(self.s.ui.labels()["pointer.length_up"], "Length + 3.54 in")
 
     def test_the_overlay_is_the_last_child_of_the_scene(self):
         self.assertEqual(self.s.scene.findChild(self.s.ui.overlay), self.s.scene.getNumChildren() - 1)

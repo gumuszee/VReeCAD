@@ -29,7 +29,8 @@ from freecad.BlocksCAD.core import units
 from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.ui import defaults
 from freecad.BlocksCAD.ui import layout as lay
-from freecad.BlocksCAD.ui.pointer import Pointer
+from freecad.BlocksCAD.ui import pointing, settings as cfg
+from freecad.BlocksCAD.ui.pointer import Pointer, TipMarker
 from freecad.BlocksCAD.ui.ring import PaletteRing
 from freecad.BlocksCAD.ui.ring_view import RingView
 from freecad.BlocksCAD.ui.ruler import Ruler
@@ -45,19 +46,25 @@ class UiUpdate:
 
 class UiController:
     def __init__(self, tool_names, tool_label, actions: Dict[str, Callable], palette_hand=0, tool_hand=1,
-                 layout_path=None, use_user_layout=True, mm_to_stage=0.001):
+                 layout_path=None, use_user_layout=True, mm_to_stage=0.001, settings_path=None):
         self.actions = actions
         self.faces = defaults.build_faces(tool_names, tool_label)
         self._tool_names = list(tool_names)
         default = defaults.default_layout(self._tool_names)
         self.use_user_layout, self.layout_path = use_user_layout, layout_path
         self.layout = lay.load_layout(default, set(self.faces), layout_path) if use_user_layout else default
+        self.settings = cfg.load_settings(settings_path) if use_user_layout else cfg.Settings()
+        self.settings_path = settings_path
+        if use_user_layout and self.layout is not default and self.layout.add_missing(default):
+            self._save_layout()
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
         self.navigator = Navigator(modifier_hand=tool_hand)
         self.ring = PaletteRing(self.layout.sides(), palette_hand, tool_hand)
         self.view = RingView()
         self.ruler = Ruler()
         self.pointer = Pointer()
+        self.tips = [TipMarker(), TipMarker()]
+        self.pointer_poses = [None, None]     # `pointing.PointerPose` of each hand, set by `update`
         self.system = units.METRIC_MM
         self.mm_to_stage = mm_to_stage     # stage length of one document millimetre at world scale 1
         self.root = coin.SoSeparator()
@@ -67,6 +74,8 @@ class UiController:
         self.overlay.ref()
         self.overlay.addChild(self.ruler.root)
         self.overlay.addChild(self.pointer.root)
+        for tip in self.tips:
+            self.overlay.addChild(tip.root)
         self.active_actions = set()
 
     def set_unit_system(self, name):
@@ -96,9 +105,40 @@ class UiController:
         except OSError:
             pass   # the layout is a convenience; a failed write must not stop the session
 
+    def labels(self):
+        """Labels of the faces whose text shows a value, by face id."""
+        s = self.settings
+        return {
+            "pointer.mode": "Pointer: " + ("Tip" if s.pointer_mode == "tip" else "Laser"),
+            "pointer.angle_up": f"Angle + {s.tip_angle:.0f}\u00b0",
+            "pointer.angle_down": f"Angle - {s.tip_angle:.0f}\u00b0",
+            "pointer.length_up": "Length + " + units.format_length(s.tip_length * 1000.0, self.system),
+            "pointer.length_down": "Length - " + units.format_length(s.tip_length * 1000.0, self.system),
+        }
+
+    def _change_pointer(self, action):
+        s = self.settings
+        if action == "pointer:mode":
+            s.toggle_mode()
+        elif action == "pointer:angle+":
+            s.adjust_angle(1)
+        elif action == "pointer:angle-":
+            s.adjust_angle(-1)
+        elif action == "pointer:length+":
+            s.adjust_length(1)
+        elif action == "pointer:length-":
+            s.adjust_length(-1)
+        if self.use_user_layout:
+            try:
+                cfg.save_settings(s, self.settings_path)
+            except OSError:
+                pass   # settings are a convenience; a failed write must not stop the session
+
     def _run(self, action, out):
         if action == "layout:reset":
             self.reset_layout()
+        elif action.startswith("pointer:"):
+            self._change_pointer(action)
         else:
             handler = self.actions.get(action)
             if handler is not None:
@@ -120,8 +160,10 @@ class UiController:
             elif event[0] == "level":
                 out.haptics.append((self.tool_hand, 0.3, 0.03))
 
+        s = self.settings
+        self.pointer_poses = [pointing.pointer_pose(h.aim, s.pointer_mode, s.tip_angle, s.tip_length) for h in frame.hands]
         self.ring.set_sides(self.layout.sides())
-        result = self.ring.update(frame, navigating=self.navigator.navigating)
+        result = self.ring.update(frame, navigating=self.navigator.navigating, pointers=self.pointer_poses)
         out.haptics += result.haptics
         out.ray_end, out.consume_trigger = result.ray_end, result.consume_trigger
         if result.dropped is not None:
@@ -130,7 +172,7 @@ class UiController:
             self.ring.set_sides(self.layout.sides())
             self.ring.focus_side(self.layout.pages[index].side)
             self._save_layout()
-        self.view.update(self.ring, result, self.layout, self.faces, frame.head.position, self.active_actions)
+        self.view.update(self.ring, result, self.layout, self.faces, frame.head.position, self.active_actions, self.labels())
 
         if result.activated is not None:
             action = self.action_at(*result.activated)
@@ -153,12 +195,18 @@ class UiController:
         else:
             self.ruler.hide()
 
-        tool = frame.hands[self.tool_hand]
-        if self.ring.fade > 0.3 and tool.aim.tracked and not nav.navigating:
-            direction = mu.rotate(tool.aim.orientation, (0.0, 0.0, -1.0))
-            self.pointer.show(tool.aim.position, direction, result.ray_end)
+        tool_pointer = self.pointer_poses[self.tool_hand]
+        if s.pointer_mode == "laser" and self.ring.fade > 0.3 and tool_pointer.tracked and not nav.navigating:
+            self.pointer.show(tool_pointer.position, tool_pointer.direction, result.ray_end)
         else:
             self.pointer.hide()
+        for hand, marker in enumerate(self.tips):
+            ptr = self.pointer_poses[hand]
+            if s.pointer_mode == "tip" and ptr.tracked and not nav.navigating:
+                touching = hand == self.tool_hand and result.ray_end is not None
+                marker.show(frame.hands[hand].aim.position, ptr.position, touching)
+            else:
+                marker.hide()
         return out
 
     def close(self):

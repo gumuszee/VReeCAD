@@ -15,12 +15,14 @@ import freecad.BlocksCAD.ui.layout as _lay
 import freecad.BlocksCAD.ui.ring as _ring
 import freecad.BlocksCAD.ui.ring_view as _rv
 import freecad.BlocksCAD.ui.ruler as _ru
+import freecad.BlocksCAD.ui.settings as _cf
+import freecad.BlocksCAD.ui.pointing as _pg
 import freecad.BlocksCAD.ui.pointer as _pt
 import freecad.BlocksCAD.ui.defaults as _df
 import freecad.BlocksCAD.ui.controller as _ctl
 import freecad.BlocksCAD.backends.sim as _sim
 import freecad.BlocksCAD.render.offscreen as _off
-for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _ru, _pt, _df, _ctl, _sim):
+for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
     importlib.reload(_m)
 from pivy import coin as _coin
 
@@ -61,7 +63,7 @@ try:
     # hover the third face of the front panel
     _pose = _s.ui.ring.poses[0]
     _x = (2 - 1.5) * (_ring.CELL + _ring.GAP)
-    _y = (1 - 0) * (_ring.CELL + _ring.GAP)
+    _y = (1 - 0) * (_ring.CELL + _ring.GAP) + _ring.GRID_Y
     _target = _mu.add(_pose.centre, _mu.add(_mu.mul(_pose.u, _x), _mu.mul(_pose.v, _y)))
     _s.input.set_hand(1, position=_mu.add(_target, _mu.mul(_pose.n, 0.3)), point_at=_target)
     _s.frame(0.02)
@@ -75,6 +77,35 @@ try:
         _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_rolled.png"))
     _s.input.set_hand(0, orientation=_o)
+
+    # tip mode: the tip of the tool hand touches the third face, the Session panel shows the pointer faces
+    _s.ui.settings.pointer_mode = "tip"
+    for _ in range(8):
+        _s.frame(0.02)
+    _pose = _s.ui.ring.poses[0]
+    _x = (2 - 1.5) * (_ring.CELL + _ring.GAP)
+    _y = (1 - 0) * (_ring.CELL + _ring.GAP) + _ring.GRID_Y
+    _target = _mu.add(_pose.centre, _mu.add(_mu.mul(_pose.u, _x), _mu.mul(_pose.v, _y)))
+    _touch = _mu.add(_target, _mu.mul(_pose.n, 0.015))
+    _s.input.set_hand(1, position=_mu.add(_touch, _mu.mul(_pose.n, _s.ui.settings.tip_length)), point_at=_touch)
+    for _ in range(3):
+        _s.frame(0.02)
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_tip.png"))
+    print("tip hover:", _s.ui.ring.hover)
+    for _ in range(3):
+        _s.input.set_hand(0, stick=(1.0, 0.0))
+        _s.frame(0.02)
+        _s.input.set_hand(0, stick=(0.0, 0.0))
+        for _ in range(40):
+            _s.frame(0.02)
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_session.png"))
+    for _ in range(3):
+        _s.input.set_hand(0, stick=(-1.0, 0.0))
+        _s.frame(0.02)
+        _s.input.set_hand(0, stick=(0.0, 0.0))
+        for _ in range(40):
+            _s.frame(0.02)
+    _s.ui.settings.pointer_mode = "laser"
 
     # Edit next to Tools, View as a row above them
     _names = lambda: [page.name for page in _s.ui.layout.pages]

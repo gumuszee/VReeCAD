@@ -8,6 +8,7 @@ import support  # noqa: F401
 from freecad.BlocksCAD.backends.sim import SimInput
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.ui import layout as lay
+from freecad.BlocksCAD.ui import pointing
 from freecad.BlocksCAD.ui import ring as rg
 
 CONTROLLER = (-0.2, 1.15, -0.35)
@@ -33,7 +34,7 @@ class RingTest(unittest.TestCase):
         pose = self.ring.poses[page]
         col, row = slot % lay.COLS, slot // lay.COLS
         x = (col - (lay.COLS - 1) / 2) * (rg.CELL + rg.GAP)
-        y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP)
+        y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
         return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.n
 
     def panel_point(self, page, fx, fy):
@@ -268,6 +269,65 @@ class RingTest(unittest.TestCase):
         self.assertEqual(self.ring.display_sides()[2], [])
 
 
+    def tip_at(self, point, normal, gap):
+        """Put the tool hand so that its tip (tip mode, length 0.1) is `gap` in front of `point`."""
+        tip = mu.add(point, mu.mul(normal, gap))
+        self.sim.set_hand(1, position=mu.add(tip, mu.mul(normal, 0.1)), point_at=tip)
+
+    def run_tip(self, n=1):
+        result = None
+        for _ in range(n):
+            frame = self.sim.frame(0.02)
+            pointers = [pointing.pointer_pose(h.aim, "tip", 0.0, 0.1) for h in frame.hands]
+            result = self.ring.update(frame, pointers=pointers)
+        return result
+
+    def test_tip_touching_a_face_hovers_and_activates(self):
+        self.run_tip(30)
+        point, n = self.slot_point(5)
+        self.tip_at(point, n, 0.02)
+        r = self.run_tip()
+        self.assertEqual(r.hover, (0, 5))
+        self.assertTrue(r.consume_trigger)
+        self.assertLess(mu.length(mu.sub(r.ray_end, point)), 1e-6)       # the tip projected onto the plate
+        self.sim.set_hand(1, trigger=1.0)
+        self.assertEqual(self.run_tip().activated, (0, 5))
+
+    def test_tip_far_from_the_panel_does_nothing_and_pushing_through_still_touches(self):
+        self.run_tip(30)
+        point, n = self.slot_point(5)
+        self.tip_at(point, n, 0.08)
+        r = self.run_tip()
+        self.assertIsNone(r.hover)
+        self.assertFalse(r.consume_trigger)
+        self.tip_at(point, n, -0.01)
+        self.assertEqual(self.run_tip().hover, (0, 5))
+        self.tip_at(point, n, -0.04)
+        self.assertIsNone(self.run_tip().hover)
+
+    def test_a_tip_beside_the_panel_does_not_touch_it(self):
+        self.run_tip(30)
+        point, n = self.slot_point(0)
+        self.tip_at(mu.sub(point, mu.mul(self.ring.poses[0].u, 0.3)), n, 0.02)
+        self.assertIsNone(self.run_tip().hover)
+
+    def test_lifting_and_dropping_with_the_tip(self):
+        self.ring = rg.PaletteRing([[[0, 1]], [[2]]])
+        self.run_tip(30)
+        title, n = self.title_point(0)
+        self.tip_at(title, n, 0.02)
+        self.run_tip()
+        self.sim.set_hand(1, trigger=1.0)
+        self.run_tip()
+        self.assertEqual(self.ring.lifted, 0)
+        point, n = self.panel_point(1, 0.5, 0.0)
+        self.tip_at(point, n, 0.02)
+        r = self.run_tip()
+        self.assertEqual(r.drop_target, (0, 0, None, False))
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertEqual(self.run_tip().dropped, (0, 0, 0, None, False))
+
+
 class LayoutTest(unittest.TestCase):
     def make(self):
         return lay.Layout([lay.Page("Tools", ["a", "b", None]), lay.Page("View", ["c"])])
@@ -347,6 +407,17 @@ class LayoutTest(unittest.TestCase):
         layout.move_page(0, 2)                       # A leaves for a new side, B stays alone on the first
         self.assertEqual(self.names(layout), ["B", "C", "A"])
         self.assertEqual(layout.sides(), [[[0]], [[1]], [[2]]])
+
+    def test_faces_added_since_a_layout_was_saved_are_placed(self):
+        default = lay.Layout([lay.Page("Tools", ["a", "b"]), lay.Page("Session", ["x", "y", "z"])])
+        saved = lay.Layout([lay.Page("Tools", ["a"]), lay.Page("Session", ["x"])])
+        self.assertTrue(saved.add_missing(default))
+        self.assertEqual(saved.pages[0].slots[:2], ["a", "b"])               # b joins the page named Tools
+        self.assertEqual(saved.pages[1].slots[:3], ["x", "y", "z"])
+        self.assertFalse(saved.add_missing(default))                         # nothing left to add
+        renamed = lay.Layout([lay.Page("Mine", ["a", "x"])])
+        self.assertTrue(renamed.add_missing(default))                        # no page of that name: the first page with room
+        self.assertEqual(renamed.pages[0].slots[:5], ["a", "x", "b", "y", "z"])
 
     def test_move_page_back_onto_its_own_empty_side_changes_nothing(self):
         layout = self.three()
