@@ -25,7 +25,7 @@ import os
 import FreeCADGui as Gui
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
-import freecad.XR.commonXR as cxr
+import freecad.BlocksCAD.commonXR as cxr
 
 
 class XR_TPPCam_Toggle():

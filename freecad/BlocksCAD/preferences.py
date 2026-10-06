@@ -37,7 +37,7 @@ def reset_upd_flag():
 
 def preferences():
     return FreeCAD.ParamGet(
-        "User parameter:BaseApp/Preferences/Mod/freecad-xr-workbench")
+        "User parameter:BaseApp/Preferences/Mod/BlocksCAD")
 
 
 class VRPreferencesPage:

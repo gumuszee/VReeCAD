@@ -23,7 +23,7 @@
 
 import FreeCADGui as Gui
 
-from freecad.XR.controllerXR import AnInpEv  # trigger states enum
+from freecad.BlocksCAD.controllerXR import AnInpEv  # trigger states enum
 
 from PySide.QtWidgets import QApplication, QDockWidget
 from PySide.QtGui import QImage, QPainter, qGray, qRed, qGreen, qBlue, qAlpha, QMouseEvent

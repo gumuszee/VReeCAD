@@ -25,27 +25,27 @@ import os
 import FreeCADGui as Gui
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
-import freecad.XR.commonXR as cxr
+import freecad.BlocksCAD.commonXR as cxr
 
 
-class XR_Mirror_Disable():
-    """A command closing the XR viewer mirror"""
+class XR_Stop():
+    """A command closing the XR viewer"""
 
     def GetResources(self):
         return {
-            "Pixmap": "Display_disabled.svg",
-            "Accel": "M,D",  # a default shortcut (optional)
-            "MenuText": QT_TRANSLATE_NOOP("XR_MirrorDisable", "Disable mirror"),
-            "ToolTip": QT_TRANSLATE_NOOP("XR_MirrorDisable", "Disables the VR view mirroring")}
+            "Pixmap": "Glasses_disabled.svg",
+            "Accel": "X,C",  # a default shortcut (optional)
+            "MenuText": QT_TRANSLATE_NOOP("XR_Stop", "Close XR viewer"),
+            "ToolTip": QT_TRANSLATE_NOOP("XR_Stop", "Stops rendering in VR HMD")}
 
     def Activated(self):
-        cxr.close_xr_mirror()
+        cxr.close_xr_viewer()
         return
 
     def IsActive(self):
         """Here you can define if the command must be active or not (greyed) if certain conditions
         are met or not. This function is optional."""
-        return True
+        return True  # True or False
 
 
-Gui.addCommand("disableMirror", XR_Mirror_Disable())
+Gui.addCommand("stopXR", XR_Stop())

@@ -21,8 +21,8 @@
 # *                                                                         *
 # ***************************************************************************
 
-from freecad.XR.menuCoin import labelWidget
-from freecad.XR.documentInteraction import EditMode
+from freecad.BlocksCAD.menuCoin import labelWidget
+from freecad.BlocksCAD.documentInteraction import EditMode
 
 from pivy.coin import SoSeparator
 from pivy.coin import SoVertexProperty, SoLineSet, SoPointSet

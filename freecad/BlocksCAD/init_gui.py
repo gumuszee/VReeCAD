@@ -22,13 +22,13 @@
 
 from FreeCADGui import Workbench
 import FreeCADGui as Gui
-from freecad.XR import XRWorkbench_rc
+from freecad.BlocksCAD import XRWorkbench_rc
 
 
-class XRWorkbench (Workbench):
+class BlocksCADWorkbench (Workbench):
     def __init__(self):
-        self.__class__.MenuText = "Virtual Reality"
-        self.__class__.ToolTip = "Virtual Reality (OpenXR) workbench"
+        self.__class__.MenuText = "BlocksCAD"
+        self.__class__.ToolTip = "BlocksCAD - parametric CAD modelling in VR (OpenXR)"
         self.__class__.Icon = """
 /* XPM */
 static char * ico_xpm[] = {
@@ -60,7 +60,7 @@ static char * ico_xpm[] = {
         """This function is executed when the workbench is first activated.
         It is executed once in a FreeCAD session followed by the Activated function.
         """
-        from freecad.XR import startXR, stopXR, enableMirror, disableMirror, reloadScenegraph, toggleTPPCamera  # import here all the needed files that create your FreeCAD commands
+        from freecad.BlocksCAD import startXR, stopXR, enableMirror, disableMirror, reloadScenegraph, toggleTPPCamera  # import here all the needed files that create your FreeCAD commands
         self.list = ["startXR", "stopXR", "enableMirror", "disableMirror", "reloadScenegraph",
                      "toggleTPPCamera",]  # a list of command names created in the line above
 
@@ -72,7 +72,7 @@ static char * ico_xpm[] = {
             "Workbench", "Virtual Reality"), self.list)  # creates a new menu
         # self.appendMenu(["An existing Menu", "My submenu"], self.list) # appends a submenu to an existing menu
 
-        from freecad.XR import preferences
+        from freecad.BlocksCAD import preferences
         Gui.addLanguagePath(":/translations")
         Gui.addIconPath(":/icons")
         Gui.addPreferencePage(
@@ -100,4 +100,4 @@ static char * ico_xpm[] = {
         return "Gui::PythonWorkbench"
 
 
-Gui.addWorkbench(XRWorkbench())
+Gui.addWorkbench(BlocksCADWorkbench())

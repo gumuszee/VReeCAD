@@ -24,7 +24,7 @@ import os
 
 import FreeCADGui as Gui
 
-import freecad.XR.commonXR as cxr
+import freecad.BlocksCAD.commonXR as cxr
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 

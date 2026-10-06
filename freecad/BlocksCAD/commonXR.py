@@ -23,13 +23,13 @@
 # ***************************************************************************
 
 
-import freecad.XR.preferences as pref
-import freecad.XR.controllerXR as conXR
-import freecad.XR.movementXR as movXR
-import freecad.XR.menuCoin as menuCoin
-import freecad.XR.previewCoin as prCoin
-import freecad.XR.documentInteraction as docInter
-import freecad.XR.qtWidgetRender as qWRen
+import freecad.BlocksCAD.preferences as pref
+import freecad.BlocksCAD.controllerXR as conXR
+import freecad.BlocksCAD.movementXR as movXR
+import freecad.BlocksCAD.menuCoin as menuCoin
+import freecad.BlocksCAD.previewCoin as prCoin
+import freecad.BlocksCAD.documentInteraction as docInter
+import freecad.BlocksCAD.qtWidgetRender as qWRen
 from math import tan, pi
 import FreeCADGui as Gui
 from pivy.coin import SoTransform
