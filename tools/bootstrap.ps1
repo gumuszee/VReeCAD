@@ -26,6 +26,11 @@ Clone https://github.com/FreeCAD/FreeCAD                     "$RefsDir\FreeCAD"
 Clone https://github.com/kwahoo2/freecad-xr-workbench        "$RefsDir\freecad-xr-workbench"
 Clone https://github.com/icosa-foundation/open-blocks        "$RefsDir\open-blocks"
 Clone https://github.com/neka-nat/freecad-mcp                "$RefsDir\freecad-mcp"
+if (-not (Test-Path "$RefsDir\OpenXR-Docs\.git")) {
+    git clone --depth 1 --filter=blob:none --sparse https://github.com/KhronosGroup/OpenXR-Docs "$RefsDir\OpenXR-Docs" 2>&1 | Out-Null
+    git -C "$RefsDir\OpenXR-Docs" sparse-checkout set specification/sources/chapters/extensions/ext specification/sources/chapters/extensions/valve 2>&1 | Out-Null
+    "cloned $RefsDir\OpenXR-Docs (sparse: extension chapters)"
+} else { "have  $RefsDir\OpenXR-Docs" }
 
 Step "git remotes"
 if (-not (git -C $AddonDir remote | Select-String -SimpleMatch upstream)) {
