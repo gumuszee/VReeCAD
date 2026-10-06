@@ -600,3 +600,188 @@ class PrimitiveLiveTest(unittest.TestCase):
             self.assertTrue(s.ui_update.owns_stick)
         finally:
             s.close()
+
+
+class GrabLiveTest(unittest.TestCase):
+    """Picking and the Grab tool against real FreeCAD objects, driven through the Sim session."""
+
+    def setUp(self):
+        import FreeCAD as App
+        from freecad.BlocksCAD.cad import primitives as prim
+        self.App = App
+        self.doc = App.newDocument("BlocksCADGrab")
+        self.box = prim.create(self.doc, "Box", (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        self.s = None
+
+    def tearDown(self):
+        if self.s is not None:
+            self.s.close()
+        self.App.closeDocument(self.doc.Name)
+
+    def session(self):
+        from freecad.BlocksCAD.core import mathutil as mu, stage
+        s = self.s = sim.SimSession(None)
+        s.ui.settings.pointer_mode = "tip"
+        s.ui.settings.tip_angle = 0.0
+        s.select_tool("grab")
+        s.input.set_head(position=(0.0, 1.6, 0.4), look_at_point=stage.to_stage(s.navigator.world, (50.0, 50.0, 50.0)))
+        self.mu, self.stage = mu, stage
+        self.tip = s.ui.settings.tip_length
+        return s
+
+    def hand(self, index, point, doc_rotation=None, **inputs):
+        """Put the cursor (the tip) of a hand at a document point, the hand turned by `doc_rotation` (document axes)."""
+        mu, stage, s = self.mu, self.stage, self.s
+        world = s.navigator.world
+        base = stage.orientation_to_document(world, s.input.hands[index].aim.orientation) if doc_rotation is None else doc_rotation
+        q_stage = mu.quat_multiply(world.rotation, mu.quat_multiply(stage.Z_UP, base))
+        shift = mu.rotate(q_stage, (0.0, 0.0, -self.tip))
+        position = tuple(c - d for c, d in zip(stage.to_stage(world, point), shift))
+        s.input.set_hand(index, position=position, orientation=q_stage, **inputs)
+        s.frame(0.02)
+
+    def selection(self):
+        import FreeCADGui as Gui
+        return [(o.ObjectName, tuple(o.SubElementNames)) for o in Gui.Selection.getSelectionEx(self.doc.Name)]
+
+    def test_picking_prefers_a_corner_over_an_edge_over_a_face_over_the_inside(self):
+        from freecad.BlocksCAD.cad import picking
+        probe = lambda p: picking.pick(self.doc, p, 1000.0)
+        self.assertIsNone(probe((400.0, 400.0, 400.0)))
+        self.assertEqual(probe((3.0, 3.0, 3.0)).kind, "vertex")
+        edge = probe((50.0, 4.0, 4.0))
+        self.assertEqual((edge.kind, edge.name), ("edge", self.box.Name))
+        face = probe((50.0, 50.0, 96.0))
+        top = 1 + [f.CenterOfMass.z for f in self.box.Shape.Faces].index(100.0)
+        self.assertEqual((face.kind, face.sub), ("face", f"Face{top}"))
+        inside = probe((50.0, 50.0, 50.0))
+        self.assertEqual((inside.kind, inside.sub), ("object", ""))
+        self.box.Visibility = False
+        self.assertIsNone(probe((50.0, 50.0, 96.0)))                                          # hidden objects are not touched
+
+    def test_the_reach_shrinks_when_the_world_is_enlarged(self):
+        from freecad.BlocksCAD.cad import picking
+        self.assertEqual(picking.pick(self.doc, (50.0, 50.0, 125.0), 1000.0).kind, "face")     # 25 mm above the top: within 30 mm
+        self.assertIsNone(picking.pick(self.doc, (50.0, 50.0, 125.0), 500.0))                  # at twice the scale only 15 mm
+
+    def test_the_display_of_each_kind_of_element(self):
+        from freecad.BlocksCAD.cad import picking
+        self.assertEqual(len(picking.display(self.box, "Vertex1").markers), 1)
+        edge = picking.display(self.box, "Edge1")
+        self.assertEqual((len(edge.polylines), len(edge.triangles[1])), (1, 0))
+        face = picking.display(self.box, "Face1")
+        self.assertEqual((len(face.triangles[1]), len(face.polylines)), (2, 4))
+        self.assertEqual(len(picking.display(self.box, "").polylines), 12)
+        self.assertEqual(picking.kind_of("Face3"), "face")
+
+    def test_touching_an_object_highlights_it_and_leaving_removes_the_highlight(self):
+        from pivy import coin
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.assertEqual(s.highlights.hover.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.assertEqual(s.tool_manager.active._hover.kind, "face")
+        self.hand(1, (50.0, 50.0, 500.0))
+        self.assertEqual(s.highlights.hover.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        self.assertIsNone(s.tool_manager.active._hover)
+
+    def test_a_drag_moves_the_object_in_grid_steps_in_one_undo_step(self):
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (84.0, 50.0, 96.0), trigger=1.0)                       # 34 mm: snaps to 30
+        self.assertEqual(tuple(self.box.Placement.Base), (30.0, 0.0, 0.0))
+        self.assertTrue(s.ui.gesture_text.startswith("Move: 30 mm, 0, 0"))
+        self.hand(1, (84.0, 70.0, 126.0), trigger=1.0)
+        self.hand(1, (84.0, 70.0, 126.0), trigger=0.0)
+        self.assertEqual(tuple(self.box.Placement.Base), (30.0, 20.0, 30.0))
+        self.assertIsNone(s.ui.gesture_text)
+        self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Moved " + self.box.Label)
+        self.assertEqual(self.selection(), [(self.box.Name, ())])           # the moved object is selected as a whole
+        from freecad.BlocksCAD.cad import picking
+        self.assertEqual(picking.get_selection(self.doc), [(self.box.Name, "")])
+        self.doc.undo()
+        self.assertEqual(tuple(self.box.Placement.Base), (0.0, 0.0, 0.0))
+
+    def test_a_turn_of_the_hand_turns_the_object_in_steps_of_15_degrees_unless_the_mode_is_move(self):
+        import math
+        s = self.session()
+        mu = self.mu
+        rotation = lambda degrees: mu.quat_from_axis_angle((0.0, 0.0, 1.0), math.radians(degrees))
+        start = self.stage.orientation_to_document(s.navigator.world, s.input.hands[1].aim.orientation)
+        turned = mu.quat_multiply(rotation(100.0), start)
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (50.0, 50.0, 96.0), doc_rotation=turned, trigger=1.0)          # 100 degrees: snaps to 105
+        self.assertAlmostEqual(math.degrees(self.box.Placement.Rotation.Angle), 105.0, places=3)
+        self.hand(1, (50.0, 50.0, 96.0), doc_rotation=turned, trigger=0.0)
+        self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Moved and turned " + self.box.Label)
+        self.doc.undo()
+        self.assertAlmostEqual(self.box.Placement.Rotation.Angle, 0.0, places=6)
+        s.tool_manager.active.values["mode"] = "Move"
+        self.hand(1, (50.0, 50.0, 96.0), doc_rotation=start)
+        self.hand(1, (50.0, 50.0, 96.0), doc_rotation=start, trigger=1.0)
+        self.hand(1, (80.0, 50.0, 96.0), doc_rotation=mu.quat_multiply(rotation(90.0), start), trigger=1.0)
+        self.assertAlmostEqual(self.box.Placement.Rotation.Angle, 0.0, places=6)
+        self.assertEqual(tuple(self.box.Placement.Base), (30.0, 0.0, 0.0))
+        self.hand(1, (80.0, 50.0, 96.0), doc_rotation=start, trigger=0.0)
+
+    def test_a_tap_selects_the_touched_element_and_a_tap_on_nothing_clears_the_selection(self):
+        from pivy import coin
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        face = s.tool_manager.active._hover.sub
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=0.0)
+        self.assertEqual(self.selection(), [(self.box.Name, (face,))])
+        self.assertEqual(tuple(self.box.Placement.Base), (0.0, 0.0, 0.0))                      # a tap moves nothing
+        self.assertEqual(s.highlights.selected.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.hand(1, (400.0, 400.0, 400.0))
+        self.hand(1, (400.0, 400.0, 400.0), trigger=1.0)
+        self.hand(1, (400.0, 400.0, 400.0), trigger=0.0)
+        self.assertEqual(self.selection(), [])
+        self.assertEqual(s.highlights.selected.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
+    def test_the_trigger_of_the_other_hand_scales_the_size_properties_around_the_centre(self):
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(0, (150.0, 50.0, 96.0), trigger=1.0)                       # the hands are 100 mm apart
+        self.hand(0, (250.0, 50.0, 96.0), trigger=1.0)                       # 200 mm apart: twice the size
+        self.assertEqual((self.box.Length.Value, self.box.Width.Value, self.box.Height.Value), (200.0, 200.0, 200.0))
+        centre = self.box.Shape.BoundBox.Center
+        self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip((centre.x, centre.y, centre.z), (50.0, 50.0, 50.0))))
+        self.assertEqual(s.ui.gesture_text, "Scale: 200 %")
+        self.hand(1, (50.0, 50.0, 96.0), trigger=0.0)
+        self.hand(0, (250.0, 50.0, 96.0), trigger=0.0)
+        self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Scaled " + self.box.Label)
+        self.doc.undo()
+        self.assertEqual((self.box.Length.Value, tuple(self.box.Placement.Base)), (100.0, (0.0, 0.0, 0.0)))
+
+    def test_an_object_that_cannot_be_scaled_is_only_moved(self):
+        plain = self.doc.addObject("Part::Feature", "Plain")
+        plain.Shape = self.box.Shape.copy()
+        plain.Placement = self.App.Placement(self.App.Vector(300.0, 0.0, 0.0), self.App.Rotation())
+        self.doc.recompute()
+        self.box.Visibility = False
+        s = self.session()
+        before = plain.Shape.BoundBox.XLength
+        self.hand(1, (350.0, 50.0, 96.0))
+        self.hand(1, (350.0, 50.0, 96.0), trigger=1.0)
+        self.hand(0, (450.0, 50.0, 96.0), trigger=1.0)
+        self.hand(0, (550.0, 50.0, 96.0), trigger=1.0)
+        self.assertEqual(plain.Shape.BoundBox.XLength, before)
+        self.hand(1, (350.0, 50.0, 96.0), trigger=0.0)
+
+    def test_a_grip_cancels_the_grab(self):
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (80.0, 50.0, 96.0), trigger=1.0)
+        self.assertEqual(tuple(self.box.Placement.Base), (30.0, 0.0, 0.0))
+        s.input.set_hand(0, grip=1.0)
+        s.frame(0.02)
+        self.assertEqual(tuple(self.box.Placement.Base), (0.0, 0.0, 0.0))                      # the transaction was aborted
+        self.assertIsNone(s.ui.gesture_text)
+        s.input.set_hand(0, grip=0.0)
+        self.hand(1, (80.0, 50.0, 96.0), trigger=0.0)
+        self.assertEqual(tuple(self.box.Placement.Base), (0.0, 0.0, 0.0))

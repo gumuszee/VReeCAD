@@ -37,3 +37,8 @@ def to_document(world, point, mm_to_stage=MM_TO_STAGE):
 def to_stage(world, point_mm, mm_to_stage=MM_TO_STAGE):
     """The stage position of a document point (millimetres)."""
     return world.to_stage(mu.rotate(Z_UP, mu.mul(point_mm, mm_to_stage)))
+
+
+def orientation_to_document(world, orientation):
+    """The orientation (quaternion x, y, z, w) of a stage pose in document axes."""
+    return mu.quat_multiply(mu.quat_conjugate(Z_UP), mu.quat_multiply(mu.quat_conjugate(world.rotation), orientation))

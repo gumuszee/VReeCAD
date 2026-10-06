@@ -34,9 +34,11 @@ from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.core import stage, units
 from freecad.BlocksCAD.render.ghost import Ghost
+from freecad.BlocksCAD.render.highlight import Highlights
 from freecad.BlocksCAD.ui.controller import UiController
 from freecad.BlocksCAD.core.navigation import WorldPose
 import freecad.BlocksCAD.tools.primitives  # noqa: F401  (registers the tools)
+import freecad.BlocksCAD.tools.grab  # noqa: F401
 import freecad.BlocksCAD.tools.legacy  # noqa: F401
 from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
 from freecad.BlocksCAD.backends.openxr_models import RuntimeModels
@@ -492,6 +494,7 @@ class XRwidget(QOpenGLWidget):
         self.world_separator.addChild(self.doc_xr_transform)
         self.world_separator.addChild(self.sg)  # add FreeCAD active scenegraph
         self.world_separator.addChild(self.ghost.root)  # preview of the shape being made
+        self.world_separator.addChild(self.highlights.root)  # hover and selection
         self.cgrp = [SoGroup(), SoGroup()]  # group for camera
         self.sgrp = [SoGroup(), SoGroup()]  # group for scenegraph
         self.root_scene = [SoSeparator(), SoSeparator()]
@@ -635,6 +638,7 @@ class XRwidget(QOpenGLWidget):
     def setup_tool_services(self):
         """What the tools may use besides the input frame (docs/design.md, Architecture): the cursor, the document, the ghost."""
         self.ghost = Ghost()      # the preview of a shape being made, in document space (added next to the document scene)
+        self.highlights = Highlights()      # what the hand touches and what is selected, also in document space
         self.ui_consumes_trigger = False
         context = self.tools.ctx
         context.haptic = self.haptic
@@ -645,6 +649,10 @@ class XRwidget(QOpenGLWidget):
             "document": lambda: App.ActiveDocument,
             "trigger_free": lambda: not self.ui_consumes_trigger,
             "ghost": self.ghost,
+            "highlight": self.highlights,
+            "hand_rotation": lambda hand: stage.orientation_to_document(self.navigator.world,
+                                                                        self.input_frame.hands[hand].aim.orientation),
+            "mm_per_metre": lambda: 1.0 / (self.doc_xr_transform.scaleFactor.getValue()[0] * self.navigator.world.scale),
             "toast": self.ui.toast,
             "readout": self.ui.set_readout,
             "format_length": lambda mm: units.format_length(mm, self.ui.system),

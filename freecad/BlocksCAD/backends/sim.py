@@ -81,9 +81,11 @@ class SimSession:
         from pivy import coin
         from freecad.BlocksCAD import tools
         import freecad.BlocksCAD.tools.primitives  # noqa: F401  (registers the tools)
+        import freecad.BlocksCAD.tools.grab  # noqa: F401
         import freecad.BlocksCAD.tools.legacy  # noqa: F401
         from freecad.BlocksCAD.render.controller_shape import build_fallback
         from freecad.BlocksCAD.render.ghost import Ghost
+        from freecad.BlocksCAD.render.highlight import Highlights
         from freecad.BlocksCAD.ui.controller import UiController
         self._coin = coin
         self.input = SimInput(profile)
@@ -111,7 +113,10 @@ class SimSession:
             doc.addChild(document_scene)
         self.ghost = Ghost()                     # the preview of a shape being made lives in document space
         doc.addChild(self.ghost.root)
+        self.highlights = Highlights()           # hover and selection, also in document space
+        doc.addChild(self.highlights.root)
         self.scene.addChild(doc)
+        self.doc_scene = doc                     # where a script may attach more of the document (view provider nodes)
         self._setup_tools()
         self.hand_transforms = []
         self.hand_models = []
@@ -139,6 +144,9 @@ class SimSession:
             "document": self._document,
             "trigger_free": lambda: not (self.ui_update is not None and self.ui_update.consume_trigger),
             "ghost": self.ghost,
+            "highlight": self.highlights,
+            "hand_rotation": lambda hand: stage.orientation_to_document(self.navigator.world, self.last_frame.hands[hand].aim.orientation),
+            "mm_per_metre": lambda: 1.0 / (stage.MM_TO_STAGE * self.navigator.world.scale),
             "toast": self.ui.toast,
             "readout": self.ui.set_readout,
             "format_length": lambda mm: units.format_length(mm, self.ui.system),

@@ -136,6 +136,18 @@ The first tool of the palette makes parametric primitives (`tools/primitives.py`
 - A press that starts on the carousel or the radial does not start a shape; a grip pressed during a drag cancels it, as does choosing another tool. Without an open document a release makes nothing and a toast says so.
 - The grid is in document millimetres, whatever the scale of the world; zooming in with the grips and choosing a finer grid give finer shapes.
 
+### Grab tool
+
+The second tool of the palette touches, selects, moves, turns and scales objects (`tools/grab.py`, `cad/picking.py`, `cad/edit.py`, `core/grab.py`, `render/highlight.py`). The cursor is the tip of the tool hand, as in the Create tool.
+
+- **Touch:** the element the cursor touches is highlighted and a haptic tick marks every change: the nearest **vertex** (within 12 mm of the stage, a cross), else the nearest **edge** (20 mm, a curve), else the nearest **face** (30 mm, a translucent fill with its outline), else the **object** when the cursor is inside a solid (all its edges). The reach is measured on the stage, so it is a shorter length in the document when the world is enlarged. Hidden objects are not touched. The hover is blue, the selection orange; both are drawn over the model with bright lines where they are in front and dim lines where the model hides them.
+- **Tap** (press and release without moving anything) selects the touched element as FreeCAD's own selection, so what is selected in VR is selected on the desktop. A tap on nothing clears the selection.
+- **Grab:** the trigger pressed on an element grabs its object in one transaction. The object follows the hand as a rigid body: the cursor position is on the grid, so it moves in whole grid steps, and a turn of the hand turns the object about the cursor in steps of 15 degrees (the option Mode switches the turn off). The readout names the move ("Move: 30 mm, 0, 20 mm, turn 90 deg"). Releasing keeps the change and selects the object; one undo step takes it back. The change is made to the `Placement` of the feature.
+- **Scale:** the trigger of the other hand pressed during a grab scales the object through the size properties of its feature (`cad/edit.py`): the factor is the distance between the two cursors divided by their distance when the second trigger went down, every size is rounded to the grid and is at least one grid step long, and the centre of the object stays in place. The readout shows the factor. Releasing the second trigger goes back to moving from the pose the object has. Only objects made by the Create tool can be scaled (box, cylinder, cone, sphere, torus, wedge and prism); other objects are only moved.
+- **Cancel:** a grip pressed during a grab aborts it and the transaction restores the object; choosing another tool does the same.
+- **Options:** the stick up and down changes the grid (the same steps as the Create tool), left and right the mode (Move and rotate, Move).
+- A press that starts on the carousel or the radial does not grab.
+
 ### Tool options
 
 A tool declares up to two options (`ToolOption` in `tools/base.py`): a number with a range and a step, a length in millimetres (shown in the unit system of the document) or a choice from a list. While such a tool is active the stick of the tool hand belongs to its options:

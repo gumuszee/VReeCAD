@@ -25,6 +25,12 @@ import freecad.BlocksCAD.core.snapping as _sn
 import freecad.BlocksCAD.cad.primitives as _pm
 import freecad.BlocksCAD.render.ghost as _gh
 import freecad.BlocksCAD.tools.primitives as _tp
+import freecad.BlocksCAD.core.grab as _gb
+import freecad.BlocksCAD.cad.edit as _ed
+import freecad.BlocksCAD.cad.picking as _pk
+import freecad.BlocksCAD.cad.meshes as _ms
+import freecad.BlocksCAD.render.highlight as _hl
+import freecad.BlocksCAD.tools.grab as _tg
 import freecad.BlocksCAD.ui.ruler as _ru
 import freecad.BlocksCAD.ui.settings as _cf
 import freecad.BlocksCAD.ui.pointing as _pg
@@ -37,7 +43,7 @@ import freecad.BlocksCAD.tools.legacy as _tl
 import freecad.BlocksCAD.ui.controller as _ctl
 import freecad.BlocksCAD.backends.sim as _sim
 import freecad.BlocksCAD.render.offscreen as _off
-for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _sg, _sn, _pm, _gh, _tb, _tr, _tools, _tp, _tl, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
+for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _sg, _sn, _gb, _ed, _pk, _ms, _pm, _gh, _hl, _tb, _tr, _tools, _tp, _tg, _tl, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
     importlib.reload(_m)
 from pivy import coin as _coin
 
@@ -220,6 +226,61 @@ try:
     _s.input.set_hand(1, trigger=0.0, position=(0.25, 1.3, -0.25), point_at=(0.0, 1.3, -1.0))
     for _ in range(40):
         _s.frame(0.02)
+
+    # the Grab tool: what the tip touches is highlighted (face, edge, vertex), a tap selects it; shown on objects of a temporary document
+    import FreeCAD as _App
+    _previous = _App.ActiveDocument.Name if _App.ActiveDocument is not None else None
+    _temp = _App.newDocument("BlocksCADRender")
+    _nodes = []
+    try:
+        _pm.create(_temp, "Box", (200.0, -60.0, 0.0), (120.0, 120.0, 80.0))
+        _pm.create(_temp, "Cylinder", (340.0, -60.0, 0.0), (120.0, 120.0, 80.0))
+        _s.tool_manager.ctx.services["document"] = _s._document      # the primitive block above had cleared it
+        _s.ui.settings.pointer_mode = "tip"
+        _s.ui.settings.tip_angle = 0.0
+        import FreeCADGui as _Gui
+        _nodes = [_Gui.getDocument(_temp.Name).getObject(o.Name).RootNode for o in _temp.Objects]
+        for _node in _nodes:
+            _s.doc_scene.insertChild(_node, 2)             # before the previews and highlights, as in the headset host
+        _s.input.set_hand(1, position=_to_stage((260.0, 0.0, 72.0)), point_at=_to_stage((260.0, 0.0, -1000.0)))
+        _s.frame(0.02)
+        _shift = tuple(c - p for c, p in zip(_s.ui.cursor(_s.last_frame.hands[1]), _s.last_frame.hands[1].aim.position))
+        _s.select_tool("grab")
+        _s.input.set_head(position=_mu.add(_to_stage((330.0, 0.0, 40.0)), (0.1, 0.3, 0.5)), look_at_point=_to_stage((330.0, 0.0, 40.0)))
+        _shot = lambda name: _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_grab_" + name + ".png"))
+        for _name, _point in (("face", (260.0, 0.0, 72.0)), ("edge", (260.0, -57.0, 77.0)), ("vertex", (203.0, -57.0, 77.0))):
+            _cursor(_point)
+            for _ in range(3):
+                _s.frame(0.02)
+            _shot(_name)
+            _got = _sg.to_document(_s.navigator.world, _s.ui.cursor(_s.last_frame.hands[1]))
+            print("grab hover:", _name, "target", _point, "cursor", tuple(round(v, 1) for v in _got), "->", _s.tool_manager.active._hover)
+        _cursor((260.0, 0.0, 72.0), trigger=1.0)
+        _cursor((260.0, 0.0, 72.0), trigger=0.0)            # a tap selects the face
+        _cursor((400.0, -60.0 + 3.0, 77.0))                    # the cylinder edge under the tip
+        for _ in range(3):
+            _s.frame(0.02)
+        _shot("selected")
+        _cursor((260.0, 0.0, 72.0), trigger=1.0)
+        _cursor((290.0, 30.0, 102.0), trigger=1.0)           # drag the box by (30, 30, 30)
+        for _ in range(3):
+            _s.frame(0.02)
+        _shot("moving")
+        print("grab readout:", _s.ui.gesture_text)
+        _cursor((290.0, 30.0, 102.0), trigger=0.0)
+    finally:
+        for _node in _nodes:
+            _s.doc_scene.removeChild(_node)
+        _App.closeDocument(_temp.Name)
+        if _previous is not None and _previous in _App.listDocuments():
+            _App.setActiveDocument(_previous)
+        _s.tool_manager.active_name = None
+        _s.ui.settings.pointer_mode = "laser"
+        _s.ui.settings.tip_angle = 15.0
+        _s.input.set_head(position=_head, look_at_point=_ctrl)
+        _s.input.set_hand(1, trigger=0.0, position=(0.25, 1.3, -0.25), point_at=(0.0, 1.3, -1.0))
+        for _ in range(40):
+            _s.frame(0.02)
 
     # the carousel turns with the controller: roll the wrist a quarter turn
     _o = _s.input.hands[0].aim.orientation
