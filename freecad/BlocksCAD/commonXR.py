@@ -30,9 +30,20 @@ import freecad.BlocksCAD.menuCoin as menuCoin
 import freecad.BlocksCAD.previewCoin as prCoin
 import freecad.BlocksCAD.documentInteraction as docInter
 import freecad.BlocksCAD.qtWidgetRender as qWRen
+from freecad.BlocksCAD.input import InputTracker, Pose
+from freecad.BlocksCAD.tools import ToolManager, ToolContext
+from freecad.BlocksCAD.tools import registry as tool_registry
+from freecad.BlocksCAD.ui.palette import RadialPalette
+from freecad.BlocksCAD.ui.palette_view import PaletteView
+import freecad.BlocksCAD.tools.legacy  # registers the inherited tools
+from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
+from freecad.BlocksCAD.backends.openxr_models import RuntimeModels
+from freecad.BlocksCAD.render.gltf_coin import load_glb
+from freecad.BlocksCAD.render.controller_shape import animate as animate_fallback
 from math import tan, pi
 import FreeCADGui as Gui
 from pivy.coin import SoTransform
+from pivy.coin import SoTranslation
 from pivy.coin import SoGroup
 from pivy.coin import SbRotation
 from pivy.coin import SoEnvironment
@@ -270,6 +281,14 @@ class DockWidget(QDockWidget):
 
 
 class XRwidget(QOpenGLWidget):
+    @property
+    def interact_mode(self):
+        return InteractMode[self.tools.active_name.upper()]
+
+    @interact_mode.setter
+    def interact_mode(self, mode):
+        self.tools.activate(mode.name.lower())
+
     def __init__(self, parent=None, log_level=logging.WARNING):
         QOpenGLWidget.__init__(self, parent)
         self.log_level = log_level
@@ -349,6 +368,9 @@ class XRwidget(QOpenGLWidget):
         self.tracker_support = False
         self.steam_frame_support = False # Steam Frame controllers bindings extension
         self.render_model_support = False  # XR_EXT_render_model + XR_EXT_interaction_render_model
+        self.runtime_models = None
+        self.input = None
+        self.enabled_extensions = ()
         self.tpp_camera = None
         self.tpp_cam_enabled = False
         self.tpp_cam_available = False
@@ -364,6 +386,7 @@ class XRwidget(QOpenGLWidget):
         self.primary_con = 0
         # 0 is the left one - defined in hand_paths
         self.secondary_con = 1
+        self.tools = ToolManager(ToolContext(host=self, dominant=self.secondary_con))
         self.interact_mode = InteractMode.TELEPORT
         self.frame_duration = 0
         self.render_duration = 0
@@ -499,6 +522,14 @@ class XRwidget(QOpenGLWidget):
         self.status_label.set_location(
             SbVec3f(-0.1, 0.0, 0.0), SbRotation(0, 0, 0, 0))
         self.labels_separator.addChild(self.status_label.get_scenegraph())
+        self.palette = RadialPalette([(n, tool_registry.label_of(n)) for n in tool_registry.names()])
+        self.palette_view = PaletteView(self.palette)
+        self.palette_separator = SoSeparator()
+        self.palette_separator.addChild(self.xr_con[self.primary_con].get_global_transf())
+        palette_offset = SoTranslation()
+        palette_offset.translation.setValue(0.0, 0.1, 0.06)
+        self.palette_separator.addChild(palette_offset)
+        self.palette_separator.addChild(self.palette_view.root)
         for eye_index in range(2):
             self.root_scene[eye_index].ref()
             self.root_scene[eye_index].addChild(self.cgrp[eye_index])
@@ -520,6 +551,7 @@ class XRwidget(QOpenGLWidget):
                 self.edit_menu.get_menu_scenegraph())
             # and labels
             self.sgrp[eye_index].addChild(self.labels_separator)
+            self.sgrp[eye_index].addChild(self.palette_separator)
             # add world (scene without controllers and gui elements)
             self.sgrp[eye_index].addChild(self.world_separator)
             # add geometry preview objects
@@ -559,6 +591,7 @@ class XRwidget(QOpenGLWidget):
         self.tpp_sgrp.addChild(
             self.geo_prev.get_scenegraph())
         self.tpp_sgrp.addChild(self.qt_widgets_separator)
+        self.tpp_sgrp.addChild(self.palette_separator)
         # setup additional framebuffer for the TPP camera
         self.ctx.makeCurrent(self.offs_surface)
         w = self.size().width()
@@ -709,6 +742,7 @@ class XRwidget(QOpenGLWidget):
                 xr.EXT_INTERACTION_RENDER_MODEL_EXTENSION_NAME)
         for extension in requested_extensions:
             assert extension in discovered_extensions
+        self.enabled_extensions = tuple(requested_extensions)
         if pref.preferences().GetBool("UseHighestOpenXR", False):
             api_version = xr.Version(xr.XR_CURRENT_API_VERSION)
         else:
@@ -977,433 +1011,35 @@ class XRwidget(QOpenGLWidget):
                 layer_view.sub_image.image_rect.offset.x = layer_view.sub_image.image_rect.extent.width
 
     def prepare_xr_controls(self):
-        hand_count = self.hand_count
-        self.action_set = xr.create_action_set(
-            instance=self.instance,
-            create_info=xr.ActionSetCreateInfo(
-                action_set_name="baseactionset",
-                localized_action_set_name="Base Action Set",
-                priority=0,
-            ),
-        )
-
-        self.hand_paths = (xr.Path * hand_count)(
-            xr.string_to_path(self.instance, "/user/hand/left"),
-            xr.string_to_path(self.instance, "/user/hand/right"),
-        )
-
-        self.pose_action = xr.create_action(
-            action_set=self.action_set,
-            create_info=xr.ActionCreateInfo(
-                action_type=xr.ActionType.POSE_INPUT,  # XR_ACTION_TYPE_POSE_INPUT
-                action_name="hand_pose",
-                localized_action_name="Hand pose",
-                count_subaction_paths=len(self.hand_paths),
-                subaction_paths=self.hand_paths,
-            ),
-        )
-
-        self.x_lever_action = xr.create_action(
-            action_set=self.action_set,
-            create_info=xr.ActionCreateInfo(
-                action_type=xr.ActionType.FLOAT_INPUT,  # XR_ACTION_TYPE_FLOAT_INPUT
-                action_name="x_lever",
-                localized_action_name="Move a lever left or right",
-                count_subaction_paths=len(self.hand_paths),
-                subaction_paths=self.hand_paths,
-            ),
-        )
-
-        self.y_lever_action = xr.create_action(
-            action_set=self.action_set,
-            create_info=xr.ActionCreateInfo(
-                action_type=xr.ActionType.FLOAT_INPUT,
-                action_name="y_lever",
-                localized_action_name="Move a lever forward or backward",
-                count_subaction_paths=len(self.hand_paths),
-                subaction_paths=self.hand_paths,
-            ),
-        )
-
-        self.grab_action = xr.create_action(
-            action_set=self.action_set,
-            create_info=xr.ActionCreateInfo(
-                action_type=xr.ActionType.FLOAT_INPUT,
-                action_name="triggergrab",
-                localized_action_name="Grab Object with Trigger Button",
-                count_subaction_paths=len(self.hand_paths),
-                subaction_paths=self.hand_paths,
-            ),
-        )
-
-        pose_path = (
-            xr.Path *
-            hand_count)(
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/left/input/aim/pose"),
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/right/input/aim/pose"),
-        )
-
-        trigger_value_path = (
-            xr.Path *
-            hand_count)(
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/left/input/trigger/value"),
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/right/input/trigger/value"),
-        )
-
-        thumbstick_x_path = (
-            xr.Path *
-            hand_count)(
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/left/input/thumbstick/x"),
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/right/input/thumbstick/x"),
-        )
-
-        thumbstick_y_path = (
-            xr.Path *
-            hand_count)(
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/left/input/thumbstick/y"),
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/right/input/thumbstick/y"),
-        )
-
-        trackpad_x_path = (
-            xr.Path *
-            hand_count)(
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/left/input/trackpad/x"),
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/right/input/trackpad/x"),
-        )
-
-        trackpad_y_path = (
-            xr.Path *
-            hand_count)(
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/left/input/trackpad/y"),
-            xr.string_to_path(
-                self.instance,
-                "/user/hand/right/input/trackpad/y"),
-        )
-
-        # Suggest bindings for the Valve Index Controller.
-        valve_index_bindings = [
-            xr.ActionSuggestedBinding(self.pose_action, pose_path[0]),
-            xr.ActionSuggestedBinding(self.pose_action, pose_path[1]),
-            xr.ActionSuggestedBinding(
-                self.x_lever_action, thumbstick_x_path[0]),
-            xr.ActionSuggestedBinding(
-                self.x_lever_action, thumbstick_x_path[1]),
-            xr.ActionSuggestedBinding(
-                self.y_lever_action, thumbstick_y_path[0]),
-            xr.ActionSuggestedBinding(
-                self.y_lever_action, thumbstick_y_path[1]),
-            xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[0]),
-            xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[1]),
-
-        ]
-        xr.suggest_interaction_profile_bindings(
-            instance=self.instance,
-            suggested_bindings=xr.InteractionProfileSuggestedBinding(
-                interaction_profile=xr.string_to_path(
-                    self.instance,
-                    "/interaction_profiles/valve/index_controller",
-                ),
-                count_suggested_bindings=len(valve_index_bindings),
-                suggested_bindings=(
-                    xr.ActionSuggestedBinding *
-                    len(valve_index_bindings))(
-                    *
-                    valve_index_bindings),
-            ),
-        )
-
-        # Suggest bindings for the Vive Controller.
-        vive_bindings = [
-            xr.ActionSuggestedBinding(self.pose_action, pose_path[0]),
-            xr.ActionSuggestedBinding(self.pose_action, pose_path[1]),
-            xr.ActionSuggestedBinding(self.x_lever_action, trackpad_x_path[0]),
-            xr.ActionSuggestedBinding(self.x_lever_action, trackpad_x_path[1]),
-            xr.ActionSuggestedBinding(self.y_lever_action, trackpad_y_path[0]),
-            xr.ActionSuggestedBinding(self.y_lever_action, trackpad_y_path[1]),
-            xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[0]),
-            xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[1]),
-
-        ]
-        xr.suggest_interaction_profile_bindings(
-            instance=self.instance,
-            suggested_bindings=xr.InteractionProfileSuggestedBinding(
-                interaction_profile=xr.string_to_path(
-                    self.instance,
-                    "/interaction_profiles/htc/vive_controller",
-                ),
-                count_suggested_bindings=len(vive_bindings),
-                suggested_bindings=(
-                    xr.ActionSuggestedBinding *
-                    len(vive_bindings))(
-                    *
-                    vive_bindings),
-            ),
-        )
-
-        # Suggest bindings for the Oculus Touch Controller.
-        oculus_touch_bindings = [
-            xr.ActionSuggestedBinding(self.pose_action, pose_path[0]),
-            xr.ActionSuggestedBinding(self.pose_action, pose_path[1]),
-            xr.ActionSuggestedBinding(
-                self.x_lever_action, thumbstick_x_path[0]),
-            xr.ActionSuggestedBinding(
-                self.x_lever_action, thumbstick_x_path[1]),
-            xr.ActionSuggestedBinding(
-                self.y_lever_action, thumbstick_y_path[0]),
-            xr.ActionSuggestedBinding(
-                self.y_lever_action, thumbstick_y_path[1]),
-            xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[0]),
-            xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[1]),
-
-        ]
-        xr.suggest_interaction_profile_bindings(
-            instance=self.instance,
-            suggested_bindings=xr.InteractionProfileSuggestedBinding(
-                interaction_profile=xr.string_to_path(
-                    self.instance,
-                    "/interaction_profiles/oculus/touch_controller",
-                ),
-                count_suggested_bindings=len(oculus_touch_bindings),
-                suggested_bindings=(
-                    xr.ActionSuggestedBinding *
-                    len(oculus_touch_bindings))(
-                    *
-                    oculus_touch_bindings),
-            ),
-        )
-
-        # Suggest bindings for the Microsoft Motion Controller.
-        microsoft_motion_bindings = [
-            xr.ActionSuggestedBinding(self.pose_action, pose_path[0]),
-            xr.ActionSuggestedBinding(self.pose_action, pose_path[1]),
-            xr.ActionSuggestedBinding(
-                self.x_lever_action, thumbstick_x_path[0]),
-            xr.ActionSuggestedBinding(
-                self.x_lever_action, thumbstick_x_path[1]),
-            xr.ActionSuggestedBinding(
-                self.y_lever_action, thumbstick_y_path[0]),
-            xr.ActionSuggestedBinding(
-                self.y_lever_action, thumbstick_y_path[1]),
-            xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[0]),
-            xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[1]),
-
-        ]
-        xr.suggest_interaction_profile_bindings(
-            instance=self.instance,
-            suggested_bindings=xr.InteractionProfileSuggestedBinding(
-                interaction_profile=xr.string_to_path(
-                    self.instance,
-                    "/interaction_profiles/microsoft/motion_controller",
-                ),
-                count_suggested_bindings=len(microsoft_motion_bindings),
-                suggested_bindings=(
-                    xr.ActionSuggestedBinding *
-                    len(microsoft_motion_bindings))(
-                    *
-                    microsoft_motion_bindings),
-            ),
-        )
-
-        if self.steam_frame_support:
-            # Suggest bindings for the Valve Steam Frame Controller.
-            valve_steam_frame_bindings = [
-                xr.ActionSuggestedBinding(self.pose_action, pose_path[0]),
-                xr.ActionSuggestedBinding(self.pose_action, pose_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.x_lever_action, thumbstick_x_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.x_lever_action, thumbstick_x_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.y_lever_action, thumbstick_y_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.y_lever_action, thumbstick_y_path[1]),
-                xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[0]),
-                xr.ActionSuggestedBinding(self.grab_action, trigger_value_path[1]),
-
-            ]
-            xr.suggest_interaction_profile_bindings(
-                instance=self.instance,
-                suggested_bindings=xr.InteractionProfileSuggestedBinding(
-                    interaction_profile=xr.string_to_path(
-                        self.instance,
-                        "/interaction_profiles/valve/frame_controller_valve",
-                    ),
-                    count_suggested_bindings=len(valve_steam_frame_bindings),
-                    suggested_bindings=(
-                        xr.ActionSuggestedBinding *
-                        len(valve_steam_frame_bindings))(
-                        *
-                        valve_steam_frame_bindings),
-                ),
-            )
-
-        if self.api_version.major >= 1 and self.api_version.minor >= 1:
-            self.logger.debug("Version 1.1 interaction profile bindings")
-            # Suggest bindings for the Meta Touch Plus Controller.
-            meta_touch_plus_bindings = [
-                xr.ActionSuggestedBinding(self.pose_action, pose_path[0]),
-                xr.ActionSuggestedBinding(self.pose_action, pose_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.x_lever_action, thumbstick_x_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.x_lever_action, thumbstick_x_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.y_lever_action, thumbstick_y_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.y_lever_action, thumbstick_y_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.grab_action, trigger_value_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.grab_action, trigger_value_path[1]),
-
-            ]
-            xr.suggest_interaction_profile_bindings(
-                instance=self.instance,
-                suggested_bindings=xr.InteractionProfileSuggestedBinding(
-                    interaction_profile=xr.string_to_path(
-                        self.instance,
-                        "/interaction_profiles/meta/touch_plus_controller",
-                    ),
-                    count_suggested_bindings=len(meta_touch_plus_bindings),
-                    suggested_bindings=(
-                        xr.ActionSuggestedBinding *
-                        len(meta_touch_plus_bindings))(
-                        *
-                        meta_touch_plus_bindings),
-                ),
-            )
-
-            # Suggest bindings for the Meta Touch Pro Controller.
-            meta_touch_pro_bindings = [
-                xr.ActionSuggestedBinding(self.pose_action, pose_path[0]),
-                xr.ActionSuggestedBinding(self.pose_action, pose_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.x_lever_action, thumbstick_x_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.x_lever_action, thumbstick_x_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.y_lever_action, thumbstick_y_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.y_lever_action, thumbstick_y_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.grab_action, trigger_value_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.grab_action, trigger_value_path[1]),
-
-            ]
-            xr.suggest_interaction_profile_bindings(
-                instance=self.instance,
-                suggested_bindings=xr.InteractionProfileSuggestedBinding(
-                    interaction_profile=xr.string_to_path(
-                        self.instance,
-                        "/interaction_profiles/meta/touch_pro_controller",
-                    ),
-                    count_suggested_bindings=len(meta_touch_pro_bindings),
-                    suggested_bindings=(
-                        xr.ActionSuggestedBinding *
-                        len(meta_touch_pro_bindings))(
-                        *
-                        meta_touch_pro_bindings),
-                ),
-            )
-
-            # Suggest bindings for the Bytedance PICO 4 Controller.
-            pico4_controller = [
-                xr.ActionSuggestedBinding(self.pose_action, pose_path[0]),
-                xr.ActionSuggestedBinding(self.pose_action, pose_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.x_lever_action, thumbstick_x_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.x_lever_action, thumbstick_x_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.y_lever_action, thumbstick_y_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.y_lever_action, thumbstick_y_path[1]),
-                xr.ActionSuggestedBinding(
-                    self.grab_action, trigger_value_path[0]),
-                xr.ActionSuggestedBinding(
-                    self.grab_action, trigger_value_path[1]),
-
-            ]
-            xr.suggest_interaction_profile_bindings(
-                instance=self.instance,
-                suggested_bindings=xr.InteractionProfileSuggestedBinding(
-                    interaction_profile=xr.string_to_path(
-                        self.instance,
-                        "/interaction_profiles/bytedance/pico4_controller",
-                    ),
-                    count_suggested_bindings=len(pico4_controller),
-                    suggested_bindings=(
-                        xr.ActionSuggestedBinding *
-                        len(pico4_controller))(
-                        *
-                        pico4_controller),
-                ),
-            )
-
-        action_space_info = xr.ActionSpaceCreateInfo(
-            action=self.pose_action,
-            # pose_in_action_space # w already defaults to 1 in python...
-            subaction_path=self.hand_paths[0],
-        )
-
-        self.hand_space = (xr.Space * hand_count)(*([xr.Space()] * hand_count))
-
-        assert action_space_info.pose_in_action_space.orientation.w == 1
-        self.hand_space[0] = xr.create_action_space(
-            session=self.session,
-            create_info=action_space_info,
-        )
-
-        action_space_info = xr.ActionSpaceCreateInfo(
-            action=self.pose_action,
-            subaction_path=self.hand_paths[1],
-        )
-        assert action_space_info.pose_in_action_space.orientation.w == 1
-        self.hand_space[1] = xr.create_action_space(
-            session=self.session,
-            create_info=action_space_info,
-        )
-
+        # the tracker actions live in their own action set; it is attached together with the input action set
+        extra_sets = []
         if self.tracker_support:
             self.prepare_tracker()
-
-        xr.attach_session_action_sets(
-            session=self.session,
-            attach_info=xr.SessionActionSetsAttachInfo(
-                count_action_sets=1,
-                action_sets=ctypes.pointer(self.action_set),
-            ),
-        )
+            extra_sets.append(self.tracker_action_set)
+        self.input = OpenXRInput(self.instance, self.session, self.api_version,
+                                 self.enabled_extensions, extra_action_sets=extra_sets)
+        self.logger.debug("Interaction profiles with suggested bindings: %s", self.input.suggested)
+        self.input_tracker = InputTracker()
+        self.input_frame = None
+        self.head_pose = Pose()
+        if self.render_model_support:
+            self.runtime_models = RuntimeModels(self.instance, self.session)
+        self.models_refreshed = False
 
     def prepare_tracker(self):
         # TPP camera
         self.tracker_role_paths = [xr.string_to_path(self.instance,
                                                      "/user/vive_tracker_htcx/role/camera")]
+        self.tracker_action_set = xr.create_action_set(
+            instance=self.instance,
+            create_info=xr.ActionSetCreateInfo(
+                action_set_name="trackeractionset",
+                localized_action_set_name="Tracker Action Set",
+                priority=0,
+            ),
+        )
         self.tracker_pose_action = xr.create_action(
-            action_set=self.action_set,
+            action_set=self.tracker_action_set,
             create_info=xr.ActionCreateInfo(
                 action_type=xr.ActionType.POSE_INPUT,
                 action_name="tracker_pose",
@@ -1440,91 +1076,85 @@ class XRwidget(QOpenGLWidget):
         )
 
     def update_xr_controls(self):
-        hand_count = self.hand_count
-        # Sync actions
-        active_action_set = xr.ActiveActionSet(self.action_set, xr.NULL_PATH)
-        try:
-            xr.sync_actions(
-                self.session,
-                xr.ActionsSyncInfo(
-                    count_active_action_sets=1,
-                    active_action_sets=ctypes.pointer(active_action_set)
-                ),
-            )
-        except xr.exception.SessionNotFocused:
-            self.logger.debug("session  not focused")
+        time = self.frame_state.predicted_display_time
+        extra_active = [self.tracker_action_set] if self.tracker_support else []
+        frame = self.input.poll(self.projection_layer.space, time, extra_active)
+        if frame is None:
+            self.logger.debug("session not focused")
             return
-        # # Get pose and actions for each hand
-        for hand in range(hand_count):
-            # session.getActionStatePose(getInfo, poseState);
-            pose_state = xr.get_action_state_pose(
-                session=self.session,
-                get_info=xr.ActionStateGetInfo(
-                    action=self.pose_action,
-                    subaction_path=self.hand_paths[hand],
-                ),
-            )
-            # xrSpaceLocation contains "pose" field with position and
-            # orientation
-            space_location = xr.locate_space(
-                space=self.hand_space[hand],
-                base_space=self.projection_layer.space,
-                time=self.frame_state.predicted_display_time,
-            )
-            if (space_location.location_flags &
-                    xr.SPACE_LOCATION_POSITION_VALID_BIT):
-                self.xr_con[hand].show_controller()
-                self.xr_con[hand].update_pose(
-                    space_location, self.world_transform)  # definition in controllerXR.py
-                # Update actions
-                x_lever_value = xr.get_action_state_float(
-                    self.session,
-                    xr.ActionStateGetInfo(
-                        action=self.x_lever_action,
-                        subaction_path=self.hand_paths[hand],
-                    ),
-                )
-                y_lever_value = xr.get_action_state_float(
-                    self.session,
-                    xr.ActionStateGetInfo(
-                        action=self.y_lever_action,
-                        subaction_path=self.hand_paths[hand],
-                    ),
-                )
-                grab_value = xr.get_action_state_float(
-                    self.session,
-                    xr.ActionStateGetInfo(
-                        action=self.grab_action,
-                        subaction_path=self.hand_paths[hand],
-                    ),
-                )
-                self.xr_con[hand].update_lever(x_lever_value, y_lever_value)
-                self.xr_con[hand].update_grab(grab_value)
+        frame.time = time / 1e9
+        frame.head = self.head_pose
+        self.input_tracker.update(frame)
+        self.input_frame = frame
+        self.update_controller_models(frame)
+        picked = self.palette.update(frame.hands[self.primary_con])
+        if picked is not None:
+            self.select_tool(picked)
+        self.palette_view.update()
+        for hand in range(self.hand_count):
+            h = frame.hands[hand]
+            con = self.xr_con[hand]
+            if h.aim.tracked:
+                con.show_controller()
+                con.update_pose(h.aim.position, h.aim.orientation, self.world_transform)
+                con.update_lever(h.stick[0], h.stick[1])
+                con.update_grab(h.trigger)
             else:
-                self.xr_con[hand].hide_controller()
+                con.hide_controller()
 
-            # Tracker part
-            if self.tracker_support:
-                tracker_pose_state = xr.get_action_state_pose(
-                    session=self.session,
-                    get_info=xr.ActionStateGetInfo(
-                        action=self.tracker_pose_action,
-                        subaction_path=self.tracker_role_paths[0],
-                    ),
-                )
-                # xrSpaceLocation contains "pose" field with position and
-                # orientation
-                tracker_space_location = xr.locate_space(
-                    space=self.tracker_space,
-                    base_space=self.projection_layer.space,
-                    time=self.frame_state.predicted_display_time,
-                )
-                if (tracker_space_location.location_flags &
-                        xr.SPACE_LOCATION_POSITION_VALID_BIT):
-                    self.tpp_cam_available = True
-                    self.update_tpp_camera(tracker_space_location)
-                else:
-                    self.tpp_cam_available = False
+        # Tracker part
+        if self.tracker_support:
+            tracker_space_location = xr.locate_space(
+                space=self.tracker_space,
+                base_space=self.projection_layer.space,
+                time=time,
+            )
+            if (tracker_space_location.location_flags &
+                    xr.SPACE_LOCATION_POSITION_VALID_BIT):
+                self.tpp_cam_available = True
+                self.update_tpp_camera(tracker_space_location)
+            else:
+                self.tpp_cam_available = False
+
+    def update_controller_models(self, frame):
+        """Pose and animate the runtime-provided controller models, or animate the generated shapes."""
+        if self.runtime_models is not None and not self.models_refreshed:
+            # models exist after the first successful sync; the list is enumerated again on a change event
+            self.models_refreshed = True
+            self.refresh_runtime_models()
+        time = self.frame_state.predicted_display_time
+        for hand, side in enumerate(("left", "right")):
+            con = self.xr_con[hand]
+            if con.runtime_model is not None and self.runtime_models is not None:
+                pose = self.runtime_models.locate(side, self.projection_layer.space, time)
+                if pose is None:
+                    con.hide_controller()
+                    continue
+                con.update_model_pose(pose[0], pose[1], self.world_transform)
+                states = self.runtime_models.node_states(side, time)
+                if states:
+                    con.apply_node_states(states)
+            else:
+                animate_fallback(con.fallback_model, frame.hands[hand])
+
+    def refresh_runtime_models(self):
+        try:
+            sides = self.runtime_models.refresh()
+        except Exception as error:
+            self.logger.warning("Runtime controller models unavailable: %s", error)
+            sides = []
+        image_cache = {}
+        for hand, side in enumerate(("left", "right")):
+            model = self.runtime_models.models.get(side)
+            if model is None:
+                self.xr_con[hand].set_runtime_model(None)
+                continue
+            try:
+                self.xr_con[hand].set_runtime_model(load_glb(model.glb, image_cache))
+            except Exception as error:
+                self.logger.warning("Cannot build the %s controller model: %s", side, error)
+                self.xr_con[hand].set_runtime_model(None)
+        print("Controller models from the runtime:", sides if sides else "none (generated shapes)")
 
     def update_tpp_camera(self, space_location):
         if self.tpp_cam_available and self.tpp_cam_enabled:
@@ -1562,6 +1192,8 @@ class XRwidget(QOpenGLWidget):
                 event_type = xr.StructureType(event_buffer.type)
                 if event_type == xr.StructureType.EVENT_DATA_SESSION_STATE_CHANGED:
                     self.on_session_state_changed(event_buffer)
+                elif event_type == xr.StructureType.EVENT_DATA_INTERACTION_RENDER_MODELS_CHANGED_EXT:
+                    self.models_refreshed = False
             except xr.EventUnavailable:
                 break
 
@@ -1970,29 +1602,20 @@ class XRwidget(QOpenGLWidget):
             sf = widget.value / 100
             self.doc_xr_transform.scaleFactor.setValue(sf, sf, sf)
         elif (name == "teleport_mode_button"):
-            self.interact_mode = InteractMode.TELEPORT
-            self.status_label.set_text("Pick teleport destination")
+            self.select_tool("teleport")
         elif (name == "working_plane_button"):
-            self.interact_mode = InteractMode.WORKING_PLANE
-            self.status_label.set_text("Set working plane")
-            self.geo_prev.show_working_plane()
+            self.select_tool("working_plane")
         elif (name == "toggle_plane_button"):
             self.geo_prev.toggle_working_plane()
             self.con_menu.toggle_plane_button.select(False)
         elif (name == "line_builder_button"):
-            self.interact_mode = InteractMode.LINE_BUILDER
-            self.status_label.set_text("Line/Face builder")
-            docInter.set_mode(docInter.BuilderMode.LINE_BUILDER)
+            self.select_tool("line_builder")
         elif (name == "cube_builder_button"):
-            self.interact_mode = InteractMode.CUBE_BUILDER
-            self.status_label.set_text("Click and drag for Cube building")
-            docInter.set_mode(docInter.BuilderMode.CUBE_BUILDER)
+            self.select_tool("cube_builder")
         elif (name == "pick_sel_button"):
-            self.interact_mode = InteractMode.SELECT_MODE
-            self.status_label.set_text("Select/Edit mode")
+            self.select_tool("select_mode")
         elif (name == "pick_drag_button"):
-            self.interact_mode = InteractMode.DRAG_MODE
-            self.status_label.set_text("Pick element for dragging")
+            self.select_tool("drag_mode")
         elif (name == "toggle_overlay_button"):
             for w in self.qt_widget_renders:
                 w.toggle_widget()
@@ -2003,6 +1626,25 @@ class XRwidget(QOpenGLWidget):
             self.con_menu.select_widget_by_name(
                 "scale_slider", sf * 100)
             self.con_menu.scale_reset_button.select(False)
+
+    def select_tool(self, name):
+        """Activate a registered tool and apply the side effects the inherited modes need (status text, builder mode)."""
+        self.tools.activate(name)
+        status = {
+            "teleport": "Pick teleport destination",
+            "working_plane": "Set working plane",
+            "line_builder": "Line/Face builder",
+            "cube_builder": "Click and drag for Cube building",
+            "select_mode": "Select/Edit mode",
+            "drag_mode": "Pick element for dragging",
+        }.get(name, tool_registry.label_of(name))
+        self.status_label.set_text(status)
+        if name == "working_plane":
+            self.geo_prev.show_working_plane()
+        elif name == "line_builder":
+            docInter.set_mode(docInter.BuilderMode.LINE_BUILDER)
+        elif name == "cube_builder":
+            docInter.set_mode(docInter.BuilderMode.CUBE_BUILDER)
 
     def process_edit_selection(self, widget):
         if widget == None:
@@ -2098,18 +1740,7 @@ class XRwidget(QOpenGLWidget):
         if self.update_qt_widgets():  # Qt widgets renders, secondary controller
             return
         # interaction modes, secondary (right) controller
-        if self.interact_mode == InteractMode.TELEPORT:
-            self.check_teleport_jump()
-        elif self.interact_mode == InteractMode.LINE_BUILDER:
-            self.interact_line_builder()
-        elif self.interact_mode == InteractMode.CUBE_BUILDER:
-            self.interact_cube_builder()
-        elif self.interact_mode == InteractMode.SELECT_MODE:
-            self.interact_select_mode()
-        elif self.interact_mode == InteractMode.DRAG_MODE:
-            self.interact_drag_mode()
-        elif self.interact_mode == InteractMode.WORKING_PLANE:
-            self.interact_working_plane()
+        self.tools.update(self.input_frame)
 
     def update_xr_views(self):
         near_plane = self.near_plane
@@ -2153,6 +1784,12 @@ class XRwidget(QOpenGLWidget):
             self.camera[eye_index].right.setValue(near_plane * pfRight)
             self.camera[eye_index].top.setValue(near_plane * pfTop)
             self.camera[eye_index].bottom.setValue(near_plane * pfBottom)
+        eye0, eye1 = self.eye_view_states[0].pose, self.eye_view_states[1].pose
+        head_pos = ((eye0.position.x + eye1.position.x) / 2,
+                    (eye0.position.y + eye1.position.y) / 2,
+                    (eye0.position.z + eye1.position.z) / 2)
+        o = eye0.orientation
+        self.head_pose = Pose(head_pos, (o.x, o.y, o.z, o.w), True)
 
     def update_gui(self):
         if self.mirror_window:
@@ -2329,13 +1966,13 @@ class XRwidget(QOpenGLWidget):
         if self.fbo_tpp_texture is not None:
             self.fbo_tpp_texture.destroy()
             self.fbo_tpp_texture = None
-        if self.action_set is not None:
-            for hand in range(self.hand_count):
-                if self.hand_space[hand] is not None:
-                    xr.destroy_space(self.hand_space[hand])
-                    self.hand_space[hand] = None
-            xr.destroy_action_set(self.action_set)
-            self.action_set = None
+        if self.runtime_models is not None:
+            self.runtime_models.destroy()
+            self.runtime_models = None
+        if self.input is not None:
+            self.input.destroy()
+            xr.destroy_action_set(self.input.action_set)
+            self.input = None
         if self.swapchain is not None:
             xr.destroy_swapchain(self.swapchain)
             self.swapchain = None

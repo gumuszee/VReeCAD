@@ -23,20 +23,19 @@
 
 import logging
 
-import os
-
 from enum import Enum
 from dataclasses import dataclass
 
 from pivy.coin import SoSeparator
 from pivy.coin import SbVec3f, SbVec4f, SbRotation
 from pivy.coin import SoTransform, SoTranslation
-from pivy.coin import SoCube, SoSphere
-from pivy.coin import SoInput, SoDB
+from pivy.coin import SoSphere
 from pivy.coin import SoVertexProperty, SoLineSet
 from pivy.coin import SoBaseColor, SbColor
 from pivy.coin import SoRayPickAction, SoPickStyle
 from pivy.coin import SoSwitch, SO_SWITCH_NONE, SO_SWITCH_ALL
+
+from freecad.BlocksCAD.render.controller_shape import build_fallback
 
 
 LOW_STATE = 0.3
@@ -76,37 +75,68 @@ class xrController:
             self.add_picking_ray()
         else:
             self.ray_node = None
+        self.runtime_model = None
         self.picked_tail = None
         self.picked_tex_coords = SbVec4f(0, 0, 0, 0)
         self.picked_normal = SbVec3f(0.0, 0.0, 0.0)
         self.add_controller_shape()
 
     def add_controller_shape(self):
+        """Scene of the visible controller: a generated shape at the aim pose, or the runtime model at its own pose."""
         con_sep = SoSeparator()
-        con_node = None
-        # Read the file
-        if self.iden == 0:
-            con_node = self.read_file(os.path.join(
-                os.path.dirname(__file__), "..", "..", "Resources", "controllers", "left_con.iv")
-            )
-        if self.iden == 1:
-            con_node = self.read_file(os.path.join(
-                os.path.dirname(__file__), "..", "..", "Resources", "controllers", "right_con.iv")
-            )
-        if (con_node is None):
-            con_node = SoSeparator()
-            con_cube = SoCube()
-            con_cube.width.setValue(0.05)
-            con_cube.height.setValue(0.025)
-            con_cube.depth.setValue(0.15)
-            # replace controller with simple cube if the iv file not found
-            con_node.addChild(con_cube)
-        con_sep.addChild(self.con_transform)
         unpickable = SoPickStyle()
         unpickable.style = SoPickStyle.UNPICKABLE
         con_sep.addChild(unpickable)
-        con_sep.addChild(con_node)
+        self.fallback_switch = SoSwitch()
+        fallback_sep = SoSeparator()
+        fallback_sep.addChild(self.con_transform)
+        self.fallback_model = build_fallback("left" if self.iden == 0 else "right")
+        fallback_sep.addChild(self.fallback_model.root)
+        self.fallback_switch.addChild(fallback_sep)
+        self.fallback_switch.whichChild = SO_SWITCH_ALL
+        con_sep.addChild(self.fallback_switch)
+        self.runtime_switch = SoSwitch()
+        self.runtime_sep = SoSeparator()
+        self.model_transform = SoTransform()
+        self.runtime_sep.addChild(self.model_transform)
+        self.runtime_switch.addChild(self.runtime_sep)
+        self.runtime_switch.whichChild = SO_SWITCH_NONE
+        con_sep.addChild(self.runtime_switch)
         self.controller_node.addChild(con_sep)
+
+    def set_runtime_model(self, model):
+        """Show a runtime-provided model (render.gltf_coin.Model) instead of the generated shape; None restores the shape."""
+        if self.runtime_model is not None:
+            self.runtime_sep.removeChild(self.runtime_model.root)
+        self.runtime_model = model
+        if model is None:
+            self.runtime_switch.whichChild = SO_SWITCH_NONE
+            self.fallback_switch.whichChild = SO_SWITCH_ALL
+        else:
+            self.runtime_sep.addChild(model.root)
+            self.runtime_switch.whichChild = SO_SWITCH_ALL
+            self.fallback_switch.whichChild = SO_SWITCH_NONE
+
+    def update_model_pose(self, position, orientation, world_transform):
+        """Pose of the runtime model (stage frame, metres); combined with the artificial world movement like the aim pose."""
+        local = SoTransform()
+        local.translation.setValue(SbVec3f(*position))
+        local.rotation.setValue(SbRotation(*orientation))
+        combined = SoTransform()
+        combined.copyFieldValues(world_transform)
+        combined.combineLeft(local)
+        self.model_transform.copyFieldValues(combined)
+        self.model_transform.center.setValue(SbVec3f(0, 0, 0))
+
+    def apply_node_states(self, states):
+        """Animate the runtime model from `openxr_models.NodeState`s."""
+        if self.runtime_model is None:
+            return
+        for state in states:
+            part = self.runtime_model.part(state.name)
+            if part is not None:
+                part.set_visible(state.visible)
+                part.set_pose(state.position, state.orientation)
 
     def add_picking_ray(self):
         self.ray_vtxs = SoVertexProperty()
@@ -146,16 +176,10 @@ class xrController:
     def get_ray_scenegraph(self):
         return self.ray_node
 
-    def update_pose(self, space_location, world_transform):
-        con_rot = SbRotation(
-            space_location.pose.orientation.x,
-            space_location.pose.orientation.y,
-            space_location.pose.orientation.z,
-            space_location.pose.orientation.w)
-        con_pos = SbVec3f(
-            space_location.pose.position.x,
-            space_location.pose.position.y,
-            space_location.pose.position.z)
+    def update_pose(self, position, orientation, world_transform):
+        """Aim pose in the stage frame: position (x, y, z) and orientation quaternion (x, y, z, w)."""
+        con_rot = SbRotation(*orientation)
+        con_pos = SbVec3f(*position)
         con_worldtransform = SoTransform()
         con_worldtransform.copyFieldValues(world_transform)
         self.con_localtransform.translation.setValue(con_pos)
@@ -265,8 +289,8 @@ class xrController:
         return rot.getValue()
 
     def update_lever(self, x_lever_value, y_lever_value):
-        self.buttons_state.lever_x = x_lever_value.current_state
-        self.buttons_state.lever_y = y_lever_value.current_state
+        self.buttons_state.lever_x = x_lever_value
+        self.buttons_state.lever_y = y_lever_value
         self.logger.debug(
             "Controller %d X %.2f Y %.2f",
             self.iden,
@@ -274,7 +298,7 @@ class xrController:
             self.buttons_state.lever_y)
 
     def update_grab(self, grab_value):
-        self.buttons_state.grab = grab_value.current_state
+        self.buttons_state.grab = grab_value
         if (self.buttons_state.grab > HIGH_STATE):
             if (self.buttons_state.grab_ev == AnInpEv.RELEASED
                     or self.buttons_state.grab_ev == AnInpEv.JUST_RELEASED):
@@ -301,19 +325,3 @@ class xrController:
 
     def get_buttons_states(self):
         return self.buttons_state
-
-    def read_file(self, filename):
-        # Open the input file
-        scene_input = SoInput()
-        if not scene_input.openFile(filename):
-            self.logger.warning("Cannot open file: %s", str(filename))
-            return None
-
-        # Read the whole file into the database
-        graph = SoDB.readAll(scene_input)
-        if graph is None:
-            self.logger.warning("Problem reading file: %s", str(filename))
-            return None
-
-        scene_input.closeFile()
-        return graph

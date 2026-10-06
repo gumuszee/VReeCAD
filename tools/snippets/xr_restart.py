@@ -1,12 +1,15 @@
 # Hot-reload the VR addon's Python modules in the running FreeCAD and restart the XR viewer.
 # Saves a full FreeCAD restart when iterating on addon code:  fc_rpc.py exec -f tools/snippets/xr_restart.py
-# Note: reloading only affects modules listed below; for class-identity-sensitive changes prefer restarting FreeCAD.
+# Note: reloading only affects modules listed below (in dependency order); for class-identity-sensitive changes prefer restarting FreeCAD.
 import importlib
 import FreeCADGui
 import freecad.BlocksCAD.commonXR as cxr
 cxr.close_xr_viewer()
 import freecad.BlocksCAD as _pkg
-_mods = ["qtWidgetRender", "previewCoin", "menuCoin", "controllerXR", "movementXR", "documentInteraction", "commonXR"]
+_mods = ["input", "profiles", "gltf", "render.gltf_coin", "render.controller_shape", "render.offscreen",
+         "backends.openxr_models", "backends.openxr_input", "backends.sim",
+         "ui.palette", "ui.palette_view", "tools.base", "tools.registry", "tools.manager", "tools", "tools.legacy",
+         "qtWidgetRender", "previewCoin", "menuCoin", "controllerXR", "movementXR", "documentInteraction", "commonXR"]
 for _m in _mods:
     importlib.reload(importlib.import_module("freecad.BlocksCAD." + _m))
 import freecad.BlocksCAD.commonXR as cxr
