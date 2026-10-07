@@ -156,6 +156,13 @@ class MeshTest(unittest.TestCase):
 class FakeGhost:
     def __init__(self):
         self.calls = []
+        self.guide_calls = []          # kept apart: the guides come and go with the cursor and `kinds` is about the shape
+
+    def show_guides(self, guides, half):
+        self.guide_calls.append(list(guides))
+
+    def hide_guides(self):
+        self.guide_calls.append([])
 
     def show_marker(self, point, half):
         self.calls.append(("marker", point, half))
@@ -225,6 +232,43 @@ class ToolTest(unittest.TestCase):
         self.free = False                                           # the carousel has the trigger: no cross
         self.step()
         self.assertEqual(self.ghost.calls[-1], ("hide_marker",))
+
+    def test_the_cursor_lines_up_with_the_points_of_the_model_and_the_guides_are_drawn(self):
+        from freecad.BlocksCAD.core import guides
+        self.tool.ctx.services["guides"] = lambda raw, point, exclude: guides.align(raw, point, [(7.0, 40.0, 0.0)], 5.0)
+        self.hand_at((9.0, 28.0, 12.0))
+        self.step()
+        self.assertEqual(self.ghost.calls[-1][:2], ("marker", (7.0, 30.0, 10.0)))        # X is that of the anchor, the rest is on the grid
+        (guide,) = self.ghost.guide_calls[-1]
+        self.assertEqual((guide.kind, guide.axis, guide.anchor), ("axis", 0, (7.0, 40.0, 0.0)))
+        self.assertEqual(len([h for h in self.haptics if h[1] == 0.12]), 1)                 # a tick when the guide appears
+        self.step(3)
+        self.assertEqual(len([h for h in self.haptics if h[1] == 0.12]), 1)                 # and not on every frame
+        self.hand_at((30.0, 28.0, 12.0))
+        self.step()
+        self.assertEqual(self.ghost.guide_calls[-1], [])
+
+    def test_a_drag_from_a_guide_makes_a_box_that_starts_at_the_anchor(self):
+        from freecad.BlocksCAD.core import guides
+        self.tool.ctx.services["guides"] = lambda raw, point, exclude: guides.align(raw, point, [(7.0, 0.0, 0.0)], 5.0)
+        self.hand_at((8.0, 0.0, 0.0))
+        self.step()
+        self.hand_at((8.0, 0.0, 0.0), trigger=1.0)
+        self.step()
+        self.hand_at((57.0, 50.0, 30.0), trigger=1.0)
+        self.step()
+        self.hand_at((57.0, 50.0, 30.0), trigger=0.0)
+        self.step()
+        (_, shape, lo, size), = self.created
+        self.assertEqual(lo, (7.0, 0.0, 0.0))
+        self.assertEqual(size, (53.0, 50.0, 30.0))                                        # the far end is on the grid, the near end on the anchor
+
+    def test_cancelling_a_drag_hides_the_guides(self):
+        self.hand_at((0.0, 0.0, 0.0), trigger=1.0)
+        self.step()
+        self.hand_at((0.0, 0.0, 0.0), trigger=1.0, grip=1.0)
+        self.step()
+        self.assertEqual(self.ghost.guide_calls[-1], [])
 
     def test_dragging_shows_the_ghost_and_the_sizes_and_releasing_makes_the_shape(self):
         self.hand_at((0.0, 0.0, 0.0))

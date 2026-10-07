@@ -98,6 +98,7 @@ class PrimitiveTool(Tool):
 
     def _cancel(self):
         self._start = self._current = self._built = None
+        self.hide_guides()
         ghost = self._ghost()
         if ghost is not None:
             ghost.hide_shape()
@@ -110,12 +111,14 @@ class PrimitiveTool(Tool):
         if cursor is None or to_document is None:
             return
         hand = frame.hands[self.ctx.dominant]
-        point = snapping.snap_point(to_document(cursor(self.ctx.dominant)), self.grid)
+        raw = to_document(cursor(self.ctx.dominant))
+        point, guides = self.align(raw, snapping.snap_point(raw, self.grid))
         gripping = any(h.down("grip") for h in frame.hands)
         if self._start is not None:
             if gripping:
                 self._cancel()
                 return
+            self.show_guides(guides, self.grid * 0.5)
             self._drag(hand, point)
             return
         free = self._service("trigger_free", lambda: True)()
@@ -123,8 +126,10 @@ class PrimitiveTool(Tool):
         if ghost is not None:
             if free and not gripping and hand.aim.tracked:
                 ghost.show_marker(point, self.grid * 0.75)
+                self.show_guides(guides, self.grid * 0.5)
             else:
                 ghost.hide_marker()
+                self.hide_guides()
         if free and not gripping and "trigger" in hand.pressed and hand.aim.tracked:
             self._start = self._current = point
             self._haptic(0.3, 0.02)

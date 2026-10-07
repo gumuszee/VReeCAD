@@ -1606,6 +1606,35 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIn("Detach", text)
         self.assertEqual(self.doc.findObjects("Assembly::AssemblyObject"), [])
 
+    def test_the_anchors_are_the_corners_and_straight_edge_middles_of_the_visible_objects(self):
+        from freecad.BlocksCAD.cad import anchors
+        found = anchors.collect(self.doc)
+        self.assertEqual(len(found), 8 + 12)                                                 # a box: corners and the middles of its edges
+        self.assertIn((50.0, 0.0, 0.0), found)
+        self.assertIn((100.0, 100.0, 100.0), found)
+        self.assertEqual(anchors.collect(self.doc, exclude=(self.box.Name,)), [])
+        self.box.Visibility = False
+        self.assertEqual(anchors.collect(self.doc), [])
+        self.box.Visibility = True
+        cylinder = self.doc.addObject("Part::Cylinder", "Tube")
+        self.doc.recompute()
+        self.assertEqual(len(anchors.collect(self.doc)), 20 + 3)                              # a cylinder: the two seam vertices and the middle of the seam line, its circles are no anchors
+
+    def test_the_ghost_draws_guides_of_every_kind_and_hides_them(self):
+        from freecad.BlocksCAD.core import guides
+        from freecad.BlocksCAD.render.ghost import Ghost
+        from pivy import coin
+        ghost = Ghost()
+        found = [guides.Guide("axis", 0, (0.0, 0.0, 0.0), (0.0, 20.0, 0.0)), guides.Guide("point", -1, (5.0, 5.0, 5.0), (5.0, 5.0, 5.0))]
+        ghost.show_guides(found, 4.0)
+        self.assertEqual(ghost._guides.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        points, lines = ghost._guide_sets[0]
+        self.assertEqual(points.point.getNum(), 2 + 6)                                        # the line and the cross of the X guide
+        self.assertEqual(ghost._guide_sets[-1][0].point.getNum(), 6)                          # the cross of the point guide
+        self.assertEqual(ghost._guide_sets[1][0].point.getNum(), 0)
+        ghost.show_guides([], 4.0)
+        self.assertEqual(ghost._guides.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
     def test_a_push_fuses_an_extrusion_of_the_face_a_pull_cuts_it_and_the_length_stays_editable(self):
         from freecad.BlocksCAD.cad import pushpull
         top = pushpull.face_info(self.box, "Face6")

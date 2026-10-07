@@ -33,6 +33,9 @@ EDGE_HIDDEN = (0.25, 0.4, 0.65)
 EDGE_WIDTH = 2.0
 OUTLINE = (0.95, 0.65, 0.10)
 MARKER = (0.95, 0.65, 0.10)
+GUIDE_COLOURS = {0: (0.95, 0.35, 0.35), 1: (0.40, 0.85, 0.40), 2: (0.45, 0.60, 1.0), -1: MARKER}   # X, Y and Z of the document, a point
+GUIDE_WIDTH = 2.0
+GUIDE_DIM = 0.45          # the part of a guide that lies behind the model is this much darker
 
 _EDGES = ((0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4), (0, 4), (1, 5), (2, 6), (3, 7))
 
@@ -142,6 +145,29 @@ class Ghost:
         self._marker.addChild(marker)
         self.root.addChild(self._marker)
 
+        self._guides = coin.SoSwitch()               # one line set per kind of guide, each drawn dim behind the model and bright in front
+        self._guides.whichChild = coin.SO_SWITCH_NONE
+        self._guide_sets = {}
+        guides = coin.SoSeparator()
+        guide_style = coin.SoDrawStyle()
+        guide_style.lineWidth = GUIDE_WIDTH
+        guides.addChild(guide_style)
+        for key, colour in GUIDE_COLOURS.items():
+            points, lines = coin.SoCoordinate3(), coin.SoIndexedLineSet()
+            guides.addChild(points)
+            for hidden_pass in (True, False):
+                sep = coin.SoSeparator()
+                depth_pass = coin.SoDepthBuffer()
+                depth_pass.test.setValue(not hidden_pass)
+                depth_pass.getField("write").setValue(False)
+                sep.addChild(depth_pass)
+                sep.addChild(style.color(tuple(c * GUIDE_DIM for c in colour) if hidden_pass else colour))
+                sep.addChild(lines)
+                guides.addChild(sep)
+            self._guide_sets[key] = (points, lines)
+        self._guides.addChild(guides)
+        self.root.addChild(self._guides)
+
     def show_marker(self, point, half):
         """A cross with arms of `half` millimetres at `point`."""
         h = half
@@ -151,6 +177,33 @@ class Ghost:
 
     def hide_marker(self):
         self._marker.whichChild = coin.SO_SWITCH_NONE
+
+    def show_guides(self, guides, half):
+        """The alignment guides (`core.guides.Guide`): a line from the anchor to the point of every axis guide and a cross with arms of
+        `half` millimetres on every anchor, a point guide is the cross alone. Nothing is drawn for an empty list."""
+        if not guides:
+            self.hide_guides()
+            return
+        for key, (points, lines) in self._guide_sets.items():
+            coords, indices = [], []
+            for guide in (g for g in guides if g.axis == key):
+                a, b = guide.anchor, guide.point
+                base = len(coords)
+                if guide.kind == "axis":
+                    coords += [a, b]
+                    indices += [base, base + 1, -1]
+                    base = len(coords)
+                coords += [(a[0] - half, a[1], a[2]), (a[0] + half, a[1], a[2]), (a[0], a[1] - half, a[2]), (a[0], a[1] + half, a[2]),
+                           (a[0], a[1], a[2] - half), (a[0], a[1], a[2] + half)]
+                indices += [base, base + 1, -1, base + 2, base + 3, -1, base + 4, base + 5, -1]
+            points.point.setValues(0, len(coords), coords)
+            points.point.setNum(len(coords))
+            lines.coordIndex.setValues(0, len(indices), indices)
+            lines.coordIndex.setNum(len(indices))
+        self._guides.whichChild = coin.SO_SWITCH_ALL
+
+    def hide_guides(self):
+        self._guides.whichChild = coin.SO_SWITCH_NONE
 
     def show_shape(self, mesh):
         """The body and the outline curves of a `cad.meshes.Mesh`."""
@@ -190,3 +243,4 @@ class Ghost:
     def hide(self):
         self.hide_shape()
         self.hide_marker()
+        self.hide_guides()

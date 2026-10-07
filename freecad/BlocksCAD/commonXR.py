@@ -28,8 +28,8 @@ import freecad.BlocksCAD.controllerXR as conXR
 from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
-from freecad.BlocksCAD.core import stage, units
-from freecad.BlocksCAD.cad import attach, colour, combine, duplicate, edges, edit, joints, picking, sketching, values as object_values
+from freecad.BlocksCAD.core import guides, stage, units
+from freecad.BlocksCAD.cad import anchors, attach, colour, combine, duplicate, edges, edit, joints, picking, sketching, values as object_values
 from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.render.highlight import Highlights
 from freecad.BlocksCAD.ui.controller import UiController
@@ -123,6 +123,7 @@ except ImportError:
     raise ImportError("pyopenxr is required!")
 
 
+GUIDE_REACH = 0.008      # metres of hand space within which a point lines up with the points of the model
 MODEL_CHECK_FRAMES = 60  # frames between checks for controller models that appeared after the first enumeration
 
 ALL_SEVERITIES = (
@@ -567,6 +568,7 @@ class XRwidget(QOpenGLWidget):
 
     def setup_tool_services(self):
         """What the tools may use besides the input frame (docs/design.md, Architecture): the cursor, the document, the ghost."""
+        self.anchor_cache = anchors.Anchors()
         self.ghost = Ghost()      # the preview of a shape being made, in document space (added next to the document scene)
         self.highlights = Highlights()      # what the hand touches and what is selected, also in document space
         self.ui_consumes_trigger = False
@@ -582,11 +584,24 @@ class XRwidget(QOpenGLWidget):
             "highlight": self.highlights,
             "hand_rotation": lambda hand: stage.orientation_to_document(self.navigator.world,
                                                                         self.input_frame.hands[hand].aim.orientation),
-            "mm_per_metre": lambda: 1.0 / (self.doc_xr_transform.scaleFactor.getValue()[0] * self.navigator.world.scale),
+            "mm_per_metre": self.context_mm_per_metre,
+            "guides": self.align_point,
             "toast": self.ui.toast,
             "readout": self.ui.set_readout,
             "format_length": lambda mm: units.format_length(mm, self.ui.system),
         })
+
+    def align_point(self, raw, point, exclude=()):
+        """(point, guides) for a cursor at `raw` rounded to the grid as `point`: lined up with the vertices and straight edge middles of the
+        visible objects (except those in `exclude`) within `GUIDE_REACH` of hand space (docs/ux-design.md, Guides)."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return point, []
+        tolerance = GUIDE_REACH * self.context_mm_per_metre()
+        return guides.align(raw, point, self.anchor_cache.get(doc, exclude), tolerance)
+
+    def context_mm_per_metre(self):
+        return 1.0 / (self.doc_xr_transform.scaleFactor.getValue()[0] * self.navigator.world.scale)
 
     def undo(self):
         """Undo the last change; returns the text of the toast."""

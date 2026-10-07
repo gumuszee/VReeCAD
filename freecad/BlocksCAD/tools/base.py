@@ -98,6 +98,31 @@ class Tool:
     def __init__(self, ctx: ToolContext):
         self.ctx = ctx
         self.values = {option.name: option.default for option in self.options}
+        self._guide_key = None
+
+    def align(self, raw, point, exclude=()):
+        """(point, guides) for a cursor at `raw` that the grid rounded to `point`: the point lined up with the points of the model (the
+        service `guides`, which skips the objects named in `exclude`); the same point and no guides when there is no such service."""
+        service = self.ctx.services.get("guides")
+        return (point, []) if service is None else service(raw, point, tuple(exclude))
+
+    def show_guides(self, guides, half):
+        """Draw the guides of `align` (crosses of `half` millimetres on the anchors); a tick of the hand tells when another guide appears."""
+        ghost = self.ctx.services.get("ghost")
+        if ghost is None:
+            return
+        key = tuple((g.kind, g.axis, g.anchor) for g in guides)
+        if key != self._guide_key:
+            self._guide_key = key
+            if key and self.ctx.haptic is not None:
+                self.ctx.haptic(self.ctx.dominant, 0.12, 0.01)
+        ghost.show_guides(guides, half)
+
+    def hide_guides(self):
+        self._guide_key = None
+        ghost = self.ctx.services.get("ghost")
+        if ghost is not None:
+            ghost.hide_guides()
 
     def disc_slots(self):
         """The six `DiscSlot`s of the option disc, clockwise from the top (the stick up), or None for a tool without a disc."""

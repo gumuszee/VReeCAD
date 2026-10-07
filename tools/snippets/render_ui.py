@@ -219,6 +219,21 @@ try:
     for _ in range(3):
         _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_primitive_marker.png"))
+    from freecad.BlocksCAD.core import guides as _guides
+    _anchors = [(300.0, 0.0, 0.0), (300.0, 300.0, 300.0), (0.0, 0.0, 300.0)]      # corners of the test cube
+    _tool.ctx.services["guides"] = lambda raw, point, exclude: _guides.align(raw, point, _anchors, 12.0)
+    _cursor((296.0, -40.0, 6.0))
+    for _ in range(3):
+        _s.frame(0.02)
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_guides_axis.png"))
+    _cursor((298.0, 3.0, 5.0))
+    for _ in range(3):
+        _s.frame(0.02)
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_guides_point.png"))
+    del _tool.ctx.services["guides"]
+    _cursor((220.0, -40.0, 0.0))
+    for _ in range(3):
+        _s.frame(0.02)
     _s.input.set_hand(1, position=_to_stage((200.0, -60.0, 0.0)), stick=(0.87, 0.5))     # the stick towards the upper right
     for _ in range(6):
         _s.frame(0.02)

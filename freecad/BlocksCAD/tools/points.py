@@ -119,6 +119,7 @@ class PointsTool(TouchTool):
     def deactivate(self):
         if self._drag is not None:
             self._abort()
+        self.hide_guides()
         super().deactivate()
 
     def update(self, frame):
@@ -187,7 +188,12 @@ class PointsTool(TouchTool):
             self._finish(doc)
             return
         free = hand.down("button1")                         # the A button leaves the point off the grid
-        target = raw if free else snapping.snap_point(raw, self.grid)
+        if free:
+            target = raw
+            self.hide_guides()
+        else:
+            target, guides = self.align(raw, snapping.snap_point(raw, self.grid), (state["name"],))
+            self.show_guides(guides, self.grid * 0.5)
         local = tuple(blocks.to_local(obj, target))
         if local != state["now"]:
             vertices, _ = blocks.read(obj)
@@ -204,6 +210,7 @@ class PointsTool(TouchTool):
     def _finish(self, doc):
         state, self._drag = self._drag, None
         self._readout(None)
+        self.hide_guides()
         if state["changed"]:
             doc.commitTransaction()
             self._toast(f"{state['verb']} point {state['index']} of {state['label']}")
@@ -215,6 +222,7 @@ class PointsTool(TouchTool):
     def _abort(self):
         self._drag = None
         self._readout(None)
+        self.hide_guides()
         doc = self._service("document", lambda: None)()
         if doc is not None:
             doc.abortTransaction()
