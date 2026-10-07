@@ -136,12 +136,13 @@ class RelationTest(unittest.TestCase):
 
     def test_two_lines_end_to_end_are_not_made_tangent(self):
         line = si.Existing(points=[(0, 1, (10.0, 10.0)), (0, 2, (30.0, 30.0))], lines=[(0, (10.0, 10.0), (30.0, 30.0))])
-        self.assertEqual(si.infer_line(1, (30.0, 30.0), (50.0, 50.0), line), [("Coincident", 1, 1, 0, 2), ("Parallel", 1, 0)])
+        self.assertEqual(si.infer_line(1, (30.0, 30.0), (50.0, 50.0), line), [("Coincident", 1, 1, 0, 2), ("Parallel", 1, 0), ("Equal", 1, 0)])
 
     def test_a_line_along_or_across_a_slanted_line_is_parallel_or_perpendicular_to_it(self):
         slanted = si.Existing(points=[(0, 1, (0.0, 5.0)), (0, 2, (40.0, 25.0))], lines=[(0, (0.0, 5.0), (40.0, 25.0))])
-        self.assertEqual(si.infer_line(1, (10.0, 50.0), (50.0, 70.0), slanted), [("Parallel", 1, 0)])
-        self.assertEqual(si.infer_line(1, (10.0, 50.0), (30.0, 10.0), slanted), [("Perpendicular", 1, 0)])
+        self.assertEqual(si.infer_line(1, (10.0, 50.0), (50.0, 70.0), slanted), [("Parallel", 1, 0), ("Equal", 1, 0)])    # as long as it, too
+        self.assertEqual(si.infer_line(1, (10.0, 50.0), (30.0, 10.0), slanted), [("Perpendicular", 1, 0), ("Equal", 1, 0)])
+        self.assertEqual(si.infer_line(1, (10.0, 50.0), (70.0, 80.0), slanted), [("Parallel", 1, 0)])                  # parallel and longer
         self.assertEqual(si.infer_line(1, (10.0, 50.0), (30.0, 25.0), slanted), [])
 
     def test_a_line_that_is_tied_at_both_ends_gets_no_further_relation(self):
@@ -152,6 +153,25 @@ class RelationTest(unittest.TestCase):
     def test_a_line_along_an_axis_is_related_to_a_slanted_line_by_nothing(self):
         slanted = si.Existing(lines=[(0, (0.0, 5.0), (40.0, 25.0))])
         self.assertEqual(si.infer_line(1, (10.0, 50.0), (50.0, 50.0), slanted), [("Horizontal", 1)])
+
+
+class EqualTest(unittest.TestCase):
+    LINES = si.Existing(lines=[(0, (0.0, 0.0), (30.0, 0.0)), (1, (0.0, 10.0), (0.0, 50.0))])
+
+    def test_a_line_as_long_as_another_is_equal_to_the_first_such_line(self):
+        self.assertEqual(si.infer_line(2, (10.0, 20.0), (40.0, 20.0), self.LINES), [("Horizontal", 2), ("Equal", 2, 0)])
+        self.assertEqual(si.infer_line(2, (10.0, 20.0), (10.0, 60.0), si.Existing(lines=self.LINES.lines)), [("Vertical", 2), ("Equal", 2, 1)])
+
+    def test_a_line_of_another_length_gets_none(self):
+        self.assertEqual(si.infer_line(2, (10.0, 20.0), (45.0, 20.0), self.LINES), [("Horizontal", 2)])
+
+    def test_nothing_is_added_that_would_leave_the_line_over_constrained(self):
+        tied = si.Existing(points=[(0, 2, (30.0, 0.0)), (2, 1, (10.0, 20.0))], lines=self.LINES.lines)
+        full = si.infer_line(3, (30.0, 0.0), (60.0, 0.0), tied)                         # horizontal, joined at its start: three of four degrees
+        self.assertEqual(full, [("Horizontal", 3), ("Coincident", 3, 1, 0, 2), ("Equal", 3, 0)])
+        both = si.Existing(points=[(0, 2, (30.0, 0.0)), (4, 1, (60.0, 0.0))], lines=self.LINES.lines)
+        self.assertEqual(si.infer_line(3, (30.0, 0.0), (60.0, 0.0), both),
+                         [("Horizontal", 3), ("Coincident", 3, 1, 0, 2), ("Coincident", 3, 2, 4, 1)])    # both ends are joined: Equal would be redundant
 
 
 class NameTest(unittest.TestCase):

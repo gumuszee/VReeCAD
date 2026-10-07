@@ -107,6 +107,26 @@ def align_direction(start, end, references, tolerance):
     return best[1], (best[2], best[3])
 
 
+def align_length(start, end, references, tolerance):
+    """(end, reference) for a line drawn from `start` towards `end`: when its length is within `tolerance` of the length of a
+    reference line ((a, b) pairs), `end` moves along the line to exactly that length and `reference` is that line (the nearest length
+    wins); else (`end`, None)."""
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    length = (dx * dx + dy * dy) ** 0.5
+    if length < 1e-9:
+        return tuple(end), None
+    best = None
+    for a, b in references:
+        wanted = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+        gap = abs(wanted - length)
+        if wanted > 1e-9 and gap < tolerance and (best is None or gap < best[0]):
+            best = (gap, wanted, (a, b))
+    if best is None:
+        return tuple(end), None
+    scale = best[1] / length
+    return (start[0] + dx * scale, start[1] + dy * scale), best[2]
+
+
 def index_anchors(anchors):
     """The anchors sorted by each coordinate, as ((values, anchors) of x, of y, of z), for `align_translation`."""
     index = []

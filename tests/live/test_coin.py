@@ -1498,6 +1498,22 @@ class MoveLiveTest(unittest.TestCase):
         sketching.add_rectangle(self.doc, sketch, (100.0, 100.0), (150.0, 130.0))
         self.assertEqual(len(sketching.slanted_lines(sketch)), 2)                                  # the sides of a rectangle are not slanted
 
+    def test_a_line_as_long_as_another_is_equal_to_it_by_constraint_and_follows_when_that_one_changes(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))                     # the bottom side is 60 mm
+        geo, kept = sketching.add_line(self.doc, sketch, (100.0, 100.0), (160.0, 100.0))
+        self.doc.recompute()
+        self.assertIn("Equal", self.kinds(sketch))
+        self.assertTrue(sketching.solved(sketch))
+        text, name = sketching.dimension(self.doc, sketch, 0)                                    # the length of the bottom side
+        self.assertEqual(name, "length")
+        index = [i for i, c in enumerate(sketch.Constraints) if c.Name == "length"][0]
+        self.assertIsNone(sketching.set_dimension(sketch, index, 80.0))
+        self.doc.recompute()
+        line = sketch.Geometry[geo]
+        self.assertAlmostEqual((line.EndPoint - line.StartPoint).Length, 80.0, places=5)          # the equal line followed
+
     def test_the_own_points_of_a_sketch_leave_out_the_dragged_point_and_those_that_move_with_it(self):
         from freecad.BlocksCAD.cad import sketching
         sketch = self.sketch_on()

@@ -296,7 +296,8 @@ class SketchTool(TouchTool):
     def _place(self, sketch, local, hand, apart_from=None, line_from=None):
         """The point (x, y) of the sketch for the hand at `local`: on the grid and the guides, off both while the A button is held. With
         `line_from` (the start of a line being drawn) the point also moves to where the line is exactly parallel or perpendicular to a
-        slanted line of the sketch when it is nearly so (the drawn line then gets that constraint)."""
+        slanted line of the sketch when it is nearly so, and to the length of a line of the sketch when it is nearly as long (the drawn
+        line then gets that constraint)."""
         if hand.down("button1"):
             self.hide_guides()
             return (local[0], local[1])
@@ -305,12 +306,18 @@ class SketchTool(TouchTool):
         point, found = self._align2(frame, local, sketch, apart_from)
         service = self._service("guide_anchors")
         if line_from is not None and service is not None:
-            point, relation = guides.align_direction(line_from, point, sk.slanted_lines(sketch), service(())[1])
+            reach = service(())[1]
+            point, relation = guides.align_direction(line_from, point, sk.slanted_lines(sketch), reach)
+            found = list(found)
+            mid = lambda p, q: ((p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0, 0.0)
             if relation is not None:
                 name, (a, b) = relation
-                mid = lambda p, q: ((p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0, 0.0)
-                found = list(found) + [guides.Guide("axis", guides.OFF_AXIS, tuple(sk.frame_to_world(frame, mid(a, b))),
-                                                    tuple(sk.frame_to_world(frame, mid(line_from, point))), name)]
+                found.append(guides.Guide("axis", guides.OFF_AXIS, tuple(sk.frame_to_world(frame, mid(a, b))),
+                                          tuple(sk.frame_to_world(frame, mid(line_from, point))), name))
+            point, same = guides.align_length(line_from, point, sk.lines(sketch), reach)
+            if same is not None:
+                found.append(guides.Guide("axis", guides.OFF_AXIS, tuple(sk.frame_to_world(frame, mid(*same))),
+                                          tuple(sk.frame_to_world(frame, mid(line_from, point))), "Equal length"))
         self.show_guides(found, self.grid * 0.5)
         return point
 

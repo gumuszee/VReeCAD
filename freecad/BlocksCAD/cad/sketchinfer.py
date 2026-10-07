@@ -33,7 +33,7 @@ TOLERANCE = 1e-6          # millimetres: a point this close to an element lies o
 ANGLE_TOLERANCE = 1e-6    # of the sine or cosine of the angle between two unit directions that are parallel or perpendicular
 H_AXIS, V_AXIS = -1, -2
 LINE_DOF, ARC_DOF = 4, 5  # what a line (two points) and an arc (centre, radius, two angles) leave free
-COST = {"Horizontal": 1, "Vertical": 1, "Coincident": 2, "PointOnObject": 1, "Tangent": 3, "Parallel": 1, "Perpendicular": 1}
+COST = {"Horizontal": 1, "Vertical": 1, "Coincident": 2, "PointOnObject": 1, "Tangent": 3, "Parallel": 1, "Perpendicular": 1, "Equal": 1}
 
 
 @dataclass
@@ -138,7 +138,8 @@ def infer_line(new_id, p0, p1, existing):
     """The constraints of a new line from `p0` to `p1`: horizontal or vertical when it runs along an axis, and its ends tied to what
     they touch. An end on an axis is not tied to it when the line runs along that direction already (that would be redundant). A line
     that joins an arc at its end and runs along the arc there is **tangent** to it; a line that is neither horizontal nor vertical and
-    runs along or across a line of the sketch is **parallel** or **perpendicular** to it, if that leaves nothing redundant."""
+    runs along or across a line of the sketch is **parallel** or **perpendicular** to it, and a line as long as another is **equal** to it, if
+    that leaves nothing redundant."""
     constraints = []
     along = direction(p0, p1)
     if along is not None:
@@ -162,6 +163,12 @@ def infer_line(new_id, p0, p1, existing):
             if relation is not None and sum(COST[c[0]] for c in constraints) + COST[relation] <= LINE_DOF:
                 constraints.append((relation, new_id, geo))
                 break
+    length = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+    for geo, a, b in existing.lines:                # a line as long as another one is **equal** to it (the first such line)
+        if geo != new_id and abs(math.hypot(b[0] - a[0], b[1] - a[1]) - length) <= TOLERANCE:
+            if sum(COST[c[0]] for c in constraints) + COST["Equal"] <= LINE_DOF:
+                constraints.append(("Equal", new_id, geo))
+            break
     return constraints
 
 

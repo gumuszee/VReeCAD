@@ -105,6 +105,23 @@ class DirectionTest(unittest.TestCase):
         self.assertEqual(guides.Guide("axis", 0, (0, 0, 0), (1, 1, 0)).text, "Aligned X")
 
 
+class LengthTest(unittest.TestCase):
+    REFERENCES = [((0.0, 0.0), (40.0, 0.0)), ((0.0, 0.0), (0.0, 90.0))]
+
+    def test_a_length_near_a_reference_becomes_exactly_that_length_along_the_same_line(self):
+        end, same = guides.align_length((10.0, 20.0), (10.0, 62.0), self.REFERENCES, 5.0)
+        self.assertEqual((end, same), ((10.0, 60.0), self.REFERENCES[0]))
+        end, same = guides.align_length((0.0, 0.0), (30.0, 40.0), [((0.0, 0.0), (48.0, 0.0))], 5.0)
+        self.assertAlmostEqual(end[0], 28.8)
+        self.assertAlmostEqual(end[1], 38.4)                                           # the direction is kept
+
+    def test_the_nearest_length_wins_and_a_far_one_or_none_changes_nothing(self):
+        self.assertEqual(guides.align_length((0.0, 0.0), (0.0, 88.0), self.REFERENCES, 5.0)[1], self.REFERENCES[1])
+        self.assertEqual(guides.align_length((0.0, 0.0), (0.0, 60.0), self.REFERENCES, 5.0), ((0.0, 60.0), None))
+        self.assertEqual(guides.align_length((0.0, 0.0), (0.0, 0.0), self.REFERENCES, 5.0), ((0.0, 0.0), None))
+        self.assertEqual(guides.align_length((0.0, 0.0), (0.0, 42.0), [], 5.0), ((0.0, 42.0), None))
+
+
 class AlongTest(unittest.TestCase):
     def test_the_nearest_candidate_within_reach_wins(self):
         self.assertEqual(guides.align_along(34.0, 30.0, [(37.0, "a"), (35.5, "b"), (90.0, "c")], 5.0), (35.5, "b"))
