@@ -87,7 +87,7 @@ def tinted(hue):
 
 
 DEFAULT_PALETTE = Palette()
-PANEL_HUES = {"Tools": 0.38, "Edit": 0.92, "View": 0.11, "Session": 0.50}   # the default panels, green, rose, ochre, teal
+PANEL_HUES = {"Tools": 0.38, "Edit": 0.92, "View": 0.11, "Modify": 0.68, "Session": 0.50}   # the default panels, green, rose, ochre, violet, teal
 SPARE_HUES = (0.75, 0.02, 0.25, 0.45, 0.62)                                  # panels of other names take one of these by their name
 
 

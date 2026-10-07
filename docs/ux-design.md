@@ -64,12 +64,19 @@ The carousel is a prism around the long axis of the palette controller. It is at
 |---|---|
 | Tools | Create, Select, Move |
 | Edit | Undo, Redo, Delete |
+| Modify | Fuse, Cut, Common, Copy |
 | View | Reset view, Reload scene, Reset layout, Show hidden |
 | Session | Pointer (laser or tip), Close VR, and the sliders Angle and Length (tip angle and tip length) |
 
 **Delete** removes the selected objects in one transaction, so one undo step brings them back; a face, an edge or a vertex that is selected is not an object and is left alone (a toast says so). The selection that remains is what was not deleted.
 
-Planned: Modify (push/pull, boolean, mirror, pattern), Settings (handedness, comfort, snapping).
+**Modify** works on the selected whole objects (selected faces, edges and vertices are not objects and are left alone, a toast says so; the order of the selection matters):
+
+- **Fuse** joins two or more objects into one `Part::MultiFuse`, **Common** keeps what they all share (`Part::MultiCommon`) and **Cut** takes every object selected after the first away from the first (`Part::Cut`; several tools are fused first, in a `Part::MultiFuse` of their own). The result is a real feature that refers to its sources, so changing a source (a slider, the Move tool, the keypad) changes the result. The sources are hidden, not changed, and the result becomes the selection. A boolean that leaves nothing (objects that do not touch, a cut that removes everything) is refused with a toast and leaves the document as it was.
+- **Copy** copies each selected object together with the features it is built from and lays the copy beside the original, one length of its box along X plus 10 mm away; the copy is a feature of its own with its own properties (a copied box has its own Length), never a frozen shape. The copies become the selection.
+- Every action is one undo step.
+
+Planned: push/pull, mirror, pattern and colour, Settings (handedness, comfort, snapping).
 
 ### Sliders
 
@@ -225,7 +232,7 @@ Controllers without `aux1` and `aux2` undo and redo through the Edit panel faces
 ## Visual style
 
 Flat, high contrast panels: dark plate (RGB 0.10, 0.11, 0.14), face plate (0.20, 0.22, 0.28), hover (0.30, 0.45, 0.80), active tool and lifted panel (0.95, 0.65, 0.10), drop target (0.18, 0.36, 0.24), text white.
-Every panel of the carousel has a tint, so the panels tell apart at a glance: Tools green, Edit rose, View ochre, Session teal, any other panel one of five further hues chosen by its name. A tint is the grey of the default panel (plate, title bar, face, empty slot, lit plate) turned to the hue at the same luminance, so white text, the hover blue and the active orange keep exactly the contrast they have on the grey panels (11.7 : 1 for the text on a face, 2.6 : 1 for the hover on a face). The panels of the value module stay grey.
+Every panel of the carousel has a tint, so the panels tell apart at a glance: Tools green, Edit rose, View ochre, Modify violet, Session teal, any other panel one of five further hues chosen by its name. A tint is the grey of the default panel (plate, title bar, face, empty slot, lit plate) turned to the hue at the same luminance, so white text, the hover blue and the active orange keep exactly the contrast they have on the grey panels (11.7 : 1 for the text on a face, 2.6 : 1 for the hover on a face). The panels of the value module stay grey.
 A colour node is written only when its colour changes, and the contents of a panel that is seen from behind are not drawn (its plate hides them), so a carousel that is shown costs about as little as a hidden one.
 Text is drawn from glyph outlines (Coin `SoText3`) in Segoe UI Bold (the platform default where the family is missing) at fixed height and sits on a plate so scene geometry never overlaps it.
 The colours, the font and the text size are defined once in `ui/style.py`. Controllers keep the runtime-provided models.

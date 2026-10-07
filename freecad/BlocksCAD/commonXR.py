@@ -29,7 +29,7 @@ from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.core import stage, units
-from freecad.BlocksCAD.cad import edit, picking, values as object_values
+from freecad.BlocksCAD.cad import combine, edit, picking, values as object_values
 from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.render.highlight import Highlights
 from freecad.BlocksCAD.ui.controller import UiController
@@ -539,6 +539,10 @@ class XRwidget(QOpenGLWidget):
             "doc:undo": self.undo,
             "doc:redo": self.redo,
             "doc:delete": self.delete_selection,
+            "doc:fuse": lambda: self.combine_selection("fuse"),
+            "doc:cut": lambda: self.combine_selection("cut"),
+            "doc:common": lambda: self.combine_selection("common"),
+            "doc:copy": self.copy_selection,
             "app:close": lambda: QTimer.singleShot(0, close_xr_viewer),
         })
         self.ui = UiController(tool_registry.names(), tool_registry.label_of, actions, tool_hint=tool_registry.hint_of,
@@ -597,6 +601,26 @@ class XRwidget(QOpenGLWidget):
         items = picking.get_selection(doc)
         text = edit.delete_objects(doc, items)
         picking.set_selection(doc, [i for i in items if doc.getObject(i[0]) is not None])     # what is left of the selection
+        return text
+
+    def combine_selection(self, kind):
+        """Fuse, cut or intersect the selected objects in one undo step and select the result; returns the text of the toast."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return "No document"
+        text, name = combine.combine(doc, kind, picking.get_selection(doc))
+        if name is not None:
+            picking.set_selection(doc, [(name, "")])
+        return text
+
+    def copy_selection(self):
+        """Copy the selected objects in one undo step and select the copies; returns the text of the toast."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return "No document"
+        text, names = combine.copy_objects(doc, picking.get_selection(doc))
+        if names:
+            picking.set_selection(doc, [(name, "") for name in names])
         return text
 
     def read_preferences(self):

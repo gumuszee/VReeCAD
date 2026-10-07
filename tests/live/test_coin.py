@@ -206,7 +206,8 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(labels["pointer.angle"], "Angle 15°")
         self.assertEqual(labels["pointer.length"], "Length 40 mm")
         self.assertEqual(self.s.ui.slider_states()["pointer.angle"][0], 0.5)
-        self.assertEqual(self.s.ui.slider_rows(), {3: {1: "pointer.angle", 2: "pointer.length"}})
+        session = [p.name for p in self.s.ui.layout.pages].index("Session")
+        self.assertEqual(self.s.ui.slider_rows(), {session: {1: "pointer.angle", 2: "pointer.length"}})
         self.s.ui.settings.tip_angle = 30.0
         self.assertEqual(self.s.ui.labels()["pointer.angle"], "Angle 30°")
         self.s.ui.set_unit_system("Imperial decimal (in, lb)")
@@ -477,7 +478,7 @@ class SimUiTest(unittest.TestCase):
             self.s.frame(0.02)
         self.assertEqual(changes, [])
         self.s.ui.settings.tip_angle = 0.0
-        self.s.input.set_hand(1, position=(0.25, 1.3, -0.25), point_at=self.s.ui.ring.slot_centre(0, 1)[0])
+        self.s.input.set_hand(1, position=(0.25, 1.5, -0.25), point_at=self.s.ui.ring.slot_centre(0, 1)[0])
         for _ in range(3):
             self.s.frame(0.02)                     # a hover lights a face: now something is written
         self.assertGreater(len(changes), 0)
@@ -896,6 +897,72 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNone(self.doc.getObject(name))
         self.doc.undo()
         self.assertIsNotNone(self.doc.getObject(name))                                        # one undo step brings it back
+
+    def second_shape(self, shape="Cylinder", lo=(50.0, 50.0, 0.0), size=(100.0, 100.0, 100.0)):
+        from freecad.BlocksCAD.cad import primitives as prim
+        return prim.create(self.doc, shape, lo, size)
+
+    def test_a_fuse_is_one_undo_step_keeps_its_sources_and_follows_them(self):
+        from freecad.BlocksCAD.cad import combine
+        other = self.second_shape()
+        text, name = combine.combine(self.doc, "fuse", [(self.box.Name, ""), (other.Name, "")])
+        self.assertEqual(text, "Fuse: 2 objects")
+        fused = self.doc.getObject(name)
+        self.assertEqual(fused.TypeId, "Part::MultiFuse")
+        self.assertEqual(list(fused.Shapes), [self.box, other])
+        self.assertGreater(fused.Shape.Volume, self.box.Shape.Volume)
+        before = fused.Shape.Volume
+        self.box.Length = 300.0                                                              # the result follows its source
+        self.doc.recompute()
+        self.assertGreater(fused.Shape.Volume, before)
+        self.doc.undo()
+        self.assertIsNone(self.doc.getObject(name))
+        self.assertIsNotNone(self.doc.getObject(self.box.Name))
+
+    def test_a_cut_takes_every_later_object_from_the_first(self):
+        from freecad.BlocksCAD.cad import combine
+        other = self.second_shape("Box", (50.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        third = self.second_shape("Box", (0.0, 50.0, 0.0), (50.0, 50.0, 100.0))
+        text, name = combine.combine(self.doc, "cut", [(self.box.Name, ""), (other.Name, "")])
+        cut = self.doc.getObject(name)
+        self.assertEqual(cut.TypeId, "Part::Cut")
+        self.assertAlmostEqual(cut.Shape.Volume, 50.0 * 100.0 * 100.0)
+        text, name = combine.combine(self.doc, "cut", [(self.box.Name, ""), (other.Name, ""), (third.Name, "")])
+        cut = self.doc.getObject(name)
+        self.assertEqual(cut.Tool.TypeId, "Part::MultiFuse")                                 # many tools are fused first
+        self.assertAlmostEqual(cut.Shape.Volume, 50.0 * 50.0 * 100.0)
+
+    def test_a_common_keeps_what_the_objects_share_and_an_empty_one_is_refused(self):
+        from freecad.BlocksCAD.cad import combine
+        other = self.second_shape("Box", (50.0, 50.0, 0.0), (100.0, 100.0, 100.0))
+        text, name = combine.combine(self.doc, "common", [(self.box.Name, ""), (other.Name, "")])
+        self.assertAlmostEqual(self.doc.getObject(name).Shape.Volume, 50.0 * 50.0 * 100.0)
+        far = self.second_shape("Box", (500.0, 500.0, 500.0), (10.0, 10.0, 10.0))
+        count = len(self.doc.Objects)
+        text, name = combine.combine(self.doc, "common", [(self.box.Name, ""), (far.Name, "")])
+        self.assertIsNone(name)
+        self.assertTrue(text.startswith("Common failed"), text)
+        self.assertEqual(len(self.doc.Objects), count)                                      # nothing was left behind
+
+    def test_a_copy_has_its_own_parameters_and_lies_beside_the_original(self):
+        from freecad.BlocksCAD.cad import combine
+        other = self.second_shape()
+        text, names = combine.copy_objects(self.doc, [(self.box.Name, "")])
+        self.assertEqual(len(names), 1)
+        copy = self.doc.getObject(names[0])
+        self.assertEqual(copy.TypeId, "Part::Box")
+        self.assertEqual(copy.Length.Value, 100.0)
+        self.assertAlmostEqual(copy.Placement.Base.x, self.box.Placement.Base.x + 110.0)
+        self.box.Length = 50.0
+        self.doc.recompute()
+        self.assertEqual(copy.Length.Value, 100.0)                                           # independent of the original
+        text, name = combine.combine(self.doc, "fuse", [(self.box.Name, ""), (other.Name, "")])
+        text, names = combine.copy_objects(self.doc, [(name, "")])                           # a boolean copies with its sources
+        copied = self.doc.getObject(names[0])
+        self.assertEqual(copied.TypeId, "Part::MultiFuse")
+        self.assertAlmostEqual(copied.Shape.BoundBox.XMin, self.doc.getObject(name).Shape.BoundBox.XMax + 10.0, places=3)
+        self.doc.undo()
+        self.assertIsNone(self.doc.getObject(names[0]))
 
     def test_picking_one_sort_of_element_ignores_closer_elements_of_another_sort(self):
         from freecad.BlocksCAD.cad import picking
