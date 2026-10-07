@@ -1206,6 +1206,250 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(s.ui.module.editor.target.title, made.Label + " point 6")
         self.assertEqual(s.ui.module.slider_states()["val.0"][1], "Point X 500 mm")
 
+    def sketch_on(self, plane="XY", point=(0.0, 0.0, 0.0)):
+        from freecad.BlocksCAD.cad import sketching
+        self.doc.openTransaction("sketch")
+        sketch = sketching.create_on_plane(self.doc, plane, point, 10.0)
+        self.doc.recompute()
+        return sketch
+
+    def test_a_sketch_lies_on_a_plane_at_the_height_of_the_cursor_and_maps_points_both_ways(self):
+        from freecad.BlocksCAD.cad import sketching
+        for plane, point, height_axis in (("XY", (5.0, 6.0, 33.0), 2), ("XZ", (5.0, 44.0, 7.0), 1), ("YZ", (52.0, 6.0, 7.0), 0)):
+            sketch = self.sketch_on(plane, point)
+            world = sketching.to_world(sketch, (10.0, 20.0, 0.0))
+            normal = sketching.plane_normal(plane)
+            self.assertAlmostEqual(abs(sum(w * n for w, n in zip(world, normal))), round(abs(point[height_axis]) / 10.0) * 10.0, places=6)
+            back = sketching.to_local(sketch, world)
+            self.assertAlmostEqual(back[0], 10.0)
+            self.assertAlmostEqual(back[1], 20.0)
+            self.assertAlmostEqual(back[2], 0.0)
+        xz = self.sketch_on("XZ", (0.0, 0.0, 0.0))
+        self.assertEqual(tuple(round(c, 6) for c in sketching.to_world(xz, (10.0, 20.0, 0.0))), (10.0, 0.0, 20.0))   # x to X, y to Z
+
+    def test_a_rectangle_is_four_joined_horizontal_and_vertical_lines_with_free_size_and_position(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        first, kept = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
+        self.doc.recompute()
+        self.assertEqual((first, kept), (0, 8))
+        self.assertEqual(len(sketch.Geometry), 4)
+        self.assertEqual(sketch.DoF, 4)                                                      # position and size are still free
+        self.assertTrue(sketch.Shape.Wires[0].isClosed())
+        box = sketch.Shape.BoundBox
+        self.assertEqual((box.XMin, box.YMin, box.XMax, box.YMax), (10.0, 10.0, 60.0, 40.0))
+
+    def test_shapes_are_tied_to_the_origin_the_axes_and_to_each_other(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        first, kept = sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))
+        self.assertEqual(kept, 9)                                                            # 8 and the corner on the origin
+        self.assertEqual(sketch.DoF, 2)
+        geo, kept = sketching.add_line(self.doc, sketch, (60.0, 40.0), (90.0, 70.0))         # starts at a corner of the rectangle
+        self.assertEqual(kept, 1)
+        self.assertEqual(sketch.DoF, 4)
+        geo, kept = sketching.add_line(self.doc, sketch, (90.0, 70.0), (90.0, 20.0))         # vertical and joined to the last end
+        self.assertEqual(kept, 2)
+        geo, kept = sketching.add_circle(self.doc, sketch, (30.0, 20.0), 10.0)
+        self.assertEqual(kept, 0)
+        self.assertTrue(sketching.solved(sketch))
+        self.doc.recompute()
+        self.assertTrue(sketch.isValid())
+
+    def test_a_constraint_the_solver_refuses_is_left_out_and_the_shape_stays(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))
+        geo, kept = sketching.add_line(self.doc, sketch, (0.0, 0.0), (60.0, 0.0))            # on top of the lower side: redundant ties
+        self.assertTrue(sketching.solved(sketch))
+        self.assertEqual(len(sketch.Geometry), 5)
+
+    def test_dragging_a_point_keeps_the_constraints_and_a_dimension_fixes_a_length(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        first, _ = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
+        self.assertIsNone(sketching.move_point(self.doc, sketch, first + 1, 2, (80.0, 55.0)))       # the far corner
+        self.doc.recompute()
+        box = sketch.Shape.BoundBox
+        self.assertEqual((box.XMin, box.YMin, box.XMax, box.YMax), (10.0, 10.0, 80.0, 55.0))     # still a rectangle
+        text, name = sketching.dimension(self.doc, sketch, first)                             # the lower side
+        self.assertEqual((text, name), ("Dimension length = 70 mm", "length"))
+        self.assertEqual(sketching.dimension(self.doc, sketch, first), ("That is dimensioned already", None))
+        index = sketching.dimensions(sketch)[0][0]
+        self.assertIsNone(sketching.set_dimension(sketch, index, 90.0))
+        self.doc.recompute()
+        self.assertAlmostEqual(sketch.Shape.BoundBox.XMax - sketch.Shape.BoundBox.XMin, 90.0)
+        sketching.move_point(self.doc, sketch, first + 1, 2, (200.0, 55.0))                  # the dimension holds the width
+        self.assertAlmostEqual(sketch.Shape.BoundBox.XMax - sketch.Shape.BoundBox.XMin, 90.0, places=4)
+
+    def test_a_circle_gets_a_radius_and_a_value_the_solver_cannot_take_is_refused(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        geo, _ = sketching.add_circle(self.doc, sketch, (30.0, 30.0), 10.0)
+        self.assertEqual(sketching.dimension(self.doc, sketch, geo), ("Dimension radius = 10 mm", "radius"))
+        index = sketching.dimensions(sketch)[0][0]
+        self.assertEqual(sketching.dimensions(sketch)[0][1:], ("radius", "Radius", 10.0))
+        self.assertIsNone(sketching.set_dimension(sketch, index, 25.0))
+        self.assertIsNotNone(sketching.set_dimension(sketch, index, -5.0))
+        self.assertAlmostEqual(sketching.dimensions(sketch)[0][3], 25.0)
+
+    def test_a_sketch_attached_to_a_face_follows_the_face(self):
+        from freecad.BlocksCAD.cad import sketching
+        self.doc.openTransaction("sketch")
+        sketch = sketching.create_on_face(self.doc, self.box, "Face6")
+        self.assertAlmostEqual(sketching.to_world(sketch, (5.0, 5.0, 0.0))[2], 100.0)
+        sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (50.0, 30.0))
+        self.doc.recompute()
+        self.box.Height = 140.0
+        self.doc.recompute()
+        self.assertAlmostEqual(sketch.Shape.BoundBox.ZMax, 140.0)
+        self.assertEqual(sketching.current_sketch(self.doc, [(self.box.Name, ""), (sketch.Name, "")]), sketch)
+        self.assertIsNone(sketching.current_sketch(self.doc, [(self.box.Name, "")]))
+
+    def test_a_sketch_is_extruded_into_a_solid_that_follows_it_and_an_open_sketch_is_refused(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
+        self.doc.commitTransaction()
+        text, names = sketching.extrude(self.doc, [(sketch.Name, "")], 20.0)
+        self.assertEqual(text, "Extruded " + sketch.Label)
+        solid = self.doc.getObject(names[0])
+        self.assertAlmostEqual(solid.Shape.Volume, 50.0 * 30.0 * 20.0)
+        self.doc.undo()
+        self.assertIsNone(self.doc.getObject(names[0]))
+        open_sketch = self.sketch_on("XZ", (0.0, 0.0, 0.0))
+        sketching.add_line(self.doc, open_sketch, (0.0, 0.0), (50.0, 0.0))
+        count = len(self.doc.Objects)
+        text, names = sketching.extrude(self.doc, [(open_sketch.Name, "")], 20.0)
+        self.assertTrue(text.startswith("Extrude failed"), text)
+        self.assertEqual((names, len(self.doc.Objects)), ([], count))
+        self.assertEqual(sketching.extrude(self.doc, [(self.box.Name, "")], 20.0), ("Select a sketch to extrude", []))
+
+    def test_the_points_and_curves_of_a_sketch_are_picked_and_drawn(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on("XY", (0.0, 0.0, 0.0))
+        sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
+        sketching.add_circle(self.doc, sketch, (30.0, 25.0), 5.0)
+        found = sketching.pick(self.doc, (11.0, 9.0, 1.0), 1000.0, "vertex")
+        self.assertEqual((found.name, found.sub), (sketch.Name, "Point0.1"))
+        self.assertIsNone(sketching.pick(self.doc, (45.0, 25.0, 0.0), 1000.0, "vertex"))
+        found = sketching.pick(self.doc, (35.0, 12.0, 0.0), 1000.0, "edge")
+        self.assertEqual(found.sub, "Curve0")
+        found = sketching.pick(self.doc, (35.0, 25.0, 3.0), 1000.0, "edge")                    # the circle of radius 5 at 30, 25
+        self.assertEqual(found.sub, "Curve4")
+        self.assertEqual(len(sketching.handles(self.doc).markers), 9)
+        self.assertEqual(sketching.display(sketch, "Point0.1").markers, [(10.0, 10.0, 0.0)])
+        self.assertEqual(len(sketching.display(sketch, "Curve4").polylines[0]), sketching.CIRCLE_POINTS + 1)
+
+    def test_the_dimensions_of_a_sketch_are_values_that_can_be_set_and_bound_to_a_variable(self):
+        from freecad.BlocksCAD.cad import sketching, values as object_values, variables
+        from freecad.BlocksCAD.core import values as editing
+        sketch = self.sketch_on()
+        first, _ = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
+        sketching.dimension(self.doc, sketch, first)
+        sketching.dimension(self.doc, sketch, first + 1)
+        key, factory = object_values.source(self.doc, lambda doc: [(sketch.Name, "")])
+        self.assertEqual(key, (self.doc.Name, sketch.Name))
+        editor = editing.ValueEditor(factory(), step=10.0)
+        self.assertEqual([(f.label, f.value) for f in editor.fields][:3], [("length", 50.0), ("length2", 30.0), ("X", 0.0)])
+        editor.select(0)
+        self.assertTrue(editor.nudge(1))                                                      # the stick: 50 to 60
+        editor.commit()
+        self.assertAlmostEqual(sketch.Shape.BoundBox.XMax - sketch.Shape.BoundBox.XMin, 60.0)
+        editor.key("makevar")
+        self.assertEqual(editor.message, "Variable length = 60 mm")
+        variables.set_value(self.doc, "length", 85.0)
+        self.doc.recompute()
+        self.assertAlmostEqual(sketch.Shape.BoundBox.XMax - sketch.Shape.BoundBox.XMin, 85.0)
+        editor.select(1)
+        editor.entry = "length / 2"
+        editor.key("enter")
+        self.assertAlmostEqual(sketch.Shape.BoundBox.YMax - sketch.Shape.BoundBox.YMin, 42.5)
+        editor.select(0)
+        editor.entry = "0"
+        editor.key("enter")                                                                   # a length is at least 0.1 mm, the variable takes it
+        self.assertEqual(variables.list_variables(self.doc), [("length", 0.1)])
+
+    def test_an_attached_sketch_shows_only_its_dimensions_and_an_extrusion_has_a_length_to_edit(self):
+        from freecad.BlocksCAD.cad import sketching, values as object_values
+        from freecad.BlocksCAD.core import values as editing
+        self.doc.openTransaction("sketch")
+        sketch = sketching.create_on_face(self.doc, self.box, "Face6")
+        first, _ = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
+        sketching.dimension(self.doc, sketch, first)
+        self.doc.commitTransaction()
+        key, factory = object_values.source(self.doc, lambda doc: [(sketch.Name, "")])
+        self.assertEqual([f.label for f in editing.ValueEditor(factory()).fields], ["length"])
+        text, names = sketching.extrude(self.doc, [(sketch.Name, "")], 20.0)
+        solid = self.doc.getObject(names[0])
+        key, factory = object_values.source(self.doc, lambda doc: [(solid.Name, "")])
+        editor = editing.ValueEditor(factory(), step=10.0)
+        self.assertEqual([(f.label, f.value) for f in editor.fields][:1], [("Length", 20.0)])
+        self.assertTrue(editor.nudge(1))
+        editor.commit()
+        self.assertAlmostEqual(solid.LengthFwd.Value, 30.0)
+
+    def test_the_sketch_tool_draws_edits_and_dimensions_a_rectangle_in_the_sim(self):
+        from freecad.BlocksCAD.cad import sketching
+        s = self.session()
+        s.select_tool("sketch")
+        s.tool_manager.active.values["mode"] = "Rectangle"
+        self.hand(1, (300.0, 0.0, 0.0))
+        self.hand(1, (300.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (360.0, 40.0, 0.0), trigger=1.0)
+        self.assertEqual(s.ui.gesture_text, "Rectangle: 60 mm x 40 mm")
+        self.hand(1, (360.0, 40.0, 0.0), trigger=0.0)
+        (sketch,) = [o for o in self.doc.Objects if sketching.is_sketch(o)]
+        self.assertEqual(len(sketch.Geometry), 4)
+        box = sketch.Shape.BoundBox
+        self.assertEqual((box.XMin, box.YMin, box.XMax, box.YMax), (300.0, 0.0, 360.0, 40.0))
+        self.assertEqual(self.selection(), [(sketch.Name, ())])
+        s.tool_manager.active.values["mode"] = "Edit"
+        self.hand(1, (360.0, 40.0, 0.0))                                                      # drag the far corner out
+        self.hand(1, (360.0, 40.0, 0.0), trigger=1.0)
+        self.hand(1, (380.0, 60.0, 0.0), trigger=1.0)
+        self.hand(1, (380.0, 60.0, 0.0), trigger=0.0)
+        box = sketch.Shape.BoundBox
+        self.assertEqual((box.XMin, box.YMin, box.XMax, box.YMax), (300.0, 0.0, 380.0, 60.0))
+        self.hand(1, (340.0, 0.0, 0.0))                                                       # press on the lower side: it is dimensioned
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (340.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (340.0, 0.0, 0.0), trigger=0.0)
+        self.assertEqual([d[1:] for d in sketching.dimensions(sketch)], [("length", "Distance", 80.0)])
+        self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Dimension length = 80 mm")
+        self.doc.undo()                                                                       # the dimension is one step
+        self.assertEqual(sketching.dimensions(sketch), [])
+        self.doc.undo()                                                                       # the drag of the corner
+        box = sketch.Shape.BoundBox
+        self.assertEqual((box.XMax, box.YMax), (360.0, 40.0))
+        self.doc.undo()                                                                       # the rectangle and its sketch
+        self.assertEqual([o for o in self.doc.Objects if sketching.is_sketch(o)], [])
+
+    def test_a_circle_and_a_line_join_the_sketch_and_a_press_on_a_face_attaches_a_new_one(self):
+        from freecad.BlocksCAD.cad import sketching
+        s = self.session()
+        s.select_tool("sketch")
+        s.tool_manager.active.values["mode"] = "Circle"
+        self.hand(1, (50.0, 50.0, 96.0))                                                      # the tip is near the top face of the box
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (70.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (70.0, 50.0, 96.0), trigger=0.0)
+        (sketch,) = [o for o in self.doc.Objects if sketching.is_sketch(o)]
+        self.assertEqual(list(sketch.AttachmentSupport[0][1]), ["Face6"])
+        circle = sketch.Geometry[0]
+        self.assertAlmostEqual(circle.Radius, 20.0)
+        self.assertAlmostEqual(sketch.Shape.BoundBox.ZMax, 100.0)
+        s.tool_manager.active.values["mode"] = "Line"
+        self.hand(1, (20.0, 20.0, 100.0))
+        self.hand(1, (20.0, 20.0, 100.0), trigger=1.0)
+        self.hand(1, (20.0, 60.0, 100.0), trigger=1.0)
+        self.hand(1, (20.0, 60.0, 100.0), trigger=0.0)
+        self.assertEqual(len(sketch.Geometry), 2)
+        self.assertTrue(sketching.solved(sketch))
+
     def test_a_mirror_is_a_parametric_image_one_gap_beyond_the_object(self):
         from freecad.BlocksCAD.cad import duplicate
         text, names = duplicate.mirror(self.doc, [(self.box.Name, "")], 0)

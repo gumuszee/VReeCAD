@@ -29,7 +29,7 @@ from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.core import stage, units
-from freecad.BlocksCAD.cad import colour, combine, duplicate, edit, picking, values as object_values
+from freecad.BlocksCAD.cad import colour, combine, duplicate, edit, picking, sketching, values as object_values
 from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.render.highlight import Highlights
 from freecad.BlocksCAD.ui.controller import UiController
@@ -38,6 +38,7 @@ import freecad.BlocksCAD.tools.select  # noqa: F401
 import freecad.BlocksCAD.tools.move  # noqa: F401
 import freecad.BlocksCAD.tools.pushpull  # noqa: F401
 import freecad.BlocksCAD.tools.points  # noqa: F401
+import freecad.BlocksCAD.tools.sketch  # noqa: F401
 from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
 from freecad.BlocksCAD.backends.openxr_models import RuntimeModels
 from freecad.BlocksCAD.render.gltf_coin import load_glb
@@ -546,6 +547,7 @@ class XRwidget(QOpenGLWidget):
             "doc:common": lambda: self.combine_selection("common"),
             "doc:copy": self.copy_selection,
             "doc:colour": self.colour_selection,
+            "doc:extrude": self.extrude_selection,
             **{f"doc:mirror_{a}": (lambda i=i: self.duplicate_selection("mirror", i)) for i, a in enumerate("xyz")},
             **{f"doc:pattern_{a}": (lambda i=i: self.duplicate_selection("pattern", i)) for i, a in enumerate("xyz")},
             "app:close": lambda: QTimer.singleShot(0, close_xr_viewer),
@@ -634,6 +636,16 @@ class XRwidget(QOpenGLWidget):
         if doc is None:
             return "No document"
         text, names = getattr(duplicate, kind)(doc, picking.get_selection(doc), axis)
+        if names:
+            picking.set_selection(doc, [(name, "") for name in names])
+        return text
+
+    def extrude_selection(self):
+        """Extrude the selected sketches into solids in one undo step and select them; returns the text of the toast."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return "No document"
+        text, names = sketching.extrude(doc, picking.get_selection(doc), sketching.EXTRUDE_LENGTH)
         if names:
             picking.set_selection(doc, [(name, "") for name in names])
         return text

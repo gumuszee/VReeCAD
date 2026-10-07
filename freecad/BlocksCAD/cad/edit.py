@@ -31,6 +31,7 @@ SIZE_PROPERTIES = {
     "Part::Torus": ("Radius1", "Radius2"),
     "Part::Wedge": ("Xmax", "Ymax", "Zmax", "X2max"),
     "Part::Prism": ("Circumradius", "Height"),
+    "Part::Extrusion": ("LengthFwd",),         # an extruded sketch: how far it is pulled
 }
 
 

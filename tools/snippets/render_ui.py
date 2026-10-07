@@ -387,6 +387,24 @@ try:
         _s.input.set_hand(1, grip=0.0, trigger=0.0)
         _s.frame(0.02)
         _pk.clear_selection()
+        # the Sketch tool: the square that shows the plane of a new sketch, then a rectangle being dragged (a grip cancels)
+        _s.select_tool("sketch")
+        _s.tool_manager.active.values["mode"] = "Rectangle"
+        _cursor((250.0, -30.0, 160.0))
+        for _ in range(12):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_sketch_plane.png"))
+        _cursor((250.0, -30.0, 160.0), trigger=1.0)
+        _cursor((450.0, 30.0, 160.0), trigger=1.0)
+        for _ in range(3):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_sketch_drag.png"))
+        print("sketch readout:", _s.ui.gesture_text)
+        _s.input.set_hand(1, grip=1.0)
+        _s.frame(0.02)
+        _s.input.set_hand(1, grip=0.0, trigger=0.0)
+        _s.frame(0.02)
+        _pk.clear_selection()
         # the value panels: they follow the selection, so selecting the box adds a side with the panels Values, Number pad and Keys to the carousel
         from freecad.BlocksCAD.cad import picking as _pk
         _pk.set_selection(_temp, [(_temp.Objects[0].Name, "")])

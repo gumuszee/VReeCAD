@@ -15,7 +15,7 @@
 # ***************************************************************************
 """The faces and the default layout. Tool faces are generated from the tool registry; the other faces are fixed.
 Action ids: "tool:<name>", "view:reset", "scene:reload", "doc:undo", "doc:redo", "doc:delete", "doc:fuse", "doc:cut", "doc:common",
-"doc:copy", "doc:mirror_<axis>", "doc:pattern_<axis>", "doc:colour", "app:close", and, handled by the UI controller itself,
+"doc:copy", "doc:mirror_<axis>", "doc:pattern_<axis>", "doc:colour", "doc:extrude", "app:close", and, handled by the UI controller itself,
 "layout:reset", "layout:show_hidden" and "pointer:mode".
 A slider is a face of kind "slider" (action "slider:<setting>"): it takes a whole row of its panel, so it sits in the first slot of a
 row and the other slots of that row stay empty. `SLIDERS` holds the range and step of each slider by face id."""
@@ -70,6 +70,7 @@ def build_faces(tool_names, tool_label, tool_hint=None):
         Face("doc.pattern_y", "Pattern Y", "doc:pattern_y", tip="Repeat the selected objects three times along Y"),
         Face("doc.pattern_z", "Pattern Z", "doc:pattern_z", tip="Repeat the selected objects three times along Z"),
         Face("doc.colour", "Colour", "doc:colour", tip="Give the selected objects the next colour"),
+        Face("doc.extrude", "Extrude", "doc:extrude", tip="Extrude the selected sketches into solids"),
         Face("app.close", "Close VR", "app:close", tip="Close the VR viewer"),
         Face("pointer.mode", "Pointer", "pointer:mode", tip="Switch between laser and tip"),
         Face("pointer.angle", "Angle", "slider:tip_angle", "slider", "Hold the trigger and drag"),
@@ -84,7 +85,7 @@ def default_layout(tool_names):
         Page("Edit", ["doc.undo", "doc.redo", "doc.delete"]),
         Page("Modify", ["doc.fuse", "doc.cut", "doc.common", "doc.copy",
                         "doc.mirror_x", "doc.mirror_y", "doc.mirror_z", "doc.colour",
-                        "doc.pattern_x", "doc.pattern_y", "doc.pattern_z"]),
+                        "doc.pattern_x", "doc.pattern_y", "doc.pattern_z", "doc.extrude"]),
         Page("View", ["view.reset", "view.reload", "view.layout", "view.hidden"]),
         Page("Session", ["pointer.mode", "app.close", None, None,
                          "pointer.angle", None, None, None,

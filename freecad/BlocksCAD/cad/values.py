@@ -21,10 +21,10 @@ A value may be bound to an expression of the variables of the document (`cad/var
 variable when the value is bound to one variable alone, and refuse when the expression is more than that.
 `field_specs` is pure Python; FreeCAD is only used by the object."""
 
-from freecad.BlocksCAD.cad import block, edit, picking, variables
+from freecad.BlocksCAD.cad import block, edit, picking, sketching, variables
 from freecad.BlocksCAD.core.values import Field, ValueTarget, pretty_expression, single_variable
 
-LABELS = {"Radius1": "Radius 1", "Radius2": "Radius 2", "Circumradius": "Radius", "Xmax": "X size", "Ymax": "Y size", "Zmax": "Z size",
+LABELS = {"LengthFwd": "Length", "Radius1": "Radius 1", "Radius2": "Radius 2", "Circumradius": "Radius", "Xmax": "X size", "Ymax": "Y size", "Zmax": "Z size",
           "X2max": "Top X size"}
 ZERO_ALLOWED = {("Part::Cone", "Radius1"), ("Part::Cone", "Radius2"), ("Part::Wedge", "X2max")}   # a size that may be a point or an edge
 POSITION = (("pos.x", "X"), ("pos.y", "Y"), ("pos.z", "Z"))
@@ -54,6 +54,8 @@ def source(doc, get_selection=None):
     for name, _ in get_selection(doc):
         obj = doc.getObject(name)
         if editable(obj):
+            if sketching.is_sketch(obj):
+                return (doc.Name, name), (lambda d=doc, o=obj: SketchValues(d, o))
             index = block.picked(obj) if block.is_block(obj) else None
             if index is not None and index < len(obj.Vertices):
                 return (doc.Name, name, index), (lambda d=doc, o=obj, i=index: BlockValues(d, o, i))
@@ -214,3 +216,35 @@ class BlockValues(ObjectValues):
             self._begin()
             block.ensure_point(self.obj, self.index)
         super().bind(name, expression, value)
+
+
+class SketchValues(ObjectValues):
+    """The values of a sketch: its named dimensions (`length`, `radius`, ...), then its position when it is not attached to a face. A dimension
+    is a driving constraint, so a value set here moves the sketch to the nearest one that keeps the other constraints; a value the solver
+    cannot take is refused. Dimensions can be bound to variables like any value (the path is `Constraints.<name>`)."""
+
+    def _dimension(self, name):
+        for index, label, _, value in sketching.dimensions(self.obj):
+            if f"dim.{label}" == name:
+                return index, value
+        raise ValueError("That dimension is gone")
+
+    def _current(self, name):
+        return self._dimension(name)[1] if name.startswith("dim.") else super()._current(name)
+
+    def _path(self, name):
+        return "Constraints." + name[4:] if name.startswith("dim.") else ObjectValues._path(name)
+
+    def fields(self):
+        bound = self._expressions()
+        fields = [Field(f"dim.{label}", label, value, edit.MIN_SIZE, expression=bound.get("Constraints." + label))
+                  for _, label, _, value in sketching.dimensions(self.obj)]
+        return fields + ([] if self.obj.AttachmentSupport else super().fields())
+
+    def _write(self, name, value):
+        if not name.startswith("dim."):
+            super()._write(name, value)
+            return
+        error = sketching.set_dimension(self.obj, self._dimension(name)[0], value)
+        if error is not None:
+            raise ValueError(error)
