@@ -568,11 +568,13 @@ class XRwidget(QOpenGLWidget):
         self.ui.part_frame = lambda hand, names, lift: self.xr_con[hand].part_frame(names, lift)
         self.ui.values_source = lambda: object_values.source(App.ActiveDocument)
         self.setup_tool_services()
+        self.warm_caches()                 # before the first frame, not in it
         self.ui.show_first_help()          # the controls card, once, the first time the addon runs
 
     def setup_tool_services(self):
         """What the tools may use besides the input frame (docs/design.md, Architecture): the cursor, the document, the ghost."""
         self.anchor_cache = anchors.Anchors()
+        self._warmed = None                # the name of the document whose caches have been read (`warm_caches`)
         self.ghost = Ghost()      # the preview of a shape being made, in document space (added next to the document scene)
         self.highlights = Highlights()      # what the hand touches and what is selected, also in document space
         self.ui_consumes_trigger = False
@@ -1324,8 +1326,22 @@ class XRwidget(QOpenGLWidget):
         self.nav_transform.rotation.setValue(*world.rotation)
         self.nav_transform.scaleFactor.setValue(world.scale, world.scale, world.scale)
 
+    def warm_caches(self):
+        """Read what picking and the guides need from the active document when it is first seen (a few hundred milliseconds with
+        hundreds of objects, the first read of every object), so that the first touch of a tool does not stall a frame. Only
+        the changed objects are read afterwards (`cad/changes.py`)."""
+        doc = App.ActiveDocument
+        name = None if doc is None else doc.Name
+        if name == self._warmed:
+            return
+        self._warmed = name
+        if doc is not None:
+            picking.warm(doc)
+            self.anchor_cache.get(doc, ())
+
     def update_ui(self, frame):
         """One frame of the user interface: grip navigation, palette ring, haptics, ray and trigger ownership."""
+        self.warm_caches()
         self.ui.active_actions = {f"tool:{self.tools.active_name}"}
         self.ui.active_tool = self.tools.active
         self.ui.mm_to_stage = self.doc_xr_transform.scaleFactor.getValue()[0]

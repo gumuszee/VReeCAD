@@ -2033,6 +2033,17 @@ class MoveLiveTest(unittest.TestCase):
         finally:
             App.closeDocument(other.Name)
 
+    def test_warming_reads_every_box_at_once_and_a_pick_after_it_reads_nothing(self):
+        from freecad.BlocksCAD.cad import picking, primitives as prim
+        for i in range(5):
+            prim.create(self.doc, "Box", (300.0 + 150.0 * i, 0.0, 0.0), (100.0, 100.0, 100.0))
+        picking.warm(self.doc)
+        values, touched = picking._BOXES.sync(self.doc)
+        self.assertEqual(touched, set())                                                    # nothing was left to read
+        self.assertEqual(len(values), 6)
+        self.assertEqual(picking.pick(self.doc, (350.0, 50.0, 96.0), 1000.0, "object").kind, "object")
+        self.assertEqual(picking._BOXES.sync(self.doc)[1], set())
+
     def test_picking_one_sort_of_element_ignores_closer_elements_of_another_sort(self):
         from freecad.BlocksCAD.cad import picking
         probe = lambda p, kind: picking.pick(self.doc, p, 1000.0, kind)

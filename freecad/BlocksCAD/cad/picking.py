@@ -94,6 +94,11 @@ def _near(doc, point, reach):
     return found
 
 
+def warm(doc):
+    """Read the box of every object of `doc` now, so that the first pick does not (82 ms at 800 objects)."""
+    _near(doc, (0.0, 0.0, 0.0), 0.0)
+
+
 def pick(doc, point, mm_per_metre, kind=None) -> Optional[Pick]:
     """The element of the visible objects of `doc` that `point` (document millimetres) touches, or None.
 
