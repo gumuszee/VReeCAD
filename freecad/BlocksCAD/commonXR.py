@@ -24,6 +24,7 @@
 
 
 import freecad.BlocksCAD.preferences as pref
+from freecad.BlocksCAD.profiling import PROFILER as prof
 import freecad.BlocksCAD.controllerXR as conXR
 from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
@@ -1322,7 +1323,10 @@ class XRwidget(QOpenGLWidget):
         doc = App.ActiveDocument
         if doc is not None and self.navigator.state == "two":
             self.ui.set_unit_system(getattr(doc, "UnitSystem", ""))
+        prof.lap("input")
         update = self.ui.update(frame)
+        prof.lap("ui")
+        prof.note_shown(self.ui.ring.fade > 0.02)
         self.apply_navigation()
         for hand, amplitude, duration in update.haptics:
             self.haptic(hand, amplitude, duration)
@@ -1398,17 +1402,23 @@ class XRwidget(QOpenGLWidget):
                 " ms")
 
     def update_render(self):
+        prof.frame()
         self.ctx.makeCurrent(self.offs_surface)
         self.poll_xr_events()
         if self.quit:
             return
+        prof.lap("events")
         if self.start_xr_frame():
+            prof.lap("wait")
             if self.frame_state.should_render:
                 self.update_xr_movement()
                 self.update_xr_views()
+                prof.lap("views")
                 # execute after new velocity calculation in update_xr_movement()
                 self.update_xr_controls()
+                prof.lap("models")
                 self.update_xr_interaction()
+                prof.lap("tools")
                 ren_timer = QElapsedTimer()
                 ren_timer.start()
                 ai = xr.SwapchainImageAcquireInfo(None)
@@ -1437,6 +1447,9 @@ class XRwidget(QOpenGLWidget):
                     self.gl_ofc.glClear(GL.GL_COLOR_BUFFER_BIT)
                 self.m_sceneManager.render(not self.ar_mode, True) # do not clear with predefined colour
                 self.gl_ofc.glDisable(GL.GL_DEPTH_TEST)
+                if prof.on and prof.sync_gpu:
+                    self.gl_ofc.glFinish()     # the lap then holds the GPU time of the eye
+                prof.lap("render_left")
 
                 self.gl_ofc.glEnable(GL.GL_BLEND)
                 self.gl_ofc.glScissor(w // 2, 0, w // 2, h)
@@ -1450,6 +1463,9 @@ class XRwidget(QOpenGLWidget):
                 self.m_sceneManager.render(not self.ar_mode, True)
                 self.gl_ofc.glDisable(GL.GL_DEPTH_TEST)
                 self.gl_ofc.glDisable(GL.GL_SCISSOR_TEST)
+                if prof.on and prof.sync_gpu:
+                    self.gl_ofc.glFinish()
+                prof.lap("render_right")
 
                 self.fbo.bind()
                 sw_image = self.swapchain_images[swapchain_index]
@@ -1466,6 +1482,7 @@ class XRwidget(QOpenGLWidget):
                 xr.release_swapchain_image(self.swapchain, ri)
                 self.fbo.release()
                 self.fbo_msaa.release()
+                prof.lap("resolve")
                 if self.mirror_window:
                     if (self.tpp_cam_enabled
                             and self.tpp_cam_available):
@@ -1503,8 +1520,10 @@ class XRwidget(QOpenGLWidget):
                         self.fbo.release()
                     # update the QOpenGLWidget
                     self.update()
+                prof.lap("mirror")
                 self.ctx.doneCurrent()
             self.end_xr_frame()
+            prof.lap("end")
 
     def paintGL(self):
         if (self.tpp_cam_enabled
