@@ -77,6 +77,34 @@ class TranslationTest(unittest.TestCase):
         self.assertEqual([(g.kind, g.axis, g.anchor) for g in found], [("point", -1, (300.0, 0.0, 0.0))])
 
 
+class DirectionTest(unittest.TestCase):
+    REFERENCE = [((0.0, 0.0), (40.0, 20.0))]
+
+    def test_an_end_that_is_nearly_along_the_reference_moves_onto_the_ray_and_keeps_its_reach(self):
+        end, relation = guides.align_direction((10.0, 50.0), (49.0, 71.0), self.REFERENCE, 5.0)
+        self.assertEqual(relation, ("Parallel", self.REFERENCE[0]))
+        dx, dy = end[0] - 10.0, end[1] - 50.0
+        self.assertAlmostEqual(dx * 20.0 - dy * 40.0, 0.0)
+        self.assertAlmostEqual((dx * dx + dy * dy) ** 0.5, 39.0 * 0.8944271909999159 + 21.0 * 0.4472135954999579)
+
+    def test_across_is_perpendicular_and_the_nearest_relation_wins(self):
+        end, relation = guides.align_direction((10.0, 50.0), (29.0, 11.0), self.REFERENCE, 5.0)
+        self.assertEqual(relation[0], "Perpendicular")
+        self.assertAlmostEqual((end[0] - 10.0) * 40.0 + (end[1] - 50.0) * 20.0, 0.0)
+        two = [((0.0, 0.0), (40.0, 20.0)), ((0.0, 0.0), (20.0, 40.0))]
+        self.assertEqual(guides.align_direction((0.0, 0.0), (21.0, 40.0), two, 5.0)[1][1], two[1])
+
+    def test_out_of_reach_or_without_length_changes_nothing(self):
+        self.assertEqual(guides.align_direction((10.0, 50.0), (49.0, 80.0), self.REFERENCE, 5.0), ((49.0, 80.0), None))
+        self.assertEqual(guides.align_direction((10.0, 50.0), (10.0, 50.0), self.REFERENCE, 5.0), ((10.0, 50.0), None))
+        self.assertEqual(guides.align_direction((10.0, 50.0), (49.0, 71.0), [((1.0, 1.0), (1.0, 1.0))], 5.0)[1], None)
+        self.assertEqual(guides.align_direction((10.0, 50.0), (49.0, 71.0), [], 5.0)[1], None)
+
+    def test_a_labelled_guide_says_its_label(self):
+        self.assertEqual(guides.Guide("axis", 3, (0, 0, 0), (1, 1, 0), "Parallel").text, "Parallel")
+        self.assertEqual(guides.Guide("axis", 0, (0, 0, 0), (1, 1, 0)).text, "Aligned X")
+
+
 class AlongTest(unittest.TestCase):
     def test_the_nearest_candidate_within_reach_wins(self):
         self.assertEqual(guides.align_along(34.0, 30.0, [(37.0, "a"), (35.5, "b"), (90.0, "c")], 5.0), (35.5, "b"))

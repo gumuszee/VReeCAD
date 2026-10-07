@@ -165,6 +165,11 @@ def existing(sketch):
     return found
 
 
+def slanted_lines(sketch):
+    """The lines of a sketch that run along neither axis of it, as (start, end) in sketch coordinates."""
+    return [(a, b) for _, a, b in existing(sketch).lines if sketchinfer.direction(a, b) is None]
+
+
 def _constraint(spec):
     import Sketcher
     return Sketcher.Constraint(*spec)

@@ -293,12 +293,24 @@ class SketchTool(TouchTool):
             return "Arc: press on the third point" if arc is None else f"Arc: radius {self._format(arc[1])}"
         return f"Line: {self._format(math.dist((x0, y0), (x1, y1)))}"
 
-    def _place(self, sketch, local, hand, apart_from=None):
-        """The point (x, y) of the sketch for the hand at `local`: on the grid and the guides, off both while the A button is held."""
+    def _place(self, sketch, local, hand, apart_from=None, line_from=None):
+        """The point (x, y) of the sketch for the hand at `local`: on the grid and the guides, off both while the A button is held. With
+        `line_from` (the start of a line being drawn) the point also moves to where the line is exactly parallel or perpendicular to a
+        slanted line of the sketch when it is nearly so (the drawn line then gets that constraint)."""
         if hand.down("button1"):
             self.hide_guides()
             return (local[0], local[1])
-        point, found = self._align2(self._sk().placement(sketch), local, sketch, apart_from)
+        sk = self._sk()
+        frame = sk.placement(sketch)
+        point, found = self._align2(frame, local, sketch, apart_from)
+        service = self._service("guide_anchors")
+        if line_from is not None and service is not None:
+            point, relation = guides.align_direction(line_from, point, sk.slanted_lines(sketch), service(())[1])
+            if relation is not None:
+                name, (a, b) = relation
+                mid = lambda p, q: ((p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0, 0.0)
+                found = list(found) + [guides.Guide("axis", guides.OFF_AXIS, tuple(sk.frame_to_world(frame, mid(a, b))),
+                                                    tuple(sk.frame_to_world(frame, mid(line_from, point))), name)]
         self.show_guides(found, self.grid * 0.5)
         return point
 
@@ -341,7 +353,7 @@ class SketchTool(TouchTool):
                 return
             self._finish_draw(doc, sketch, state)
             return
-        now = self._place(sketch, local, hand)
+        now = self._place(sketch, local, hand, line_from=state["start"] if state["kind"] == "Line" else None)
         if now != state["now"]:
             state["now"] = now
             self._haptic(0.08, 0.008)

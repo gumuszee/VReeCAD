@@ -1482,6 +1482,22 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIn("Perpendicular", kinds)
         self.assertTrue(sketching.solved(sketch))
 
+    def test_a_line_drawn_to_the_end_that_the_direction_guide_gives_is_parallel_by_constraint(self):
+        from freecad.BlocksCAD.cad import sketching
+        from freecad.BlocksCAD.core import guides
+        sketch = self.sketch_on()
+        sketching.add_line(self.doc, sketch, (0.0, 5.0), (40.0, 25.0))
+        slanted = sketching.slanted_lines(sketch)
+        self.assertEqual(slanted, [((0.0, 5.0), (40.0, 25.0))])
+        end, relation = guides.align_direction((10.0, 50.0), (49.0, 71.0), slanted, 5.0)
+        self.assertEqual(relation[0], "Parallel")
+        sketching.add_line(self.doc, sketch, (10.0, 50.0), end)
+        self.doc.recompute()
+        self.assertIn("Parallel", self.kinds(sketch))
+        self.assertTrue(sketching.solved(sketch))
+        sketching.add_rectangle(self.doc, sketch, (100.0, 100.0), (150.0, 130.0))
+        self.assertEqual(len(sketching.slanted_lines(sketch)), 2)                                  # the sides of a rectangle are not slanted
+
     def test_the_own_points_of_a_sketch_leave_out_the_dragged_point_and_those_that_move_with_it(self):
         from freecad.BlocksCAD.cad import sketching
         sketch = self.sketch_on()

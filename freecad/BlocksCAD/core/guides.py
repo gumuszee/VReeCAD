@@ -34,9 +34,12 @@ class Guide:
     axis: int                         # 0, 1 or 2 for an axis guide, -1 for a point guide
     anchor: Tuple[float, float, float]
     point: Tuple[float, float, float]
+    label: str = ""                   # what the guide says when it is no alignment with an axis ("Parallel", "Perpendicular")
 
     @property
     def text(self):
+        if self.label:
+            return self.label
         if self.kind == "point":
             return "On the point"
         return f"Aligned {AXIS_NAMES[self.axis]}" if 0 <= self.axis < 3 else "Aligned"
@@ -76,6 +79,32 @@ def align_along(raw, grid_value, candidates, tolerance):
         if gap < tolerance and (best is None or gap < best[0]):
             best = (gap, value, anchor)
     return (grid_value, None) if best is None else (best[1], best[2])
+
+
+def align_direction(start, end, references, tolerance):
+    """(end, relation) for a line drawn from `start` towards `end` (points of a plane): when the line is nearly parallel or perpendicular
+    to a reference line, `end` moves to the nearest point of the ray from `start` that is exactly so, and `relation` is ("Parallel" or
+    "Perpendicular", the reference (a, b)); else (`end`, None). "Nearly" is a distance of `end` from that ray of less than `tolerance`
+    (the nearest wins). A reference without length, or a line without length, is left out."""
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    if dx * dx + dy * dy < 1e-12:
+        return tuple(end), None
+    best = None
+    for a, b in references:
+        rx, ry = b[0] - a[0], b[1] - a[1]
+        length = (rx * rx + ry * ry) ** 0.5
+        if length < 1e-9:
+            continue
+        along, across = (rx / length, ry / length), (-ry / length, rx / length)
+        for relation, ray in (("Parallel", along), ("Perpendicular", across)):
+            lateral = abs(dx * ray[1] - dy * ray[0])
+            if lateral < tolerance and (best is None or lateral < best[0]):
+                reach = dx * ray[0] + dy * ray[1]
+                if abs(reach) > 1e-9:
+                    best = (lateral, (start[0] + ray[0] * reach, start[1] + ray[1] * reach), relation, (a, b))
+    if best is None:
+        return tuple(end), None
+    return best[1], (best[2], best[3])
 
 
 def index_anchors(anchors):

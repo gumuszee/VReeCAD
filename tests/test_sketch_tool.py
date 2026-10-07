@@ -90,6 +90,9 @@ class FakeSketching:
     frame_to_world = staticmethod(lambda frame, point: tuple(point))
     world_axes = staticmethod(lambda frame: (0, 1))
 
+    def slanted_lines(self, sketch):
+        return [(a, b) for kind, a, b, *_ in sketch.shapes if kind == "Line" and sketchinfer.direction(a, b) is None]
+
     def own_points(self, sketch, apart_from=None):
         return [(at[0], at[1], 0.0) for key, at in sketch.points.items() if key != apart_from]
 
@@ -371,6 +374,35 @@ class SketchToolTest(unittest.TestCase):
 
     def with_anchors(self, anchors, reach=5.0):
         self.tool.ctx.services["guide_anchors"] = lambda exclude: (anchors, reach)
+
+    def test_a_line_that_is_nearly_parallel_to_a_slanted_line_is_made_exactly_so_with_a_guide(self):
+        self.with_anchors([], 5.0)
+        self.tool.values["mode"], self.tool.values["grid"] = "Line", "1 mm"
+        self.drag((0.0, 0.0, 0.0), (40.0, 20.0, 0.0))                              # a slanted line to be parallel to
+        self.drag((10.0, 50.0, 0.0), (49.0, 71.0, 0.0), release=False)
+        start = self.tool._gesture["start"]
+        end = self.tool._gesture["now"]
+        direction = (end[0] - start[0], end[1] - start[1])
+        self.assertAlmostEqual(direction[0] * 20.0 - direction[1] * 40.0, 0.0)       # along (40, 20) exactly
+        (guide,) = [g for g in self.ghost.guide_calls[-1] if g.label]
+        self.assertEqual((guide.text, guide.axis), ("Parallel", 3))
+        self.assertEqual(guide.anchor, (20.0, 10.0, 0.0))                           # from the middle of the reference line
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(len(self.sketches()[0].shapes), 2)
+
+    def test_a_line_across_a_slanted_line_is_perpendicular_and_the_a_button_leaves_it_alone(self):
+        self.with_anchors([], 5.0)
+        self.tool.values["mode"], self.tool.values["grid"] = "Line", "1 mm"
+        self.drag((0.0, 0.0, 0.0), (40.0, 20.0, 0.0))
+        self.drag((10.0, 50.0, 0.0), (29.0, 11.0, 0.0), release=False)               # across (40, 20): along (-20, 40)
+        start, end = self.tool._gesture["start"], self.tool._gesture["now"]
+        self.assertAlmostEqual((end[0] - start[0]) * 40.0 + (end[1] - start[1]) * 20.0, 0.0)
+        self.assertEqual([g.text for g in self.ghost.guide_calls[-1] if g.label], ["Perpendicular"])
+        self.sim.set_hand(1, trigger=0.0, button1=False)
+        self.tool.update(self.sim.frame(0.02))
+        self.drag((10.0, 50.0, 0.0), (49.0, 71.0, 0.0), release=False, button1=True)   # A held: exactly where the hand is
+        self.assertEqual(self.tool._gesture["now"], (49.0, 71.0))
 
     def test_the_start_and_the_end_of_a_rectangle_line_up_with_the_model_and_the_guides_are_drawn(self):
         self.with_anchors([(7.0, 0.0, 0.0), (0.0, 33.0, 0.0)])
