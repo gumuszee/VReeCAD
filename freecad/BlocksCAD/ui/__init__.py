@@ -13,4 +13,4 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""In-scene user interface built from Coin3D nodes: radial palette, later value panel and tool tips."""
+"""In-scene user interface built from Coin3D nodes: the palette carousel with its panels, the radial menus, the value panels, toasts and tooltips."""

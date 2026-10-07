@@ -9,7 +9,7 @@ The upstream interface (quick menu on the left trigger, stick locomotion) is not
 1. **One finger per job.** The thumb rests on the stick; a task never needs the thumb to hold a face button while the stick is used. Selection by hand movement or by the stick alone, confirmation by trigger or stick click.
 2. **Hands, not menus.** Tools live on a palette carried by the off hand; the tool hand points at it. Navigation is grabbing the world with the grips.
 3. **Everything is a modular panel.** A face is a button (label, action). Faces sit on panels, panels sit on the sides of a carousel around the palette controller, and the layout is data the user can rearrange.
-4. **Readable at arm's length.** Fixed physical sizes (face edge 5 cm, label glyphs about 9 mm), high contrast, backing plates, one sans serif font (Segoe UI Bold) for every label; no overlapping text.
+4. **Readable at arm's length.** Fixed physical sizes (face edge 3.6 cm, label glyphs of the panels about 7 mm, other labels about 9 mm), high contrast, backing plates, one sans serif font (Segoe UI Bold) for every label; no overlapping text.
 5. **Feedback on every state change.** Haptic tick on hover change and activation, highlight on hover, a short toast for results.
 6. **Hardware independent.** Only the five abstract inputs per hand plus the optional `aux1` and `aux2` (`input-profiles.md`); poses decide the rest.
 7. **CAD, not painting.** The model is worked on from every angle, so the view rotates freely; levelling is the modifier, not the default.
@@ -53,7 +53,7 @@ While both grips hold the world, a line joins the hands and reads as a ruler in 
 The carousel is a prism around the long axis of the palette controller. It is attached to the controller: it follows the position and the rotation of the hand (Open Brush's wand panels).
 
 - **Geometry.** The axis runs along the controller from the grip point forward (the carousel centre is 9 cm in front of the grip point). The side at the front stands on the thumb side of the controller, facing up when the controller is held upright, with its top edge pointing the way the controller points. The other sides stand around the axis at equal angles, and **all sides are visible at all times**. Rolling the wrist rolls the carousel.
-- **Panels** are pages of faces (4 columns by 3 rows, face edge 5 cm) with a title bar and nothing else, so no panel space is spent on indicators. A side carries rows of panels: panels next to each other in a row, rows above each other (the first row nearest the user, further rows further forward). The prism radius grows with the number of sides and the width of the panels so that sides do not overlap.
+- **Panels** are pages of faces (4 columns by 3 rows, face edge 3.6 cm, a panel is 17.3 cm wide and 15.2 cm high) with a title bar and nothing else, so no panel space is spent on indicators. A side carries rows of panels: panels next to each other in a row, rows above each other (the first row nearest the user, further rows further forward). The prism radius grows with the number of sides and the width of the panels so that sides do not overlap.
 - **Stick left/right turns the carousel** one side per flick (snap with a haptic tick and a short ease). No button is held. Sides that face away from the user are drawn but cannot be pointed at.
 - **Visibility:** the carousel fades in when the head looks at the controller (gaze cone of 35 degrees at 0.12 to 0.95 m) and fades out otherwise; it is hidden while gripping. Palette hand `button1` pins it visible or releases it.
 - **Pointing:** the tool hand points with its laser or its tip (see Pointer below). The face under the pointer highlights and a haptic tick marks the change. A face is pressed with the trigger and activates when the trigger is released over the same face within 0.4 s; a pointer that leaves the face before the release cancels the press, and a longer hold lifts the face (see Moving and hiding faces).
@@ -67,11 +67,11 @@ The carousel is a prism around the long axis of the palette controller. It is at
 | View | Reset view, Overlays (Model tree and Tasks), Work plane, Reload scene, Reset layout, Show hidden |
 | Session | Pointer (laser or tip), Close VR, and the sliders Angle and Length (tip angle and tip length) |
 
-Planned: Create (primitives, milestone M1), Modify (push/pull, boolean, mirror, pattern), Values (numeric keypad, variables, milestone M3), Settings (handedness, comfort, snapping).
+Planned: Modify (push/pull, boolean, mirror, pattern), Settings (handedness, comfort, snapping).
 
 ### Sliders
 
-A slider is a face that takes a whole row of its panel: the label with the current value on the left, a track and a handle. Point at it (laser) or touch it (tip), **hold the trigger** and move the pointer along the track: the handle follows the pointer projected onto the panel, also beyond the ends of the panel (the value stops at the ends), and the value changes in steps with a small haptic tick on every step. Releasing the trigger ends the drag and saves the setting. A slider goes in the first slot of a row; the other slots of that row stay empty. The Session panel carries the pointer sliders.
+A slider is a face that takes a whole row of its panel: the label with the current value on the left, a track (the **bar**) in the lower part of the row and a handle. **Every slider behaves the same way.** It is **focused** when the pointer comes close without pressing: the tip within 10 cm in front of the panel over the row, or the laser over the row. It is **dragged** only from its bar: point at the bar (laser) or touch it (tip), the bar turns white, **hold the trigger** and move the pointer along the track (a press on the label part of the row does nothing): the handle follows the pointer projected onto the panel, also beyond the ends of the panel (the value stops at the ends), and the value changes in steps with a small haptic tick on every step. Releasing the trigger ends the drag and saves the setting. A slider goes in the first slot of a row; the other slots of that row stay empty. The Session panel carries the pointer sliders and the value panels carry the sliders of the values of the selected object; the focus of a value slider is what lets the stick step its value (see Value panels).
 
 ### Rearranging panels
 
@@ -120,7 +120,7 @@ Every controller has a pointer pose derived from its aim pose and three settings
 | Grip | grab the world or an object |
 | Stick up/down | first option of the tool (size, segments, grid step), stepped, with a live readout (see Tool options) |
 | Stick left/right | second option of the tool (cycle shape or mode) |
-| Stick click | reset the option changed last to its default |
+| Stick click | the tool decides: Create turns to the other page of shapes, Grab puts the grid and the angle step back to their defaults; a tool with two option axes puts the option changed last back to its default |
 | Button 1 | held while navigating (one or two grips): level rotation. Otherwise: hold for the quick radial (below) |
 | Button 2 | held while navigating: scale locked at 1 : 1. Otherwise: undo (tap), redo (hold) |
 
@@ -157,6 +157,22 @@ A tool declares its options (`ToolOption` in `tools/base.py`): a number with a r
 
 The options are inactive while a grip holds the world and while the quick radial is open. A tool without options leaves the stick to the inherited code. The inherited tools declare none.
 
+### Value panels
+
+While an editable object is selected (by any tool, or on the desktop), the carousel of the palette hand (the left hand) has **one more side** with three stacked panels for its values (`ui/value_module.py`, `core/values.py`, `cad/values.py`). There is no editing mode and no input that opens it: selecting an object brings the panels up (the carousel turns to their side the first time they appear and the hand gives a short tick), selecting another object rebinds them, clearing the selection removes them and puts the carousel back on the side it was on. Every tool keeps working as usual while they are up. They are ordinary depth-tested panels of the carousel, so they are looked at, hovered, pressed and dragged with the laser or the tip like the others; like the others they are seen when the head looks at the left controller. Panels and faces of the user's layout can be lifted and rearranged as usual, the panels of the module cannot, and they are not part of the saved layout.
+
+- **Values** (bottom row, nearest the user): three sliders, each a whole row showing the name and the value ("Length 120 mm") on a track. The track runs from 0 (a size) or from minus its top (a position) to a round number (1, 2, 5, 10, 20 ... in millimetres) that is at least twice the value and ten steps; the range grows to the next round number when a value outside it is typed, never while a slider is dragged. The title names the object.
+- **Number pad** (middle row): 7 8 9 Del, 4 5 6 Enter, 1 2 3 Unit. The title shows the picked value and what is being typed ("Length: 2*(3 cm|").
+- **Keys** (top row): 0 . - +, * / ( ), **Step**, **More values**, **Clear**.
+- **Values:** the size properties of a primitive (Length, Width, Height; Radius; Radius 1 and Radius 2; X size, Y size, Z size and Top X size of a wedge), then the position X, Y and Z of any object that has a placement (the base of the `Placement`, document millimetres), shown in the measurement system of the document. The sliders show three values at a time; **More values** shows the next three (round, and the first of them is picked). The values are read again every frame, so they follow the object when it is moved or edited elsewhere.
+- **Focus:** a slider is focused as described under Sliders. Focusing picks the slider's value (the picked slider is lit; the number pad types into the picked value) and keeps the focus for 0.6 s after the pointer has left.
+- **Changing a value:** by dragging the bar of a slider as described under Sliders; the value follows the pointer along the track in whole steps. Or, while a slider is focused, by the **stick of the tool hand**: up and down change the picked value by one step, to the next multiple of the step (from 23 mm with a step of 10 mm to 30 mm), and repeat ten times a second after 0.3 s held out. While a slider is focused the stick belongs to the value panels (the option disc of the tool stays away); without a focused slider it belongs to the tool as usual. A grip makes the stick the world's.
+- **Step:** 1, 2, 5, 10, 20, 50 or 100 mm, for the stick and the sliders; it starts as the grid of the Grab tool when the panels first appear, and the key **Step** (labelled "Step 10 mm") turns to the next one, round.
+- **Typing:** the keys build a text, which the title of the Number pad shows; **Enter** applies it to the picked value. A number without a unit is in the unit of the document's measurement system (mm, cm, m or inch). Text such as `2*(3 cm+4)` is evaluated: numbers and lengths add (a plain number is in the default unit), a length is multiplied or divided by a number, and the units are mm, cm, m, in and ft; **Unit** turns the unit at the end of the text through mm, cm, m and in; **Del** removes the last character and **Clear** all of it. Text that cannot be read stays and a toast says why. The result is written to the object as a number; it is not bound to the object by an expression.
+- **Undo:** every gesture is one undo step of its own (a slider drag from press to release, one push of the stick from out to centre, one Enter), so `button2` takes them back one by one.
+- **Limits:** sizes are at least 0.1 mm (the radius of the top of a cone and the top width of a wedge may be zero). A feature that cannot be built with a value (a torus whose tube is wider than its ring) keeps the old value, a toast says so, and the same holds for a slider.
+- **With the tools:** the panels do not take the trigger except over their own faces; the stick steps values only while the tool is not busy with the document (a grab); a slider that is not drawn (the object has fewer values) does nothing.
+
 ### Undo and redo
 
 `button2` of the tool hand outside navigation: a **tap** undoes (when the button is released within 0.4 s), a **hold** of 0.4 s redoes once while the button is still down. While a grip holds the world `button2` is the 1 : 1 lock, and a grip pressed while it is down cancels the undo. Both show a toast ("Undo", "Redo", "Nothing to undo", "Nothing to redo").
@@ -165,7 +181,7 @@ The options are inactive while a grip holds the world and while the quick radial
 
 All three are dark plates that fit their text, drawn over the model in the interface font.
 
-- **Toasts** stand 0.8 m in front of the head, 0.2 m below the line of sight, at 1.5 times the size of the labels. Up to three stand at once, the newest at the bottom; each stays for 2.2 s, grows in and shrinks away, and a message that is still there is renewed instead of repeated. Toasts report the result of an action: undo and redo, the tool chosen with its hint, the pointer mode, layout reset, hidden and shown faces, and the selection text of the inherited tools.
+- **Toasts** hang on the wrist of the tool hand controller: 7 cm behind the face buttons (towards the wrist) and 3 cm above their plane, tracked on the controller and always turned to face the head, at 0.6 times the size of the labels and stacked 2.8 cm apart. While the tool hand is not tracked they stand 0.8 m in front of the head, 0.2 m below the line of sight, at 1.5 times the size of the labels, and stack 6 cm apart. Up to three stand at once, the newest at the bottom; each stays for 2.2 s, grows in and shrinks away, and a message that is still there is renewed instead of repeated. Toasts report the result of an action: undo and redo, the tool chosen with its hint, the pointer mode, layout reset, hidden and shown faces, and the selection text of the inherited tools.
 - **Tooltips:** hovering one face for 0.5 s shows its description above it in the plane of its panel. Tool faces use the hint of the tool. The tooltip disappears when the pointer leaves the face and is not shown while something is lifted or pressed.
 - **Readout** of a tool option: see Tool options.
 
@@ -196,6 +212,8 @@ Controllers without `aux1` and `aux2` undo and redo through the Edit panel faces
 ## Visual style
 
 Flat, high contrast panels: dark plate (RGB 0.10, 0.11, 0.14), face plate (0.20, 0.22, 0.28), hover (0.30, 0.45, 0.80), active tool and lifted panel (0.95, 0.65, 0.10), drop target (0.18, 0.36, 0.24), text white.
+Every panel of the carousel has a tint, so the panels tell apart at a glance: Tools green, Edit rose, View ochre, Session teal, any other panel one of five further hues chosen by its name. A tint is the grey of the default panel (plate, title bar, face, empty slot, lit plate) turned to the hue at the same luminance, so white text, the hover blue and the active orange keep exactly the contrast they have on the grey panels (11.7 : 1 for the text on a face, 2.6 : 1 for the hover on a face). The panels of the value module stay grey.
+A colour node is written only when its colour changes, and the contents of a panel that is seen from behind are not drawn (its plate hides them), so a carousel that is shown costs about as little as a hidden one.
 Text is drawn from glyph outlines (Coin `SoText3`) in Segoe UI Bold (the platform default where the family is missing) at fixed height and sits on a plate so scene geometry never overlaps it.
 The colours, the font and the text size are defined once in `ui/style.py`. Controllers keep the runtime-provided models.
 

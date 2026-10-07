@@ -32,7 +32,9 @@ TOAST_DISTANCE = 0.8    # metres in front of the head
 TOAST_DROP = 0.2        # metres below the line of sight
 TOAST_SCALE = 1.5      # toasts are larger than the other labels: they are read at a distance
 TOAST_PITCH = 0.06      # metres between stacked toasts
-READOUT_LIFT = 0.07     # metres above the pointer of the tool hand
+WRIST_SCALE = 0.6       # toasts on the wrist are smaller: they are read at arm's length
+WRIST_PITCH = 0.028     # metres between stacked toasts on the wrist
+READOUT_LIFT = 0.07    # metres above the pointer of the tool hand
 TOOLTIP_LIFT = 0.045    # metres above the centre of a face
 
 
@@ -143,6 +145,19 @@ def head_axes(head):
     return mu.rotate(q, (1.0, 0.0, 0.0)), mu.rotate(q, (0.0, 1.0, 0.0)), mu.rotate(q, (0.0, 0.0, -1.0))
 
 
+def billboard_axes(position, eye, up_hint):
+    """(right, up) of a plate at `position` that faces `eye` and stands upright as far as `up_hint` allows."""
+    normal = mu.sub(eye, position)
+    if mu.length(normal) < 1e-6:
+        return (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+    normal = mu.normalize(normal)
+    right = mu.cross(up_hint, normal)
+    if mu.length(right) < 1e-6:                  # looking straight along the hint: keep any upright plate
+        right = mu.cross((0.0, 1.0, 0.0) if abs(normal[1]) < 0.99 else (1.0, 0.0, 0.0), normal)
+    right = mu.normalize(right)
+    return right, mu.cross(normal, right)
+
+
 class FeedbackView:
     """The toasts, the tooltip and the readout; one scene node for all three."""
 
@@ -166,17 +181,25 @@ class FeedbackView:
         for plate in self._toasts + [self._tooltip, self._readout, self._lock]:
             self.root.addChild(plate.root)
 
-    def update(self, head, toasts, tooltip=None, readout=None, lock=None):
+    def update(self, head, toasts, tooltip=None, readout=None, lock=None, wrist=None):
         """`toasts`: the `toast.Toast`s to draw, oldest first. `tooltip`: (text, centre of the face, u, v of its panel) or None.
-        `readout`: (text, position of the tool hand's pointer) or None. `lock`: (position, right, up, locked) of the padlock on the controller, or None."""
+        `readout`: (text, position of the tool hand's pointer) or None. `lock`: (position, right, up, locked) of the padlock on the controller, or None.
+        `wrist`: the point on the controller where the toasts are attached, or None to show them in front of the head."""
         right, up, forward = head_axes(head)
-        base = mu.add(head.position, mu.add(mu.mul(forward, TOAST_DISTANCE), mu.mul(up, -TOAST_DROP)))
+        if wrist is not None:
+            base = wrist
+            toast_scale, pitch = WRIST_SCALE, WRIST_PITCH
+            toast_right, toast_up = billboard_axes(wrist, head.position, up)
+        else:
+            base = mu.add(head.position, mu.add(mu.mul(forward, TOAST_DISTANCE), mu.mul(up, -TOAST_DROP)))
+            toast_scale, pitch = TOAST_SCALE, TOAST_PITCH
+            toast_right, toast_up = right, up
         shown = list(toasts)[-len(self._toasts):]
         for i, plate in enumerate(self._toasts):
             if i < len(shown):
                 plate.set_text(shown[i].text)
-                height = (len(shown) - 1 - i) * TOAST_PITCH      # the newest at the bottom
-                plate.place(mu.add(base, mu.mul(up, height)), right, up, max(shown[i].scale * TOAST_SCALE, 0.01))
+                height = (len(shown) - 1 - i) * pitch      # the newest at the bottom
+                plate.place(mu.add(base, mu.mul(toast_up, height)), toast_right, toast_up, max(shown[i].scale * toast_scale, 0.01))
             else:
                 plate.hide()
         if tooltip is not None:

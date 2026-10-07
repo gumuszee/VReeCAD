@@ -28,6 +28,7 @@ from pivy import coin
 
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import units
+from freecad.BlocksCAD.core import values as value_editing
 from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.ui import defaults
 from freecad.BlocksCAD.ui import layout as lay
@@ -42,6 +43,8 @@ from freecad.BlocksCAD.ui.ring import PaletteRing
 from freecad.BlocksCAD.ui.ring_view import RingView
 from freecad.BlocksCAD.ui.ruler import Ruler
 from freecad.BlocksCAD.ui.undo_button import UndoButton
+from freecad.BlocksCAD.ui import value_module
+from freecad.BlocksCAD.ui.value_module import ValueModule
 
 
 @dataclass
@@ -57,6 +60,8 @@ OPTION_DISC_OUTER = 0.07       # metres: radius of the option disc of a tool
 OPTION_DISC_INNER = 0.022
 OPTION_DISC_LIFT = 0.04        # metres above the top of the thumbstick: the disc lies in the plane of the top of the controller
 LOCK_LIFT = 0.012              # metres above the top of the A button
+WRIST_BACK = 0.07              # metres behind the face buttons, towards the wrist
+WRIST_LIFT = 0.03              # metres above the plane of the buttons
 
 
 class UiController:
@@ -76,13 +81,18 @@ class UiController:
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
         self.navigator = Navigator(modifier_hand=tool_hand)
         self.ring = PaletteRing(self.layout.sides(), palette_hand, tool_hand)
-        self.ring.can_lift = lambda page, slot: self.layout.face_at(page, slot) is not None
-        self.ring.can_drop = lambda src, dst: self.layout.can_move_face(*src, *dst, self.wide)
+        self.ring.can_lift = lambda page, slot: self._is_user_page(page) and self.layout.face_at(page, slot) is not None
+        self.ring.can_drop = lambda src, dst: self._is_user_page(src[0]) and self._is_user_page(dst[0]) and self.layout.can_move_face(*src, *dst, self.wide)
         self.radial = radial.QuickRadial(tool_hand)
         self.radial_view = RadialView()
         self.options_view = RadialView(OPTION_DISC_OUTER, OPTION_DISC_INNER, 0.8)        # the disc of the options of the active tool
         self.part_frame = None             # callable(hand, part names, lift) -> (position, right, forward, up) on the controller, set by the host
         self.undo_button = UndoButton(tool_hand)
+        self.module = ValueModule(tool_hand)       # the panels for the values of the selected object, on a carousel side of their own
+        self.view_faces = {**self.faces, **self.module.faces}      # every face that can be drawn: the user's and the module's
+        self.values_source = None          # callable() -> (key, factory of a `core.values.ValueTarget`) of the selected object, or None; set by the host
+        self._shown = None                 # (key, layout with the pages of the module) while the module is bound
+        self._front_before = 0             # the front side of the carousel before the panels of the module appeared
         self.options = tool_options.OptionControl(tool_hand)
         self.active_tool = None            # the active `tools.base.Tool`, set by the host before `update`
         self.gesture_text = None           # readout of a running gesture (the size of a shape being dragged), set by the tool
@@ -126,8 +136,8 @@ class UiController:
         self.system = units.system_for(name)
 
     def action_at(self, page, slot):
-        face_id = self.layout.face_at(page, slot)
-        face = self.faces.get(face_id) if face_id else None
+        face_id = self.shown_layout().face_at(page, slot)
+        face = self.view_faces.get(face_id) if face_id else None
         return face.action if face else None
 
     def add_occluder(self, node):
@@ -148,6 +158,53 @@ class UiController:
     def toast(self, text):
         """Show a short message in front of the head."""
         self.toasts.show(text)
+
+    def _sync_values(self, out):
+        """Bind the value panels to the object that is selected: they appear with it, follow the selection from one object to the
+        next and go with it. They appear on a carousel side of their own, and the carousel turns to that side when they first appear."""
+        source = None
+        if self.values_source is not None:
+            try:
+                source = self.values_source()
+            except Exception as error:      # a selection that cannot be read must not stop the session
+                print(f"BlocksCAD: cannot read the selection: {error}")
+        module = self.module
+        if source is None:
+            if module.is_open:
+                module.close()
+                if self.ring.front_side() == len(self.layout.sides()):
+                    self.ring.index = self._front_before
+            return
+        key, factory = source
+        if module.is_open and module.key == key:
+            return
+        was_open = module.is_open
+        try:
+            editor = value_editing.ValueEditor(factory(), self.system, getattr(self.active_tool, "grid", module.step) if not was_open else module.step)
+        except Exception as error:
+            print(f"BlocksCAD: cannot edit the values: {error}")
+            return
+        if not editor.fields:
+            return
+        module.open(editor, key)
+        if not was_open:
+            sides = len(self.layout.sides())
+            self._front_before = self.ring.front_side()
+            self.ring.focus_side(sides, sides + 1)
+            out.haptics.append((self.palette_hand, 0.2, 0.02))
+
+    def shown_layout(self):
+        """The layout the carousel shows: the user's, plus the panels of the module on a side of their own during a session."""
+        if not self.module.is_open:
+            return self.layout
+        key = (id(self.layout), tuple((p.name, tuple(p.slots), p.side, p.row) for p in self.layout.pages))
+        if self._shown is None or self._shown[0] != key:
+            pages = list(self.layout.pages) + value_module.pages(len(self.layout.sides()))
+            self._shown = (key, lay.Layout(pages, list(self.layout.hidden)))
+        return self._shown[1]
+
+    def _is_user_page(self, page):
+        return page < len(self.layout.pages)
 
     def radial_items(self):
         """Face ids offered by the quick radial: the faces used last, then the defaults."""
@@ -214,10 +271,10 @@ class UiController:
     def slider_rows(self):
         """Pages and grid rows that hold a slider: page -> row -> face id."""
         rows = {}
-        for p, page in enumerate(self.layout.pages):
+        for p, page in enumerate(self.shown_layout().pages):
             for r in range(lay.ROWS):
                 face_id = page.slots[r * lay.COLS]
-                face = self.faces.get(face_id) if face_id else None
+                face = self.view_faces.get(face_id) if face_id else None
                 if face is not None and face.kind == "slider":
                     rows.setdefault(p, {})[r] = face_id
         return rows
@@ -253,6 +310,7 @@ class UiController:
     def update(self, frame) -> UiUpdate:
         out = UiUpdate()
         s = self.settings
+        self._sync_values(out)
         self.pointer_poses = [pointing.pointer_pose(h.aim, s.pointer_mode, s.tip_angle, s.tip_length) for h in frame.hands]
         # in tip mode the world is held with the tips: it pivots about them and the ruler measures between them
         points = [p.position for p in self.pointer_poses] if s.pointer_mode == "tip" else None
@@ -269,13 +327,15 @@ class UiController:
             elif event[0] == "level":
                 out.haptics.append((self.tool_hand, 0.3, 0.03))
 
-        self.ring.set_sides(self.layout.sides())
-        self.ring.slider_rows = self.slider_rows()
         # the quick radial takes the tool hand while it is open: the carousel does not see its pointer
         busy = (self.navigator.navigating or self.ring.lifted is not None or self.ring.lifted_face is not None
                 or self.ring.slider_drag is not None or self.ring.press is not None or getattr(self.active_tool, "busy", False))
         quick = self.radial.update(frame, self.radial_items(), blocked=busy)
-        out.owns_stick, readout = self._tool_hand_buttons(frame, self.navigator.navigating or self.radial.is_open, out)
+        out.owns_stick, readout = self._tool_hand_buttons(frame, self.navigator.navigating or self.radial.is_open or self.module.engaged, out)
+        carousel = self.shown_layout()
+        self.ring.fixed_from = len(self.layout.pages) if self.module.is_open else None
+        self.ring.set_sides(carousel.sides())
+        self.ring.slider_rows = self.slider_rows()
         pointers = list(self.pointer_poses)
         if self.radial.is_open:
             pointers[self.tool_hand] = replace(pointers[self.tool_hand], tracked=False)
@@ -283,15 +343,27 @@ class UiController:
         out.haptics += result.haptics + quick.haptics
         out.ray_end = result.ray_end
         out.consume_trigger = result.consume_trigger or self.radial.is_open or quick.activated is not None
+        if result.focus is not None:
+            focused = carousel.face_at(*result.focus)
+            if focused in value_module.SLIDER_IDS:
+                self.module.set_focus(value_module.SLIDER_IDS.index(focused))
+        if self.module.engaged:
+            out.owns_stick = True                            # a value slider is focused: the stick of the tool hand steps its value
         if result.slider is not None:
             page, slot, along = result.slider
-            spec = defaults.SLIDERS.get(self.layout.face_at(page, slot))
+            face_id = carousel.face_at(page, slot)
+            if face_id in value_module.SLIDER_IDS:
+                if self.module.drag(value_module.SLIDER_IDS.index(face_id), along):
+                    out.haptics.append((self.tool_hand, 0.15, 0.01))
+            spec = defaults.SLIDERS.get(face_id)
             if spec is not None:
                 value = spec.value(along)
                 if value != getattr(self.settings, spec.attr):
                     setattr(self.settings, spec.attr, value)
                     out.haptics.append((self.tool_hand, 0.15, 0.01))
         if result.slider_done is not None:
+            if carousel.face_at(*result.slider_done) in value_module.SLIDER_IDS:
+                self.module.end_drag()
             self._save_settings()
         if result.dropped is not None:
             page, side, row, before, new_row = result.dropped
@@ -310,16 +382,28 @@ class UiController:
                 if target_page is None:
                     face = self.faces.get(self.layout.hidden[-1]) if self.layout.hidden else None
                     self.toast(f"Hidden: {face.label}" if face else "Face hidden")
-        labels = self.labels()
-        self.view.update(self.ring, result, self.layout, self.faces, frame.head.position, self.active_actions, labels, self.slider_states())
+        edit = self.module.update(frame, dragging=self.ring.slider_drag is not None, blocked=bool(getattr(self.active_tool, "busy", False)))
+        out.haptics += edit.haptics
+        if edit.message:
+            self.toast(edit.message)
+        labels = {**self.labels(), **self.module.labels()}
+        sliders = {**self.slider_states(), **self.module.slider_states()} if self.module.is_open else self.slider_states()
+        self.view.update(self.ring, result, carousel, self.view_faces, frame.head.position, self.active_actions, labels, sliders,
+                         self.module.titles())
         self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items])
         tooltip = self._tooltip(result, frame.dt, labels)
         text = readout or self.gesture_text
         shown = (text, self.pointer_poses[self.tool_hand].position) if text else None
-        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, shown, self._lock_hint(frame))
+        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, shown, self._lock_hint(frame),
+                             self._wrist_anchor(frame))
 
         if result.activated is not None:
-            self._activate(self.layout.face_at(*result.activated), out)
+            face_id = carousel.face_at(*result.activated)
+            if face_id in self.module.faces:
+                self.module.activate(face_id)
+                out.activated = self.module.faces[face_id].action
+            else:
+                self._activate(face_id, out)
         if quick.activated is not None:
             self._activate(quick.items[quick.activated], out)
 
@@ -341,7 +425,7 @@ class UiController:
 
         tool_pointer = self.pointer_poses[self.tool_hand]
         if s.pointer_mode == "laser" and self.ring.fade > 0.3 and tool_pointer.tracked and not nav.navigating and not self.radial.is_open:
-            self.pointer.show(tool_pointer.position, tool_pointer.direction, result.ray_end)
+            self.pointer.show(tool_pointer.position, tool_pointer.direction, out.ray_end)
         else:
             self.pointer.hide()
         for hand, marker in enumerate(self.tips):
@@ -349,7 +433,7 @@ class UiController:
             # the tips stay visible while navigating; the tip of the palette hand is hidden while the carousel is shown
             palette_shown = hand == self.palette_hand and self.ring.fade > 0.3 and not nav.navigating
             if s.pointer_mode == "tip" and ptr.tracked and not palette_shown:
-                touching = hand == self.tool_hand and result.ray_end is not None
+                touching = hand == self.tool_hand and out.ray_end is not None
                 marker.show(frame.hands[hand].aim.position, ptr.position, touching)
             else:
                 marker.hide()
@@ -366,7 +450,7 @@ class UiController:
         out.haptics += chosen.haptics
         if chosen.message:
             self.toast(chosen.message)
-        self._show_option_disc(frame, chosen.disc)
+        self._show_option_disc(frame, None if self.module.engaged else chosen.disc)
         return chosen.owns_stick, chosen.readout
 
     def _controller_frame(self, frame, hand, names, lift):
@@ -403,13 +487,22 @@ class UiController:
         placed = self._controller_frame(frame, self.tool_hand, BUTTON_PARTS, LOCK_LIFT)
         return None if placed is None else (placed[0], placed[1], placed[2], bool(locked))
 
+    def _wrist_anchor(self, frame):
+        """The point where the toasts hang: on the controller of the tool hand, behind the face buttons towards the wrist, turning with the
+        controller; None when the tool hand is not tracked (the toasts then show in front of the head)."""
+        placed = self._controller_frame(frame, self.tool_hand, BUTTON_PARTS, 0.0)
+        if placed is None:
+            return None
+        position, _, forward, up = placed
+        return mu.add(position, mu.add(mu.mul(forward, -WRIST_BACK), mu.mul(up, WRIST_LIFT)))
+
     def _tooltip(self, result, dt, labels):
         """(text, centre, u, v) of the tooltip of the hovered face once it has been hovered for a moment, else None."""
         idle = self.ring.lifted is None and self.ring.lifted_face is None and self.ring.press is None and not self.radial.is_open
         target = self.dwell.update(result.hover if idle and self.ring.fade > 0.8 else None, dt)
         if target is None:
             return None
-        face = self.faces.get(self.layout.face_at(*target) or "")
+        face = self.view_faces.get(self.shown_layout().face_at(*target) or "")
         place = self.ring.slot_centre(*target)
         if face is None or place is None:
             return None

@@ -23,7 +23,8 @@ step takes it back. A press that does not move anything is a tap: it selects the
 nothing clears the selection. The trigger of the other hand pressed during a grab scales the object through the size properties of
 its feature (the distance between the hands sets the factor; locked, every size is rounded to the grid); only the primitives made
 by the Create tool can be scaled. A grip cancels the grab. The stick chooses from an option disc: the grid larger (up) and smaller
-(down), the angle step larger and smaller (left) and the two move modes (right).
+(down), the angle step larger and smaller (left) and the two move modes (right). The click of the stick puts the grid and the angle step
+back to their defaults. The value panels of the left-hand carousel follow the selection that this tool makes (`ui/value_module.py`).
 
 Services (`ToolContext.services`, all optional): cursor(hand), hand_rotation(hand), to_document(point), mm_per_metre(), document(),
 trigger_free(), highlight (`render.highlight.Highlights`), toast(text), readout(text or None), format_length(mm), and `pick`,

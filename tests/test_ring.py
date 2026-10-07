@@ -387,6 +387,97 @@ class RingTest(unittest.TestCase):
         self.sim.set_hand(1, trigger=0.0)
         self.assertEqual(self.run_tip().slider_done, (0, 4))
 
+    def bar_setup(self):
+        self.slider_setup()
+
+    def row_point(self, along, dy):
+        """A point on the middle row of the slider panel: `dy` metres from the centre of the row, y up (the bar is at -0.013)."""
+        point, n = self.slider_point(along)
+        return mu.add(point, mu.mul(self.ring.poses[0].v, dy)), n
+
+    def test_a_slider_is_focused_by_a_tip_that_comes_close_without_touching(self):
+        self.bar_setup()
+        point, n = self.row_point(0.5, -0.013)
+        self.tip_at(point, n, 0.08)
+        r = self.run_tip()
+        self.assertEqual(r.focus, (0, 4))
+        self.assertIsNone(r.hover)                                   # not touching: nothing is pressed here
+        self.assertIsNone(r.bar_hover)
+        self.assertFalse(r.consume_trigger)
+        self.tip_at(point, n, 0.2)
+        self.assertIsNone(self.run_tip().focus)                      # too far
+        far, n = self.row_point(5.0, -0.013)                         # beside the panel
+        self.tip_at(far, n, 0.08)
+        self.assertIsNone(self.run_tip().focus)
+
+    def test_the_tip_touching_the_bar_presses_it_and_the_touch_of_the_label_does_not(self):
+        self.bar_setup()
+        label, n = self.row_point(0.5, 0.015)
+        self.tip_at(label, n, 0.02)
+        r = self.run_tip()
+        self.assertEqual((r.focus, r.hover, r.bar_hover), ((0, 4), (0, 4), None))
+        self.sim.set_hand(1, trigger=1.0)
+        r = self.run_tip()
+        self.assertIsNone(r.slider)
+        self.assertIsNone(self.ring.slider_drag)
+        self.assertTrue(r.consume_trigger)
+        self.sim.set_hand(1, trigger=0.0)
+        self.run_tip()
+        bar, n = self.row_point(0.3, -0.013)
+        self.tip_at(bar, n, 0.02)
+        r = self.run_tip()
+        self.assertEqual(r.bar_hover, (0, 4))
+        self.sim.set_hand(1, trigger=1.0)
+        r = self.run_tip()
+        self.assertAlmostEqual(r.slider[2], 0.3, places=4)
+        self.assertEqual(r.focus, (0, 4))
+        label, n = self.row_point(0.9, 0.015)                        # once dragging, the pointer may wander off the bar
+        self.tip_at(label, n, 0.1)
+        r = self.run_tip()
+        self.assertAlmostEqual(r.slider[2], 0.9, places=4)
+        self.assertEqual((r.focus, r.bar_hover), ((0, 4), (0, 4)))
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertEqual(self.run_tip().slider_done, (0, 4))
+
+    def test_the_laser_over_a_bar_slider_focuses_it_and_presses_on_the_bar_only(self):
+        self.bar_setup()
+        label, n = self.row_point(0.4, 0.015)
+        self.aim_at(label, n)
+        r = self.run_frames(1)
+        self.assertEqual((r.focus, r.hover, r.bar_hover), ((0, 4), (0, 4), None))
+        self.sim.set_hand(1, trigger=1.0)
+        self.assertIsNone(self.run_frames(1).slider)
+        self.sim.set_hand(1, trigger=0.0)
+        self.run_frames(1)
+        bar, n = self.row_point(0.4, -0.013)
+        self.aim_at(bar, n)
+        self.assertEqual(self.run_frames(1).bar_hover, (0, 4))
+        self.sim.set_hand(1, trigger=1.0)
+        self.assertAlmostEqual(self.run_frames(1).slider[2], 0.4, places=4)
+
+    def test_pages_from_the_fixed_index_are_not_lifted_and_not_dropped_on(self):
+        self.ring.fixed_from = 1
+        self.run_tip(30)
+        title, n = self.title_point(1)
+        self.tip_at(title, n, 0.02)
+        self.run_tip()
+        self.sim.set_hand(1, trigger=1.0)
+        r = self.run_tip()
+        self.assertIsNone(self.ring.lifted)
+        self.sim.set_hand(1, trigger=0.0)
+        self.run_tip()
+        title, n = self.title_point(0)                               # a page below the index is lifted as usual
+        self.tip_at(title, n, 0.02)
+        self.run_tip()
+        self.sim.set_hand(1, trigger=1.0)
+        self.run_tip()
+        self.assertEqual(self.ring.lifted, 0)
+        point, n = self.panel_point(1, 0.5, 0.0)
+        self.tip_at(point, n, 0.02)
+        r = self.run_tip()
+        self.assertIsNone(r.drop_target)                             # over a fixed page: nowhere to drop
+        self.assertIsNone(r.drop_marker)
+
     def test_the_other_rows_of_a_slider_panel_still_hold_faces(self):
         self.slider_setup()
         point, n = self.slot_point(0)

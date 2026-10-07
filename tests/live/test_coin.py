@@ -439,6 +439,66 @@ class SimUiTest(unittest.TestCase):
     def test_the_overlay_is_the_last_child_of_the_scene(self):
         self.assertEqual(self.s.scene.findChild(self.s.ui.overlay), self.s.scene.getNumChildren() - 1)
 
+    def test_the_panels_are_tinted_by_name_and_the_value_panels_stay_grey(self):
+        from freecad.BlocksCAD.ui import style, value_module
+
+        def contrast(a, b):
+            high, low = sorted((style.luminance(a), style.luminance(b)), reverse=True)
+            return (high + 0.05) / (low + 0.05)
+
+        names = [page.name for page in self.s.ui.layout.pages]
+        palettes = [style.panel_palette(name) for name in names]
+        self.assertEqual(len({p.face for p in palettes}), len(names))
+        self.assertEqual(style.panel_palette("Something else"), style.panel_palette("Something else"))
+        for name in value_module.PAGE_NAMES:
+            self.assertEqual(style.panel_palette(name, plain=True), style.DEFAULT_PALETTE)
+        for palette in palettes + [style.DEFAULT_PALETTE]:
+            self.assertGreaterEqual(contrast(style.TEXT, palette.face), 7.0)
+            self.assertGreaterEqual(contrast(style.TEXT, palette.plate), 7.0)
+            self.assertGreaterEqual(contrast(style.TEXT_DIM, palette.title), 4.5)
+            self.assertGreaterEqual(contrast(palette.face, palette.empty), 1.1)
+            self.assertGreaterEqual(contrast(style.HOVER, palette.face), 2.0)
+            self.assertGreaterEqual(contrast(style.ACTIVE, palette.face), 4.0)
+        views = {view.palette for view in self.s.ui.view._panels} if self.s.ui.view._panels else set()
+        self.assertTrue(views <= set(palettes) | {style.DEFAULT_PALETTE})
+
+    def test_a_still_carousel_writes_nothing_to_the_contents_of_its_panels(self):
+        from pivy import coin
+        self.s.input.set_head(position=(0.0, 1.6, 0.0), look_at_point=(-0.25, 1.2, -0.35))
+        for _ in range(30):
+            self.s.frame(0.02)
+        panel = self.s.ui.view._panels[0]
+        self.assertGreater(self.s.ui.ring.fade, 0.99)
+        changes = []
+        sensor = coin.SoNodeSensor(lambda *args: changes.append(1), None)
+        sensor.setPriority(0)                      # immediate: fires when the node or something below it is notified
+        sensor.attach(panel.front)
+        for _ in range(10):
+            self.s.frame(0.02)
+        self.assertEqual(changes, [])
+        self.s.ui.settings.tip_angle = 0.0
+        self.s.input.set_hand(1, position=(0.25, 1.3, -0.25), point_at=self.s.ui.ring.slot_centre(0, 1)[0])
+        for _ in range(3):
+            self.s.frame(0.02)                     # a hover lights a face: now something is written
+        self.assertGreater(len(changes), 0)
+        sensor.detach()
+
+    def test_a_panel_seen_from_behind_draws_only_its_plate(self):
+        from pivy import coin
+        self.s.input.set_head(position=(0.0, 1.6, 0.0), look_at_point=(-0.25, 1.2, -0.35))
+        for _ in range(30):
+            self.s.frame(0.02)
+        views = self.s.ui.view._panels
+        ring = self.s.ui.ring
+        head = self.s.input.head.position
+        from freecad.BlocksCAD.core import mathutil as mu
+        for index, view in enumerate(views):
+            pose = ring.poses[index]
+            facing = mu.dot(mu.sub(head, pose.centre), pose.n) > 0.0
+            self.assertEqual(view.facing, facing)
+            self.assertEqual(view.front.whichChild.getValue(), coin.SO_SWITCH_ALL if facing else coin.SO_SWITCH_NONE)
+        self.assertTrue(any(v.facing for v in views) and not all(v.facing for v in views))
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -897,6 +957,40 @@ class GrabLiveTest(unittest.TestCase):
         offset = self.mu.sub(placed[0], aim.position)
         self.assertGreater(sum(a * b for a, b in zip(offset, up)), 0.04)
 
+    def test_toasts_hang_behind_the_face_buttons_of_the_tool_hand_and_face_the_head(self):
+        from pivy import coin
+        from freecad.BlocksCAD.ui import controller, feedback_view
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        s.ui.toast("Hello")
+        s.frame(0.1)
+        plate = next(p for p in s.ui.feedback._toasts if p.root.whichChild.getValue() == coin.SO_SWITCH_ALL)
+        shown = plate._transform.translation.getValue().getValue()
+        anchor = s.ui._wrist_anchor(s.last_frame)
+        self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip(shown, anchor)))
+        aim = s.last_frame.hands[1].aim
+        self.assertLess(self.mu.length(self.mu.sub(anchor, aim.position)), 0.25)       # on the controller, not in front of the head
+        head = s.last_frame.head.position
+        normal = self.mu.rotate(tuple(plate._transform.rotation.getValue().getValue()), (0.0, 0.0, 1.0))
+        towards = self.mu.normalize(self.mu.sub(head, anchor))
+        self.assertAlmostEqual(sum(a * b for a, b in zip(normal, towards)), 1.0, places=5)
+        self.assertAlmostEqual(plate._transform.scaleFactor.getValue().getValue()[0],
+                               feedback_view.WRIST_SCALE * s.ui.toasts.items[0].scale, places=5)
+
+    def test_toasts_return_in_front_of_the_head_when_the_tool_hand_is_not_tracked(self):
+        from dataclasses import replace
+        from pivy import coin
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        frame = s.last_frame
+        lost = replace(frame.hands[1], aim=replace(frame.hands[1].aim, tracked=False))
+        frame = replace(frame, hands=[frame.hands[0], lost])
+        self.assertIsNone(s.ui._wrist_anchor(frame))
+        s.ui.toast("Hello")
+        s.ui.feedback.update(frame.head, s.ui.toasts.update(0.1))
+        plate = next(p for p in s.ui.feedback._toasts if p.root.whichChild.getValue() == coin.SO_SWITCH_ALL)
+        self.assertAlmostEqual(plate._transform.scaleFactor.getValue().getValue()[0], 1.5 * s.ui.toasts.items[0].scale, places=5)
+
     def test_a_grab_selects_the_whole_object_as_it_starts(self):
         from pivy import coin
         s = self.session()
@@ -917,9 +1011,287 @@ class GrabLiveTest(unittest.TestCase):
             s.frame(0.02)
             self.assertEqual(tool.values[option], expected, f"{degrees}")
             release()
+
+    # the value panels
+    def select(self, name=None, sub=""):
+        """Select an object as a whole (the panels follow the selection) and let the carousel with the panels fade in."""
+        from freecad.BlocksCAD.cad import picking
+        s = self.s or self.session()
+        picking.set_selection(self.doc, [(name or self.box.Name, sub)] if name != "" else [])
+        s.input.set_head(position=(0.0, 1.5, 0.0), look_at_point=s.input.hands[0].aim.position)       # looking at the left controller
+        self.hand(1, (400.0, 400.0, 400.0))
+        for _ in range(12):
+            s.frame(0.02)
+        return s.ui.module
+
+    def push(self, x, y, frames=1):
+        s = self.s
+        s.input.set_hand(1, stick=(x, y))
+        for _ in range(frames):
+            s.frame(0.02)
+        s.input.set_hand(1, stick=(0.0, 0.0))
+        s.frame(0.02)
+
+    def face_point(self, face_id, along=None, dy=0.0, front=0.01):
+        """The point `front` in front of a face of the carousel (a slider: at `along` of its track, `dy` above the middle of its row)."""
+        from freecad.BlocksCAD.ui import ring as rg
+        ui = self.s.ui
+        pages = ui.shown_layout().pages
+        page = next(i for i, p in enumerate(pages) if face_id in p.slots)
+        centre, u, v = ui.ring.slot_centre(page, pages[page].slots.index(face_id))
+        x = 0.0 if along is None else (-rg.GRID_W / 2 + rg.SLIDER_PAD) + along * (rg.GRID_W - 2 * rg.SLIDER_PAD)
+        n = ui.ring.poses[page].n
+        return self.mu.add(self.mu.add(self.mu.add(centre, self.mu.mul(u, x)), self.mu.mul(v, dy)), self.mu.mul(n, front))
+
+    def tip_to(self, point, **inputs):
+        s = self.s
+        s.input.set_hand(1, position=(point[0], point[1], point[2] + self.tip), orientation=(0.0, 0.0, 0.0, 1.0), **inputs)
+        s.frame(0.02)
+
+    def press_face(self, face_id):
+        """Touch a face of the carousel with the tip of the tool hand, press the trigger and let it go."""
+        point = self.face_point(face_id)
+        self.tip_to(point, trigger=0.0)
+        self.tip_to(point)
+        self.tip_to(point, trigger=1.0)
+        self.tip_to(point, trigger=0.0)
+        self.s.frame(0.02)
+
+    BAR = -0.013      # the bar of a slider lies this far below the middle of its row
+
+    def drag_slider(self, face_id, *alongs):
+        """Press the trigger on the bar of a slider and drag the tip along the track through the positions `alongs`."""
+        self.tip_to(self.face_point(face_id, alongs[0], self.BAR), trigger=0.0)
+        self.tip_to(self.face_point(face_id, alongs[0], self.BAR))
+        for along in alongs:
+            self.tip_to(self.face_point(face_id, along, self.BAR), trigger=1.0)
+        self.tip_to(self.face_point(face_id, alongs[-1], self.BAR), trigger=0.0)
+        self.s.frame(0.02)
+
+    def focus(self, face_id):
+        """Bring the tip close to a slider without touching it."""
+        self.tip_to(self.face_point(face_id, 0.5, 0.0, front=0.08), trigger=0.0)
+        self.tip_to(self.face_point(face_id, 0.5, 0.0, front=0.08))
+
+    def test_selecting_an_object_brings_up_the_value_panels_and_clearing_the_selection_takes_them_away(self):
+        from pivy import coin
+        s = self.session()
+        sides, front = len(s.ui.layout.sides()), s.ui.ring.front_side()
+        module = self.select("")
+        self.assertFalse(module.is_open)                                               # nothing is selected
+        module = self.select()
+        self.assertTrue(module.is_open)                                                # no click is needed
+        self.assertEqual(module.editor.target.title, self.box.Label)
+        self.assertEqual([f.label for f in module.editor.fields], ["Length", "Width", "Height", "X", "Y", "Z"])
+        self.assertEqual([p.name for p in s.ui.shown_layout().pages][-3:], ["Values", "Number pad", "Keys"])
+        self.assertEqual(len(s.ui.ring.display_sides()), sides + 1)
+        self.assertEqual(s.ui.ring.front_side(), sides)                                # the carousel turned to them
+        self.assertEqual(s.ui.view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.assertFalse(s.ui.ring.pinned)                                             # it is not forced open
+        self.assertEqual(s.ui.ring.fixed_from, len(s.ui.layout.pages))
+        module = self.select("")
+        self.assertFalse(module.is_open)
+        for _ in range(3):
+            s.frame(0.02)
+        self.assertEqual((len(s.ui.ring.display_sides()), s.ui.ring.front_side(), s.ui.ring.fixed_from), (sides, front, None))
+
+    def test_the_panels_follow_the_selection_from_one_object_to_the_next_and_stay_where_they_are(self):
+        from freecad.BlocksCAD.cad import primitives as prim
+        cylinder = prim.create(self.doc, "Cylinder", (200.0, 0.0, 0.0), (80.0, 80.0, 60.0))
+        s = self.session()
+        module = self.select()
+        self.assertEqual(module.key[1], self.box.Name)
+        self.press_face("key.group")
+        group = module.group
+        self.select(cylinder.Name)
+        self.assertEqual(module.key[1], cylinder.Name)
+        self.assertEqual([f.label for f in module.editor.fields], ["Radius", "Height", "X", "Y", "Z"])
+        self.assertEqual(s.ui.ring.front_side(), len(s.ui.layout.sides()))             # they did not turn again
+        self.select("")
+        self.assertFalse(module.is_open)
+        self.select(self.box.Name, "Face6")                                            # a selected face selects its object for the panels
+        self.assertEqual(module.key[1], self.box.Name)
+        self.assertEqual(group, 1)
+
+    def test_the_value_panels_are_ordinary_depth_tested_geometry(self):
+        from pivy import coin
+        s = self.session()
+        self.select()
+        action = coin.SoSearchAction()
+        action.setType(coin.SoDepthBuffer.getClassTypeId())
+        action.setInterest(coin.SoSearchAction.ALL)
+        action.apply(s.ui.view.root)
+        self.assertEqual(action.getPaths().getLength(), 0)                             # nothing of the carousel ignores the depth
+
+    def test_the_stick_steps_the_value_of_the_focused_slider_and_one_push_is_one_undo_step(self):
+        s = self.session()
+        module = self.select()
+        steps = self.doc.UndoCount
+        self.focus("val.1")
+        self.assertTrue(module.engaged)
+        self.assertEqual(module.editor.selected, 1)                                    # Width is picked by coming close
+        self.assertTrue(s.ui_update.owns_stick)
+        self.push(0.0, 1.0)
+        self.assertEqual(self.box.Width.Value, 110.0)
+        self.assertEqual((self.box.Length.Value, self.box.Height.Value), (100.0, 100.0))
+        self.focus("val.1")
+        self.push(0.0, 1.0)
+        self.focus("val.1")
+        self.push(0.0, -1.0)
+        self.assertEqual(self.box.Width.Value, 110.0)
+        self.assertEqual(self.doc.UndoCount, steps + 3)                                # three pushes, three undo steps
+        self.doc.undo()
+        self.assertEqual(self.box.Width.Value, 120.0)
+
+    def test_without_a_focused_slider_the_stick_belongs_to_the_tool(self):
+        from pivy import coin
+        s = self.session()
+        tool = s.tool_manager.active
+        module = self.select()
+        self.tip_to(self.face_point("val.1", 0.5, 0.0, front=0.4), trigger=0.0)       # far from the panels
+        self.assertFalse(module.engaged)
+        self.push(0.0, 1.0)
+        self.assertEqual(self.box.Width.Value, 100.0)
+        self.assertEqual(tool.values["grid"], "20 mm")                                 # the option disc of the Grab tool took the stick
+        self.assertFalse(s.ui_update.owns_stick and module.engaged)
+
+    def test_a_slider_changes_its_value_only_when_its_bar_is_pressed_and_dragged(self):
+        s = self.session()
+        module = self.select()
+        steps = self.doc.UndoCount
+        point = self.face_point("val.0", 0.8, 0.015)                                   # the label part of the row
+        self.tip_to(point, trigger=0.0)
+        self.tip_to(point, trigger=1.0)
+        self.tip_to(point, trigger=0.0)
+        self.assertEqual(self.box.Length.Value, 100.0)                                 # a press beside the bar does nothing
+        self.assertEqual(module.editor.selected, 0)
+        self.drag_slider("val.0", 0.5, 0.62, 0.77)                                     # Length: the track is 0 to 200 mm, the step 10 mm
+        self.assertEqual(self.box.Length.Value, 150.0)
+        self.assertEqual(self.box.Shape.BoundBox.XLength, 150.0)
+        self.assertEqual(module.slider_states()["val.0"][1], "Length 150 mm")
+        self.assertEqual(self.doc.UndoCount, steps + 1)                                # the whole drag is one undo step
+        self.drag_slider("val.1", 0.5, 0.1)
+        self.assertEqual(self.box.Width.Value, 20.0)
+        self.assertEqual(module.editor.selected, 1)
+        self.assertEqual(self.doc.UndoCount, steps + 2)
+        self.doc.undo()
+        self.assertEqual((self.box.Length.Value, self.box.Width.Value), (150.0, 100.0))
+
+    def test_the_sliders_show_the_next_three_values_on_the_more_values_key(self):
+        module = self.select()
+        self.press_face("key.group")
+        self.assertEqual(module.group, 1)
+        self.assertEqual(module.slider_states()["val.0"][1], "X 0 mm")
+        self.drag_slider("val.1", 0.75)                                                # Y: a track from -100 to 100 mm
+        self.assertEqual(self.box.Placement.Base.y, 50.0)
+        self.assertEqual(module.editor.selected, 4)
+
+    def test_the_keys_of_the_carousel_type_an_expression_with_a_unit_and_enter_keeps_each_value(self):
+        module = self.select()
+        steps = self.doc.UndoCount
+        for key in ("key.2", "key.times", "key.open", "key.3", "key.close", "key.unit", "key.unit", "key.enter"):    # 2 * (3) cm
+            self.press_face(key)
+        self.assertAlmostEqual(self.box.Length.Value, 60.0)
+        self.assertIsNone(module.editor.entry)
+        self.assertEqual(self.doc.UndoCount, steps + 1)
+        self.press_face("key.group")                                                   # the next group, the first of it (X) is picked
+        for key in ("key.minus", "key.5", "key.enter"):
+            self.press_face(key)
+        self.assertEqual(self.box.Placement.Base.x, -5.0)
+        self.assertEqual(self.doc.UndoCount, steps + 2)
+        self.doc.undo()
+        self.assertEqual((self.box.Length.Value, self.box.Placement.Base.x), (60.0, 0.0))
+
+    def test_the_title_of_the_number_pad_shows_what_is_typed_and_the_step_key_shows_the_step(self):
+        s = self.session()
+        module = self.select()
+        self.press_face("key.7")
+        self.assertEqual(module.titles()["Number pad"], "Length: 7|")
+        self.press_face("key.delete")
+        self.assertEqual(module.titles()["Number pad"], "Length: 100 mm")
+        self.press_face("key.step")
+        self.assertEqual(module.labels()["key.step"], "Step 20 mm")
+        self.focus("val.0")
+        self.push(0.0, 1.0)
+        self.assertEqual(self.box.Length.Value, 120.0)                                 # the stick uses the new step
+
+    def test_an_object_can_be_grabbed_while_the_panels_are_up_and_they_follow_it(self):
+        s = self.session()
+        module = self.select()
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (80.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (80.0, 50.0, 96.0), trigger=0.0)
+        self.assertEqual(tuple(self.box.Placement.Base), (30.0, 0.0, 0.0))
+        self.assertTrue(module.is_open)
+        self.assertEqual(module.editor.fields[3].value, 30.0)                          # X shows where the object is now
+
+    def test_the_panels_cannot_be_lifted_or_rearranged(self):
+        s = self.session()
+        self.select()
+        point = self.face_point("key.7")
+        self.tip_to(point, trigger=0.0)
+        self.tip_to(point, trigger=1.0)
+        for _ in range(30):                                                            # held for longer than a face needs to be lifted
+            self.tip_to(point, trigger=1.0)
+        self.assertIsNone(s.ui.ring.lifted_face)
+        self.tip_to(point, trigger=0.0)
+        self.assertEqual(s.ui.layout.hidden, [])
+
+    def test_a_torus_cannot_get_a_tube_wider_than_its_ring(self):
+        from freecad.BlocksCAD.cad import primitives as prim
+        torus = prim.create(self.doc, "Torus", (200.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        s = self.session()
+        module = self.select(torus.Name)
+        self.assertEqual([f.label for f in module.editor.fields][:2], ["Radius 1", "Radius 2"])
+        radius1, radius2 = torus.Radius1.Value, torus.Radius2.Value
+        self.focus("val.1")                                                            # pick Radius 2
+        for key in ("key.9", "key.9", "key.enter"):
+            self.press_face(key)
+        self.assertEqual((torus.Radius1.Value, torus.Radius2.Value), (radius1, radius2))
+        self.assertTrue(torus.isValid())
+        self.assertEqual([t.text for t in s.ui.toasts.items][-1], "The shape cannot take that value")
+        self.drag_slider("val.1", 1.0)                                                 # the slider is refused the same way
+        self.assertTrue(torus.isValid())
+        self.assertEqual(torus.Radius2.Value, radius2)
+
+    def test_the_click_of_the_stick_puts_the_grid_and_the_angle_back(self):
+        s = self.session()
+        tool = s.tool_manager.active
+        self.select("")
+        tool.values["grid"], tool.values["angle"] = "50 mm", "45 deg"
         s.input.set_hand(1, stick_click=True)
         s.frame(0.02)
         self.assertEqual((tool.values["grid"], tool.values["angle"]), ("10 mm", "15 deg"))
+
+    def test_a_cone_may_end_in_a_point(self):
+        from freecad.BlocksCAD.cad import values as object_values
+        specs = {name: low for name, _, low in object_values.field_specs("Part::Cone")}
+        self.assertEqual((specs["Radius1"], specs["Radius2"], specs["Height"]), (0.0, 0.0, 0.1))
+
+    def test_the_source_finds_the_first_editable_object_of_the_selection(self):
+        from freecad.BlocksCAD.cad import values as object_values
+        self.assertIsNone(object_values.source(self.doc, lambda doc: []))
+        self.assertIsNone(object_values.source(None))
+        self.assertIsNone(object_values.source(self.doc, lambda doc: [("Nothing", "")]))
+        key, factory = object_values.source(self.doc, lambda doc: [("Nothing", ""), (self.box.Name, "Face1")])
+        self.assertEqual(key, (self.doc.Name, self.box.Name))
+        self.assertEqual(factory().title, self.box.Label)
+
+    def test_the_target_edits_properties_in_one_transaction_that_cancel_aborts(self):
+        from freecad.BlocksCAD.cad import values as object_values
+        target = object_values.ObjectValues(self.doc, self.box)
+        self.assertEqual([(f.name, f.value) for f in target.fields()][:3], [("Length", 100.0), ("Width", 100.0), ("Height", 100.0)])
+        target.set("Length", 130.0)
+        target.set("pos.z", 7.0)
+        self.assertEqual((self.box.Length.Value, self.box.Placement.Base.z), (130.0, 7.0))
+        target.cancel()
+        self.assertEqual((self.box.Length.Value, self.box.Placement.Base.z), (100.0, 0.0))
+        target.cancel()                                                                # nothing open: nothing happens
+        target.set("Height", 40.0)
+        target.commit()
+        self.doc.undo()
+        self.assertEqual(self.box.Height.Value, 100.0)
 
     def test_a_grip_cancels_the_grab(self):
         s = self.session()

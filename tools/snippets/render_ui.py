@@ -320,6 +320,31 @@ try:
         _shot("locked")
         print("grab locked readout:", _s.ui.gesture_text)
         _cursor((283.3, 17.7, 90.0), trigger=0.0, button1=False)
+        # the value panels: they follow the selection, so selecting the box adds a side with the panels Values, Number pad and Keys to the carousel
+        from freecad.BlocksCAD.cad import picking as _pk
+        _pk.set_selection(_temp, [(_temp.Objects[0].Name, "")])
+        _cursor((600.0, 0.0, 400.0))
+        for _ in range(3):
+            _s.frame(0.02)
+        _s.ui.module.editor.select(0)
+        for _key in ("2", "*", "6", "unit"):
+            _s.ui.module.editor.key(_key)
+        _s.input.set_head(position=_head, look_at_point=_ctrl)
+        for _ in range(20):
+            _s.frame(0.02)
+        _pages = _s.ui.shown_layout().pages
+        _page = next(i for i, p in enumerate(_pages) if "key.5" in p.slots)
+        _centre, _, _ = _s.ui.ring.slot_centre(_page, _pages[_page].slots.index("key.5"))
+        _at = _mu.add(_centre, _mu.mul(_s.ui.ring.poses[_page].n, 0.01))
+        _s.input.set_hand(1, position=(_at[0], _at[1], _at[2] + _s.ui.settings.tip_length), orientation=(0.0, 0.0, 0.0, 1.0))
+        for _ in range(3):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_values.png"))
+        print("value panels:", _s.ui.module.editor.target.title, [(f.label, f.value) for f in _s.ui.module.editor.fields][:3], _s.ui.module.editor.entry,
+              _s.ui.ring.hover)
+        _pk.clear_selection()
+        for _ in range(3):
+            _s.frame(0.02)
     finally:
         for _node in _nodes:
             _s.doc_scene.removeChild(_node)

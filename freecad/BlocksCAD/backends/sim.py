@@ -119,6 +119,7 @@ class SimSession:
         self.doc_scene = doc                     # where a script may attach more of the document (view provider nodes)
         self._setup_tools()
         self.ui.part_frame = self._part_frame
+        self.ui.values_source = self._values_source
         self.hand_transforms = []
         self.hand_models = []
         self.scene.addChild(self.ui.root)
@@ -161,6 +162,11 @@ class SimSession:
             return FreeCAD.ActiveDocument
         except ImportError:
             return None
+
+    def _values_source(self):
+        """The object the value panels follow: the first editable object selected in the active document."""
+        from freecad.BlocksCAD.cad import values
+        return values.source(self._document())
 
     def _part_frame(self, hand, names, lift=0.0):
         """(position, right, forward, up) of a part of the generated controller of a hand, in the stage frame."""

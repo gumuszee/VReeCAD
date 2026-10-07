@@ -36,15 +36,15 @@ from freecad.BlocksCAD.ui import layout as lay
 from freecad.BlocksCAD.ui import pointing
 from freecad.BlocksCAD.ui.layout import COLS, ROWS
 
-CELL = 0.05            # metres, face edge
-GAP = 0.008
+CELL = 0.036           # metres, face edge
+GAP = 0.005
 GRID_W = COLS * CELL + (COLS - 1) * GAP
 GRID_H = ROWS * CELL + (ROWS - 1) * GAP
-PANEL_W = GRID_W + 0.02
-PANEL_H = GRID_H + 0.05
-GRID_Y = -0.015        # centre of the grid of faces in panel coordinates (origin at the centre of the panel plate)
-TITLE_Y = (GRID_Y + GRID_H / 2 + 0.004, GRID_Y + GRID_H / 2 + 0.036)   # title bar, the handle for lifting a panel
-PANEL_GAP = 0.012
+PANEL_W = GRID_W + 0.014
+PANEL_H = GRID_H + 0.034
+GRID_Y = -0.010        # centre of the grid of faces in panel coordinates (origin at the centre of the panel plate)
+TITLE_Y = (GRID_Y + GRID_H / 2 + 0.003, GRID_Y + GRID_H / 2 + 0.024)   # title bar, the handle for lifting a panel
+PANEL_GAP = 0.008
 FORWARD = 0.09         # distance of the carousel centre in front of the grip point, along the controller
 RADIUS_MIN = 0.09      # distance of the side planes from the controller axis
 GAZE_COS = math.cos(math.radians(35.0))
@@ -54,9 +54,11 @@ FADE_RATE = 8.0        # per second
 TURN_RATE = 14.0       # exponential approach rate of the carousel angle
 POINT_COS = -0.3       # sides turned further away than this cannot be pointed at
 EDGE_ZONE = 0.5        # while lifting: the outer quarter above and below a panel (fraction of its half height)
-SLIDER_PAD = 0.014     # the track of a slider ends this far inside the grid
+SLIDER_PAD = 0.010     # the track of a slider ends this far inside the grid
 TIP_FRONT = 0.03       # a tip within this distance in front of a panel touches it
 TIP_BEHIND = 0.015     # and this far behind its plate (pushing through)
+FOCUS_FRONT = 0.10     # a tip within this distance in front of a slider focuses it, without touching it
+BAR_BAND = (-0.018, 0.002)   # the bar of a slider, the only part of its row where a press starts a drag (metres from its centre, y up)
 HOLD_LIFT = 0.4        # seconds the trigger is held on a face before the face is lifted
 
 DropTarget = Tuple[int, int, Optional[int], bool]    # (side, row, page to insert before or None, new row at `row`)
@@ -84,6 +86,7 @@ class Hit:
     distance: float
     zone: str = ""                     # "left", "right", "above" or "below": where on the panel the ray is
     along: float = 0.0                 # on a slider: the position along its track, 0 to 1
+    bar: bool = False                  # on a slider: the point lies on the bar (the lower part of the row), where a press starts a drag
 
 
 @dataclass
@@ -98,6 +101,8 @@ class RingResult:
     drop_marker: Optional[Tuple[Optional[int], str, int]] = None   # (page or None on a ghost, zone, side) to highlight
     slider: Optional[Tuple[int, int, float]] = None   # (page, slot, position along the track) while a slider is dragged
     slider_done: Optional[Tuple[int, int]] = None     # (page, slot) of a slider released this frame
+    focus: Optional[Tuple[int, int]] = None      # (page, slot) of the slider that has the pointer close (tip) or over it (laser)
+    bar_hover: Optional[Tuple[int, int]] = None  # (page, slot) of a slider whose bar the pointer touches
     dropped: Optional[tuple] = None              # (page, side, row, before, new_row): released onto a target this frame
     lifted_face: Optional[Tuple[int, int]] = None     # (page, slot) of the face held by the trigger (being moved)
     face_target: Optional[Tuple[int, int]] = None     # (page, slot) the lifted face would go to if released now
@@ -144,6 +149,7 @@ class PaletteRing:
         self.lifted_face: Optional[Tuple[int, int]] = None
         self.can_lift = lambda page, slot: True          # set by the host: whether the slot holds a face that can be lifted
         self.can_drop = lambda src, dst: True            # set by the host: whether a lifted face can go to a slot
+        self.fixed_from = None                           # set by the host: pages from this index on are never lifted nor dropped on
         self.press: Optional[Tuple[int, int]] = None     # (page, slot) of the face the trigger went down on
         self._press_age = 0.0
         self._press_dead = False                         # the pointer left the face: the press does nothing
@@ -176,7 +182,10 @@ class PaletteRing:
             shown.append([])
         return shown
 
-    def focus_side(self, side):
+    def focus_side(self, side, count=None):
+        """Turn at once to a side; `count` is the number of sides the carousel is about to have (a side that is added in the same frame)."""
+        if count is not None:
+            self._count = self._known_count = count
         self.index = side
         self.angle = self.target_angle
 
@@ -271,7 +280,10 @@ class PaletteRing:
             return Hit("title", pose.side, pose.row, page, None, point, distance, zone)
         slot = self.locate_slot(x, y - GRID_Y)
         if slot is not None and slot // COLS in self.slider_rows.get(page, ()):
-            return Hit("slider", pose.side, pose.row, page, slot // COLS * COLS, point, distance, zone, slider_along(x))
+            row = slot // COLS
+            dy = (y - GRID_Y) - ((ROWS - 1) / 2 - row) * (CELL + GAP)
+            return Hit("slider", pose.side, pose.row, page, row * COLS, point, distance, zone, slider_along(x),
+                       BAR_BAND[0] <= dy <= BAR_BAND[1])
         return Hit("face" if slot is not None else "body", pose.side, pose.row, page, slot, point, distance, zone)
 
     def hit_test(self, origin, direction):
@@ -291,15 +303,21 @@ class PaletteRing:
                 best = hit
         return best
 
-    def hit_tip(self, tip):
-        """The panel a tip point touches: within `TIP_FRONT` in front of its plate or `TIP_BEHIND` behind it. Returns the `Hit`
+    def _fixed(self, page):
+        return self.fixed_from is not None and page is not None and page >= self.fixed_from
+
+    def _slider_id(self, hit):
+        return self.slider_rows.get(hit.page, {}).get(hit.slot // COLS)
+
+    def hit_tip(self, tip, front=TIP_FRONT):
+        """The panel a tip point touches: within `front` in front of its plate or `TIP_BEHIND` behind it. Returns the `Hit`
         (the point is the tip projected onto the plate) or None."""
         best = None
         for page, pose in self._candidates():
             if pose.cos < POINT_COS:
                 continue
             d = mu.dot(mu.sub(tip, pose.centre), pose.n)
-            if d > TIP_FRONT or d < -TIP_BEHIND:
+            if d > front or d < -TIP_BEHIND:
                 continue
             hit = self._make_hit(page, pose, mu.sub(tip, mu.mul(pose.n, d)), abs(d))
             if hit is not None and (best is None or abs(d) < best.distance):
@@ -328,7 +346,7 @@ class PaletteRing:
         pose = self.poses.get(page)
         result.consume_trigger = True
         self.hover, self.hover_title = (page, slot), None
-        result.hover = self.hover
+        result.hover = result.focus = result.bar_hover = self.hover
         point = None
         if tool.down("trigger") and pose is not None and pointer.tracked:
             if pointer.tip:
@@ -408,6 +426,16 @@ class PaletteRing:
         hit = None
         if pointer.tracked and self.fade > 0.8:
             hit = self.hit_tip(pointer.position) if pointer.tip else self.hit_test(pointer.position, pointer.direction)
+        if hit is not None and (self.lifted is not None or self.lifted_face is not None) and self._fixed(hit.page):
+            hit = None                                   # something is lifted: the fixed panels are not a place to drop it
+        focus = hit if hit is not None and hit.kind == "slider" else None
+        if focus is None and pointer.tracked and pointer.tip and self.fade > 0.8:
+            near = self.hit_tip(pointer.position, FOCUS_FRONT)
+            focus = near if near is not None and near.kind == "slider" else None
+        if focus is not None and self.lifted is None and self.lifted_face is None:
+            result.focus = (focus.page, focus.slot)
+        if hit is not None and hit.kind == "slider" and hit.bar:
+            result.bar_hover = (hit.page, hit.slot)
         previous = (self.hover, self.hover_title, self._target)
         self.hover = (hit.page, hit.slot) if hit is not None and hit.kind in ("face", "slider") else None
         self.hover_title = hit.page if hit is not None and hit.kind == "title" else None
@@ -429,10 +457,11 @@ class PaletteRing:
                     if hit.kind == "face":
                         self.press, self._press_age, self._press_dead = self.hover, 0.0, False
                     elif hit.kind == "slider":
-                        self.slider_drag = self.hover
-                        result.slider = (hit.page, hit.slot, hit.along)
-                        result.haptics.append((self.tool_hand, 0.3, 0.02))
-                    elif hit.kind == "title":
+                        if hit.bar:
+                            self.slider_drag = self.hover
+                            result.slider = (hit.page, hit.slot, hit.along)
+                            result.haptics.append((self.tool_hand, 0.3, 0.02))
+                    elif hit.kind == "title" and not self._fixed(hit.page):
                         self.lifted = hit.page
                         self._lift_distance = hit.distance
                         result.haptics.append((self.tool_hand, 0.4, 0.04))

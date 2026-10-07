@@ -14,7 +14,8 @@
 # *                                                                         *
 # ***************************************************************************
 """Coin3D drawing of the palette carousel (docs/ux-design.md, Visual style). Flat, unlit, high contrast: panels never depend on
-the scene lighting. Sizes are physical: the face edge is `ring.CELL`, label glyphs are about 9 mm tall (`style.TEXT_SCALE`)."""
+the scene lighting. Sizes are physical: the face edge is `ring.CELL`, label glyphs are about 7 mm tall (`style.PANEL_TEXT`). Every
+colour node is a `style.Paint` that is written only when the colour changes, so a still carousel costs the scene graph nothing."""
 
 from pivy import coin
 
@@ -22,6 +23,7 @@ from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.ui import layout as lay
 from freecad.BlocksCAD.ui import ring as rg
 from freecad.BlocksCAD.ui import style
+from freecad.BlocksCAD.ui import value_module
 
 DEPTH = 0.004
 TITLE_H = rg.TITLE_Y[1] - rg.TITLE_Y[0]
@@ -43,11 +45,11 @@ def _at(x, y, z):
 def _plate(parent, w, h, rgb, x=0.0, y=0.0, z=0.0):
     sep = coin.SoSeparator()
     sep.addChild(_at(x, y, z))
-    material = style.color(rgb)
-    sep.addChild(material)
+    paint = style.Paint(rgb)
+    sep.addChild(paint.node)
     sep.addChild(_cube(w, h, DEPTH))
     parent.addChild(sep)
-    return material
+    return paint
 
 
 def _text(parent, lines, x, y, z, rgb, justification=coin.SoText3.CENTER, factor=1.0):
@@ -65,20 +67,29 @@ def _text(parent, lines, x, y, z, rgb, justification=coin.SoText3.CENTER, factor
     return text
 
 
+def _placement(owner, parent):
+    """Give `owner` a transform under `parent` and the fields `RingView._place` writes (looking a pivy field up costs about 20
+    microseconds, so they are looked up once)."""
+    transform = coin.SoTransform()
+    parent.addChild(transform)
+    owner.move, owner.turn, owner.scale, owner.size = transform.translation, transform.rotation, transform.scaleFactor, None
+
+
 class _Cell:
-    def __init__(self, parent, x, y, face_label):
+    def __init__(self, parent, x, y, face_label, palette):
         self.sep = coin.SoSeparator()
         self.sep.addChild(_at(x, y, 0.0))
-        self.plate_color = _plate(self.sep, rg.CELL, rg.CELL, style.FACE if face_label is not None else style.EMPTY)
+        self.palette = palette
+        self.plate_color = _plate(self.sep, rg.CELL, rg.CELL, palette.face if face_label is not None else palette.empty)
         self.text_color = None
         self.label = face_label
         if face_label is not None:
             text_sep = coin.SoSeparator()
             self._text_move = _at(0.0, 0.0, DEPTH * 0.5 + 0.0005)
             text_sep.addChild(self._text_move)
-            self.text_color = style.color(style.TEXT)
-            text_sep.addChild(self.text_color)
-            text_sep.addChild(style.text_scale())
+            self.text_color = style.Paint(style.TEXT)
+            text_sep.addChild(self.text_color.node)
+            text_sep.addChild(style.text_scale(style.PANEL_TEXT))
             self._text = coin.SoText3()
             self._text.justification = coin.SoText3.CENTER
             text_sep.addChild(self._text)
@@ -88,7 +99,8 @@ class _Cell:
 
     def _write(self, label):
         lines = lay.wrap_label(label)
-        self._text_move.translation.setValue(0.0, (len(lines) - 1) * 0.5 * style.LINE_HEIGHT - 0.0035, DEPTH * 0.5 + 0.0005)
+        self._text_move.translation.setValue(0.0, ((len(lines) - 1) * 0.5 * style.LINE_HEIGHT - 0.0035) * style.PANEL_TEXT,
+                                             DEPTH * 0.5 + 0.0005)
         self._text.string.setNum(len(lines))
         self._text.string.setValues(0, len(lines), lines)
 
@@ -100,36 +112,40 @@ class _Cell:
 
     def set_state(self, hover, active, has_face, lifted=False, target=False):
         """`lifted`: the face is held in the hand (its place is dimmed); `target`: a lifted face would land here."""
-        color = (style.EMPTY if not has_face or lifted else style.GRAB if target else style.ACTIVE if active
-                 else style.HOVER if hover else style.FACE)
-        self.plate_color.rgb = coin.SbColor(*color)
+        color = (self.palette.empty if not has_face or lifted else style.GRAB if target else style.ACTIVE if active
+                 else style.HOVER if hover else self.palette.face)
+        self.plate_color.set(color)
         if self.text_color is not None:
-            self.text_color.rgb = coin.SbColor(*(style.TEXT_ON_ACTIVE if (active or target) and not lifted
-                                                 else style.TEXT_DIM if lifted else style.TEXT))
+            self.text_color.set(style.TEXT_ON_ACTIVE if (active or target) and not lifted
+                                else style.TEXT_DIM if lifted else style.TEXT)
 
 
 class _SliderRow:
     """A slider on a whole row of the grid: the label, the track and the handle."""
-    TRACK_H = 0.004
-    HANDLE = (0.009, 0.026)
+    TRACK_H = 0.003
+    TRACK_Y = -0.009
+    HANDLE = (0.007, 0.019)
 
-    def __init__(self, parent, y):
+    def __init__(self, parent, y, palette):
         self.low, self.high = -rg.GRID_W / 2 + rg.SLIDER_PAD, rg.GRID_W / 2 - rg.SLIDER_PAD
+        self.palette = palette
         self.sep = coin.SoSeparator()
         self.sep.addChild(_at(0.0, y, 0.0))
-        self.plate_color = _plate(self.sep, rg.GRID_W, rg.CELL, style.FACE)
-        self.track_color = _plate(self.sep, self.high - self.low, self.TRACK_H, style.PLATE, 0.0, -0.013, DEPTH * 0.5)
+        self.plate_color = _plate(self.sep, rg.GRID_W, rg.CELL, palette.face)
+        self.track_color = _plate(self.sep, self.high - self.low, self.TRACK_H, palette.plate, 0.0, self.TRACK_Y, DEPTH * 0.5)
         handle = coin.SoSeparator()
         self._handle_move = coin.SoTranslation()
+        self._handle_at = self._handle_move.translation
+        self._handle_x = None
         handle.addChild(self._handle_move)
-        self.handle_color = style.color(style.TEXT)
-        handle.addChild(self.handle_color)
+        self.handle_color = style.Paint(style.TEXT)
+        handle.addChild(self.handle_color.node)
         handle.addChild(_cube(self.HANDLE[0], self.HANDLE[1], DEPTH))
         self.sep.addChild(handle)
         label = coin.SoSeparator()
-        label.addChild(_at(-rg.GRID_W / 2 + 0.012, 0.011, DEPTH * 0.5 + 0.0005))
+        label.addChild(_at(-rg.GRID_W / 2 + 0.009, 0.008, DEPTH * 0.5 + 0.0005))
         label.addChild(style.color(style.TEXT))
-        label.addChild(style.text_scale(1.1))
+        label.addChild(style.text_scale(style.PANEL_TEXT * 1.1))
         self.text = coin.SoText3()
         self.text.justification = coin.SoText3.LEFT
         label.addChild(self.text)
@@ -137,13 +153,17 @@ class _SliderRow:
         self.label = None
         parent.addChild(self.sep)
 
-    def set(self, fraction, label, hovered, dragged):
-        self._handle_move.translation.setValue(self.low + fraction * (self.high - self.low), -0.013, DEPTH)
+    def set(self, fraction, label, hovered, dragged, picked=False, bar_hot=False):
+        x = self.low + fraction * (self.high - self.low)
+        if x != self._handle_x:
+            self._handle_x = x
+            self._handle_at.setValue(x, self.TRACK_Y, DEPTH)
         if label != self.label:
             self.label = label
             self.text.string = label
-        self.plate_color.rgb = coin.SbColor(*(style.HOVER if hovered else style.FACE))
-        self.handle_color.rgb = coin.SbColor(*(style.ACTIVE if dragged else style.TEXT))
+        self.plate_color.set(style.HOVER if hovered else self.palette.picked if picked else self.palette.face)
+        self.handle_color.set(style.ACTIVE if dragged else style.TEXT)
+        self.track_color.set(style.TEXT if bar_hot else self.palette.plate)
 
 
 class _Panel:
@@ -152,22 +172,31 @@ class _Panel:
     def __init__(self, page, faces):
         self.switch = coin.SoSwitch()
         self.switch.whichChild = coin.SO_SWITCH_NONE
+        self.palette = style.panel_palette(page.name, page.name in value_module.PAGE_NAMES)
+        palette = self.palette
+        outer = coin.SoSeparator()
+        _placement(self, outer)
+        self.back_color = _plate(outer, rg.PANEL_W, rg.PANEL_H, palette.plate, 0.0, 0.0, -DEPTH)
+        # everything in front of the plate: seen from behind it is hidden by the plate, so it is not drawn then
+        self.front = coin.SoSwitch()
+        self.front.whichChild = coin.SO_SWITCH_ALL
+        self.facing = True
         sep = coin.SoSeparator()
-        self.transform = coin.SoTransform()
-        sep.addChild(self.transform)
-        self.back_color = _plate(sep, rg.PANEL_W, rg.PANEL_H, style.PLATE, 0.0, 0.0, -DEPTH)
-        self.title_color = _plate(sep, rg.GRID_W, TITLE_H, style.PLATE, 0.0, TITLE_CENTRE, 0.0)
-        _text(sep, [page.name], -rg.GRID_W / 2 + 0.008, TITLE_CENTRE, DEPTH * 0.5 + 0.0005, style.TEXT_DIM,
-              coin.SoText3.LEFT)
+        self.front.addChild(sep)
+        outer.addChild(self.front)
+        self.title_color = _plate(sep, rg.GRID_W, TITLE_H, palette.title, 0.0, TITLE_CENTRE, 0.0)
+        self.title = _text(sep, [page.name], -rg.GRID_W / 2 + 0.006, TITLE_CENTRE, DEPTH * 0.5 + 0.0005, palette.title_text,
+                           coin.SoText3.LEFT, style.PANEL_TEXT)
+        self.title_text = page.name
         for i in (-1, 0, 1):   # grooves: the title bar is the handle for lifting the panel
-            _plate(sep, 0.016, 0.0016, style.GROOVE, rg.GRID_W / 2 - 0.016, TITLE_CENTRE + i * 0.006, DEPTH * 0.5)
+            _plate(sep, 0.012, 0.0012, palette.groove, rg.GRID_W / 2 - 0.012, TITLE_CENTRE + i * 0.0045, DEPTH * 0.5)
         self.cells = []
         self.sliders = {}          # row of the grid -> (slider view, face id)
         for row in range(lay.ROWS):
             face = faces.get(page.slots[row * lay.COLS]) if page.slots[row * lay.COLS] else None
             if face is not None and face.kind == "slider":
                 y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
-                self.sliders[row] = (_SliderRow(sep, y), face.id)
+                self.sliders[row] = (_SliderRow(sep, y, palette), face.id)
         for slot, face_id in enumerate(page.slots):
             col, row = slot % lay.COLS, slot // lay.COLS
             x = (col - (lay.COLS - 1) / 2) * (rg.CELL + rg.GAP)
@@ -176,8 +205,14 @@ class _Panel:
             if row in self.sliders:                      # the row belongs to its slider
                 self.cells.append((None, None))
                 continue
-            self.cells.append((_Cell(sep, x, y, face.label if face else None), face))
-        self.switch.addChild(sep)
+            self.cells.append((_Cell(sep, x, y, face.label if face else None, palette), face))
+        self.switch.addChild(outer)
+
+    def set_facing(self, facing):
+        """Draw the contents of the panel only while the head is in front of its plate."""
+        if facing != self.facing:
+            self.facing = facing
+            self.front.whichChild = coin.SO_SWITCH_ALL if facing else coin.SO_SWITCH_NONE
 
 
 class _Ghost:
@@ -189,8 +224,7 @@ class _Ghost:
         self.switch = coin.SoSwitch()
         self.switch.whichChild = coin.SO_SWITCH_NONE
         sep = coin.SoSeparator()
-        self.transform = coin.SoTransform()
-        sep.addChild(self.transform)
+        _placement(self, sep)
         self.color = _plate(sep, rg.PANEL_W, rg.PANEL_H, style.DROP, 0.0, 0.0, -DEPTH)
         self.text = _text(sep, [self.PANEL_LABEL], 0.0, 0.0, 0.0005, style.TEXT, factor=1.2)
         self.label = self.PANEL_LABEL
@@ -296,15 +330,17 @@ class RingView:
         return self._built_for != self._signature(layout)
 
     @staticmethod
-    def _place(transform, pose, origin, fade):
-        """Place a panel; it grows from the carousel axis while the carousel fades in."""
+    def _place(view, pose, origin, fade):
+        """Place a panel (or a ghost); it grows from the carousel axis while the carousel fades in."""
         centre = pose.centre if fade >= 1.0 else mu.lerp(origin, pose.centre, fade)
-        transform.translation.setValue(*centre)
-        transform.rotation.setValue(*mu.quat_from_basis(pose.u, pose.v, pose.n))
+        view.move.setValue(*centre)
+        view.turn.setValue(*mu.quat_from_basis(pose.u, pose.v, pose.n))
         s = 0.5 + 0.5 * fade
-        transform.scaleFactor.setValue(s, s, s)
+        if s != view.size:
+            view.size = s
+            view.scale.setValue(s, s, s)
 
-    def update(self, ring, result, layout, faces, head, active_actions=(), labels=None, sliders=None):
+    def update(self, ring, result, layout, faces, head, active_actions=(), labels=None, sliders=None, titles=None):
         if ring.fade <= 0.02:
             self.root.whichChild = coin.SO_SWITCH_NONE
             return
@@ -317,15 +353,22 @@ class RingView:
                 view.switch.whichChild = coin.SO_SWITCH_NONE
                 continue
             view.switch.whichChild = coin.SO_SWITCH_ALL
-            self._place(view.transform, pose, ring.origin, ring.fade)
-            title = style.HOVER if result.hover_title == index else style.PLATE
-            view.title_color.rgb = coin.SbColor(*title)
+            self._place(view, pose, ring.origin, ring.fade)
             under_ray = result.drop_marker is not None and result.drop_marker[0] == index
-            view.back_color.rgb = coin.SbColor(*(style.PLATE_LIT if under_ray else style.PLATE))
+            view.back_color.set(view.palette.plate_lit if under_ray else view.palette.plate)
+            view.set_facing(mu.dot(mu.sub(head, pose.centre), pose.n) > 0.0)
+            if not view.facing:
+                continue                                   # seen from behind: only the plate shows
+            view.title_color.set(style.HOVER if result.hover_title == index else view.palette.title)
+            text = (titles or {}).get(layout.pages[index].name, layout.pages[index].name)
+            if text != view.title_text:
+                view.title_text = text
+                view.title.string = text
             for row, (slider_view, face_id) in view.sliders.items():
-                fraction, text = (sliders or {}).get(face_id, (0.0, "-"))
+                fraction, text, *picked = (sliders or {}).get(face_id, (0.0, "-"))
                 hovered = result.hover == (index, row * lay.COLS)
-                slider_view.set(fraction, text, hovered, hovered and ring.slider_drag is not None)
+                slider_view.set(fraction, text, hovered, hovered and ring.slider_drag is not None, bool(picked and picked[0]),
+                                result.bar_hover == (index, row * lay.COLS))
             for slot, (cell, face) in enumerate(view.cells):
                 if cell is None:
                     continue
@@ -344,10 +387,10 @@ class RingView:
                 self._ghost_sep.addChild(self._ghosts[side].switch)
             view = self._ghosts[side]
             view.switch.whichChild = coin.SO_SWITCH_ALL
-            self._place(view.transform, ghost, ring.origin, ring.fade)
+            self._place(view, ghost, ring.origin, ring.fade)
             view.set_label(_Ghost.FACE_LABEL if result.lifted_face is not None else _Ghost.PANEL_LABEL)
             over = result.drop_marker is not None and result.drop_marker[0] is None and result.drop_marker[2] == side
-            view.color.rgb = coin.SbColor(*(style.HOVER if over else style.DROP))
+            view.color.set(style.HOVER if over else style.DROP)
         marker = result.drop_marker
         if marker is not None and marker[0] is not None and marker[0] in ring.poses:
             self._marker.show(ring.poses[marker[0]], marker[1], ring.origin, ring.fade)

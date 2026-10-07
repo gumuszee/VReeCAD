@@ -33,6 +33,7 @@ from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.core import stage, units
+from freecad.BlocksCAD.cad import values as object_values
 from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.render.highlight import Highlights
 from freecad.BlocksCAD.ui.controller import UiController
@@ -634,6 +635,7 @@ class XRwidget(QOpenGLWidget):
                                palette_hand=self.primary_con, tool_hand=self.secondary_con)
         self.navigator = self.ui.navigator
         self.ui.part_frame = lambda hand, names, lift: self.xr_con[hand].part_frame(names, lift)
+        self.ui.values_source = lambda: object_values.source(App.ActiveDocument)
         self.setup_tool_services()
 
     def setup_tool_services(self):
