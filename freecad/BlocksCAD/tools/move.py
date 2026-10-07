@@ -22,14 +22,18 @@ grid steps and turns by multiples of the angle step, and a padlock over the A bu
 step takes it back. A press that does not move anything is a tap: it selects the touched element (the FreeCAD selection), a tap on
 nothing clears the selection. The trigger of the other hand pressed during a grab scales the object through the size properties of
 its feature (the distance between the hands sets the factor; locked, every size is rounded to the grid); only the primitives made
-by the Create tool can be scaled. A grip cancels the grab. The stick chooses from an option disc: the grid larger (up) and smaller
+by the Create tool can be scaled. A grip cancels the grab. While a grab is free (the A button is not held) the object lines up with the model: the middle and the
+corners of its box and its vertices are level with the vertices and straight edge middles of the other objects where one is near on an
+axis (`core/guides.py`, `cad/anchors.py`), with a guide and a tick of the hand. The stick chooses from an option disc: the grid larger (up) and smaller
 (down), the angle step larger and smaller (left) and the two move modes (right). The click of the stick puts the grid and the angle step
 back to their defaults. The value panels of the left-hand carousel follow the selection that this tool makes (`ui/value_module.py`)."""
 
 import math
 
+from freecad.BlocksCAD.cad import anchors as model_anchors
 from freecad.BlocksCAD.cad import edit
 from freecad.BlocksCAD.core import grab as grabbing
+from freecad.BlocksCAD.core import guides
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
@@ -130,7 +134,7 @@ class MoveTool(TouchTool):
         doc.openTransaction(f"Move {obj.Label}")
         self._grab = {"pick": pick, "name": pick.name, "label": obj.Label, "start": (base, rotation),
                       "grab": grabbing.Grab(position, hand_rotation, base, rotation), "now": (base, rotation),
-                      "scaling": False, "scaled": False, "size0": None}
+                      "scaling": False, "scaled": False, "size0": None, "points": None, "source": None, "index": None}
         self._locked = False
         self._hover = None
         self._select(doc, [(pick.name, "")])             # the object is selected as the grab starts, so it shows as selected at once
@@ -158,6 +162,7 @@ class MoveTool(TouchTool):
             self._haptic(0.3, 0.02)
         elif not two_hands and state["scaling"]:
             state["scaling"] = False                    # moving goes on from the pose the object has now
+            state["points"] = None                      # and from the points it has now
             base, rotation = edit.placement(obj)
             state["grab"] = grabbing.Grab(position, hand_rotation, base, rotation)
             state["now"] = (base, rotation)
@@ -167,11 +172,31 @@ class MoveTool(TouchTool):
             rotate = self.values["mode"] == MODES[0]
             base, rotation = state["grab"].at(position, hand_rotation, rotate, self.grid if locked else None,
                                               self.angle if locked else None)
+            if locked:
+                self.hide_guides()
+            else:
+                base = self._align(state, obj, base, rotation)
             if (base, rotation) != state["now"]:
                 edit.set_placement(obj, base, rotation)
                 state["now"] = (base, rotation)
                 self._haptic(0.08, 0.008)
             self._readout(self._move_text(state))
+
+    def _align(self, state, obj, base, rotation):
+        """`base` shifted so that a point of the object (its box and its vertices, turned by `rotation`) lines up with an anchor of the
+        model on each axis where one is near; draws the guides. The object itself is no anchor."""
+        service = self._service("guide_anchors")
+        if service is None:
+            return base
+        anchors, tolerance = service((state["name"],))
+        if state["source"] is not anchors:
+            state["source"], state["index"] = anchors, guides.index_anchors(anchors)
+        if state["points"] is None:
+            state["points"] = self._service("object_points", model_anchors.local_points)(obj)
+        points = [mu.add(base, mu.rotate(rotation, p)) for p in state["points"]]
+        shift, found = guides.align_translation(points, state["index"], tolerance)
+        self.show_guides(found, self.grid * 0.5)
+        return mu.add(base, shift)
 
     def _centre(self, obj):
         c = obj.Shape.BoundBox.Center
@@ -204,6 +229,7 @@ class MoveTool(TouchTool):
         state, self._grab = self._grab, None
         self._locked = False
         self._readout(None)
+        self.hide_guides()
         changed = state["scaled"] or state["now"] != state["start"]
         if changed:
             doc.recompute()
@@ -224,6 +250,7 @@ class MoveTool(TouchTool):
         state, self._grab = self._grab, None
         self._locked = False
         self._readout(None)
+        self.hide_guides()
         doc = self._service("document", lambda: None)()
         if doc is not None and state is not None:
             doc.abortTransaction()

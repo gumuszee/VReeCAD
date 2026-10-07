@@ -21,6 +21,7 @@ cursor before and after the grid, and the anchors: on every axis on which an anc
 point takes that coordinate (a guide runs from the anchor to the point), and when one anchor matches on all three axes the point is
 that anchor (a point guide)."""
 
+from bisect import bisect_left
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -75,6 +76,41 @@ def align_along(raw, grid_value, candidates, tolerance):
         if gap < tolerance and (best is None or gap < best[0]):
             best = (gap, value, anchor)
     return (grid_value, None) if best is None else (best[1], best[2])
+
+
+def index_anchors(anchors):
+    """The anchors sorted by each coordinate, as ((values, anchors) of x, of y, of z), for `align_translation`."""
+    index = []
+    for axis in range(3):
+        ordered = sorted(anchors, key=lambda a: a[axis])
+        index.append(([a[axis] for a in ordered], ordered))
+    return tuple(index)
+
+
+def align_translation(points, index, tolerance):
+    """(shift, guides) for a body whose points are `points` that is moved freely: on each axis the shift brings the point that is
+    nearest to an anchor (within `tolerance`, anchors from `index_anchors`) level with that anchor, so a corner or a middle of the
+    body lines up with the model. The guides run from the anchors to the points as they lie after the shift; when one pair of a point
+    and an anchor is level on all three axes the guide is a point guide. The shift is zero on an axis where nothing is near."""
+    shift, picks = [0.0, 0.0, 0.0], [None, None, None]
+    for axis in range(3):
+        values, ordered = index[axis]
+        best = None
+        for point in points:
+            i = bisect_left(values, point[axis])
+            for j in (i - 1, i):
+                if 0 <= j < len(values):
+                    gap = values[j] - point[axis]
+                    if abs(gap) < tolerance and (best is None or abs(gap) < abs(best[0])):
+                        best = (gap, ordered[j], point)
+        if best is not None:
+            shift[axis], picks[axis] = best[0], best
+    moved = lambda p: tuple(p[axis] + shift[axis] for axis in range(3))
+    if all(p is not None for p in picks) and picks[0][1] == picks[1][1] == picks[2][1] and picks[0][2] == picks[1][2] == picks[2][2]:
+        anchor = tuple(picks[0][1])
+        return tuple(shift), [Guide("point", -1, anchor, anchor)]
+    guides = [Guide("axis", axis, tuple(p[1]), moved(p[2])) for axis, p in enumerate(picks) if p is not None]
+    return tuple(shift), guides
 
 
 OFF_AXIS = 3                         # the `axis` of a guide along a direction of a face that is no axis of the document

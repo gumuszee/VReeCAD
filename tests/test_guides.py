@@ -48,6 +48,35 @@ class AlignTest(unittest.TestCase):
         self.assertEqual([g.kind for g in found], ["axis", "axis"])         # the z of the anchor does not make it a point guide on two axes of three...
 
 
+class TranslationTest(unittest.TestCase):
+    INDEX = guides.index_anchors([(300.0, 0.0, 0.0), (400.0, 100.0, 100.0), (350.0, 50.0, 50.0)])
+    BODY = [(194.0, 3.0, 0.0), (294.0, 103.0, 100.0), (244.0, 53.0, 50.0)]             # a box 100 mm wide, moved 194 mm along X and 3 mm along Y
+
+    def test_the_index_is_sorted_on_every_axis(self):
+        values, ordered = self.INDEX[0]
+        self.assertEqual(values, [300.0, 350.0, 400.0])
+        self.assertEqual(ordered[0], (300.0, 0.0, 0.0))
+        self.assertEqual(self.INDEX[1][0], [0.0, 50.0, 100.0])
+
+    def test_the_nearest_pair_of_a_point_and_an_anchor_sets_the_shift_on_each_axis(self):
+        shift, found = guides.align_translation(self.BODY, self.INDEX, 8.0)
+        self.assertEqual(shift, (6.0, -3.0, 0.0))
+        self.assertEqual(sorted(g.axis for g in found), [0, 1, 2])
+        x = next(g for g in found if g.axis == 0)
+        self.assertEqual((x.kind, x.anchor), ("axis", (300.0, 0.0, 0.0)))
+        self.assertEqual(x.point[0], 300.0)                                           # the point of the body is level with the anchor after the shift
+
+    def test_nothing_near_means_no_shift_and_no_guide(self):
+        self.assertEqual(guides.align_translation([(0.0, 20.0, 20.0)], self.INDEX, 8.0), ((0.0, 0.0, 0.0), []))
+        self.assertEqual(guides.align_translation([], self.INDEX, 8.0), ((0.0, 0.0, 0.0), []))
+        self.assertEqual(guides.align_translation(self.BODY, guides.index_anchors([]), 8.0), ((0.0, 0.0, 0.0), []))
+
+    def test_a_point_that_reaches_an_anchor_on_all_three_axes_is_a_point_guide(self):
+        shift, found = guides.align_translation([(298.0, 2.0, -3.0)], self.INDEX, 8.0)
+        self.assertEqual(shift, (2.0, -2.0, 3.0))
+        self.assertEqual([(g.kind, g.axis, g.anchor) for g in found], [("point", -1, (300.0, 0.0, 0.0))])
+
+
 class AlongTest(unittest.TestCase):
     def test_the_nearest_candidate_within_reach_wins(self):
         self.assertEqual(guides.align_along(34.0, 30.0, [(37.0, "a"), (35.5, "b"), (90.0, "c")], 5.0), (35.5, "b"))

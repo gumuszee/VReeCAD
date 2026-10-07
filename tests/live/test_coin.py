@@ -862,6 +862,23 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.undo()
         self.assertEqual(tuple(self.box.Placement.Base), (0.0, 0.0, 0.0))
 
+    def test_a_free_grab_lines_the_box_of_the_object_up_with_the_model_and_a_locked_grab_does_not(self):
+        from freecad.BlocksCAD.cad import anchors, primitives as prim
+        prim.create(self.doc, "Box", (300.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        s = self.session()
+        s.tool_manager.active.ctx.services["guide_anchors"] = lambda exclude: (anchors.collect(self.doc, exclude), 8.0)
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (244.0, 53.0, 96.0), trigger=1.0)                     # 194 mm along X and 3 mm along Y by hand
+        self.assertEqual(tuple(round(c, 6) for c in self.box.Placement.Base), (200.0, 0.0, 0.0))      # level with the other box: 6 and 3 mm taken up
+        self.assertIsNotNone(s.tool_manager.active._guide_key)
+        self.hand(1, (244.0, 53.0, 96.0), trigger=1.0, button1=True)       # A held: only the grid, 194 mm becomes 190
+        self.assertEqual(tuple(round(c, 6) for c in self.box.Placement.Base), (190.0, 0.0, 0.0))
+        self.assertIsNone(s.tool_manager.active._guide_key)
+        self.hand(1, (244.0, 53.0, 96.0), trigger=0.0, button1=False)
+        self.doc.undo()
+        self.assertEqual(tuple(self.box.Placement.Base), (0.0, 0.0, 0.0))
+
     def test_a_turn_of_the_hand_turns_the_object_in_steps_of_15_degrees_unless_the_mode_is_move(self):
         import math
         s = self.session()

@@ -47,6 +47,34 @@ def collect(doc, exclude=(), limit=MAX_ANCHORS):
     return anchors
 
 
+def local_points(obj, limit=64):
+    """The points of the object `obj` that can line up with the anchors of the model, in its own frame (the placement left out): the
+    middle and the corners of the box around it, then its vertices, each once, at most `limit`."""
+    import FreeCAD as App
+    shape = getattr(obj, "Shape", None)
+    if shape is None or shape.isNull():
+        return []
+    shape = shape.copy()
+    shape.Placement = App.Placement()
+    box = shape.BoundBox
+    seen, points = set(), []
+
+    def add(x, y, z):
+        key = (round(x, 4), round(y, 4), round(z, 4))
+        if key not in seen and len(points) < limit:
+            seen.add(key)
+            points.append((x, y, z))
+
+    add(box.Center.x, box.Center.y, box.Center.z)
+    for x in (box.XMin, box.XMax):
+        for y in (box.YMin, box.YMax):
+            for z in (box.ZMin, box.ZMax):
+                add(x, y, z)
+    for vertex in shape.Vertexes:
+        add(vertex.X, vertex.Y, vertex.Z)
+    return points
+
+
 class Anchors:
     """`get(doc, exclude)` is `collect` kept for `REFRESH` seconds for the same document and exclusions."""
 
