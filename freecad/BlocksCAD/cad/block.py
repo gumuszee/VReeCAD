@@ -232,9 +232,16 @@ def to_world(obj, point):
     return _world(obj, point)
 
 
+_VISIBLE = None
+
+
 def blocks(doc):
-    """The visible block objects of a document."""
-    return [o for o in doc.Objects if is_block(o) and getattr(o, "Visibility", True)]
+    """The visible block objects of a document (found again only for the objects that changed: `cad/changes.py`)."""
+    global _VISIBLE
+    if _VISIBLE is None:
+        from freecad.BlocksCAD.cad import changes
+        _VISIBLE = changes.ObjectCache(changes.shared(), lambda o: True if is_block(o) and getattr(o, "Visibility", True) else None)
+    return [o for o in (doc.getObject(name) for name in _VISIBLE.get(doc)) if o is not None]
 
 
 def pick(doc, point, mm_per_metre, kind):

@@ -308,8 +308,16 @@ def set_dimension(sketch, index, value):
 
 
 # points and curves for the tool
+_VISIBLE = None
+
+
 def sketches(doc):
-    return [o for o in doc.Objects if is_sketch(o) and getattr(o, "Visibility", True)]
+    """The visible sketches of a document (found again only for the objects that changed: `cad/changes.py`)."""
+    global _VISIBLE
+    if _VISIBLE is None:
+        from freecad.BlocksCAD.cad import changes
+        _VISIBLE = changes.ObjectCache(changes.shared(), lambda o: True if is_sketch(o) and getattr(o, "Visibility", True) else None)
+    return [o for o in (doc.getObject(name) for name in _VISIBLE.get(doc)) if o is not None]
 
 
 def _points(sketch):
