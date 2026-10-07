@@ -1147,6 +1147,65 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(len(made.Vertices), 8)
         self.assertEqual(len(made.Shape.Faces), 6)
 
+    def test_the_coordinates_of_a_picked_point_are_values_that_can_be_bound_to_a_variable(self):
+        from freecad.BlocksCAD.cad import block, values as object_values, variables
+        from freecad.BlocksCAD.core import values as editing
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        key, factory = object_values.source(self.doc, lambda doc: [(made.Name, "")])
+        self.assertEqual(key, (self.doc.Name, made.Name))                                      # no point picked: the position only
+        block.set_picked(made, 6)
+        key, factory = object_values.source(self.doc, lambda doc: [(made.Name, "")])
+        self.assertEqual(key, (self.doc.Name, made.Name, 6))
+        editor = editing.ValueEditor(factory(), step=10.0)
+        self.assertEqual([f.label for f in editor.fields][:4], ["Point X", "Point Y", "Point Z", "X"])
+        self.assertEqual(editor.target.title, made.Label + " point 6")
+        editor.select(2)
+        editor.entry = "130"
+        editor.key("enter")                                                                    # a plain number moves the point
+        self.assertAlmostEqual(made.Shape.BoundBox.ZMax, 130.0)
+        self.assertEqual([f.value for f in editor.fields][:3], [100.0, 100.0, 130.0])
+        editor.key("makevar")
+        self.assertEqual(editor.message, "Variable point_z = 130 mm")
+        self.assertIn("Point6", made.PropertiesList)
+        self.assertEqual(variables.list_variables(self.doc), [("point_z", 130.0)])
+        self.assertTrue(editor.nudge(1))                                                       # the stick edits the variable
+        editor.commit()
+        self.assertAlmostEqual(made.Shape.BoundBox.ZMax, 140.0)
+        variables.set_value(self.doc, "point_z", 160.0)
+        self.doc.recompute()
+        self.assertAlmostEqual(made.Shape.BoundBox.ZMax, 160.0)
+        self.assertEqual(block.read(made)[0][6], (100.0, 100.0, 160.0))
+        vertices, _ = block.read(made)
+        error = block.apply(self.doc, made, [(x, y, 170.0) if i == 6 else (x, y, z) for i, (x, y, z) in enumerate(vertices)])
+        self.assertEqual(error, "Point 6 is bound to point_z: unbind it first")
+        editor.select(0)
+        editor.entry = "point_z / 2"
+        editor.key("enter")                                                                    # another value follows the same variable
+        self.assertAlmostEqual(block.read(made)[0][6][0], 80.0)
+        editor.select(2)
+        editor.key("unbind")
+        vertices, _ = block.read(made)
+        self.assertIsNone(block.apply(self.doc, made, [(x, y, 170.0) if i == 6 else (x, y, z) for i, (x, y, z) in enumerate(vertices)]))
+        self.assertAlmostEqual(made.Shape.BoundBox.ZMax, 170.0)
+        for _ in range(7):
+            self.doc.undo()
+        self.assertNotIn("Point6", made.PropertiesList)                                       # the property went with its first binding
+        self.assertEqual(variables.list_variables(self.doc), [])
+
+    def test_the_points_tool_shows_the_point_it_moved_on_the_value_panels(self):
+        from freecad.BlocksCAD.cad import block
+        made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        s = self.session()
+        s.select_tool("points")
+        self.hand(1, (500.0, 100.0, 100.0))
+        self.hand(1, (500.0, 100.0, 100.0), trigger=1.0)
+        self.hand(1, (500.0, 100.0, 100.0), trigger=0.0)
+        for _ in range(3):
+            s.frame(0.02)
+        self.assertTrue(s.ui.module.is_open)
+        self.assertEqual(s.ui.module.editor.target.title, made.Label + " point 6")
+        self.assertEqual(s.ui.module.slider_states()["val.0"][1], "Point X 500 mm")
+
     def test_a_mirror_is_a_parametric_image_one_gap_beyond_the_object(self):
         from freecad.BlocksCAD.cad import duplicate
         text, names = duplicate.mirror(self.doc, [(self.box.Name, "")], 0)

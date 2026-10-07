@@ -23,13 +23,22 @@ triangles, the faces are sewn and made a solid (`cad/blockgeom.py` holds the geo
 
 `pick`, `display` and `handles` find and draw the points and edges of the blocks of a document for the Points tool; `apply` changes
 the points or the faces of a block and takes the change back when the block cannot be built. A document with blocks needs this addon
-to recompute them; the shape is stored with the document, so it opens and shows without."""
+to recompute them; the shape is stored with the document, so it opens and shows without.
+
+A point that is bound to a variable carries a property of its own, `Point<i>` (a vector, made when the point is first bound): FreeCAD
+applies an expression to a property but not to one element of a vector list, so `Point6.z` can be bound to `Variables.lift` and
+the point takes the value of that property, whatever `Vertices` holds. `read` gives the points as they are built, `apply` refuses a
+move of a component that an expression holds, and `set_picked` remembers the point that the value panels show for a block."""
+
+import re
 
 from freecad.BlocksCAD.cad import blockgeom
 from freecad.BlocksCAD.cad.picking import Display, Pick
 from freecad.BlocksCAD.core import grab
 
 TYPE = "BlocksCAD::Block"
+_POINT = re.compile(r"Point(\d+)")
+_PICKED = {}                # (document name, object name) -> index of the point that the value panels show
 
 
 def make_shape(vertices, faces):
@@ -86,17 +95,70 @@ def is_block(obj):
     return isinstance(getattr(obj, "Proxy", None), Block)
 
 
+def point_properties(obj):
+    """index -> name of the `Point<i>` properties of a block (the points that can be bound)."""
+    found = {}
+    for name in obj.PropertiesList:
+        match = _POINT.fullmatch(name)
+        if match:
+            found[int(match.group(1))] = name
+    return found
+
+
 def read(obj):
-    """(vertices as tuples, faces as tuples of indices) of a block."""
-    return [(v.x, v.y, v.z) for v in obj.Vertices], blockgeom.faces_from_text(obj.Faces)
+    """(vertices as tuples, faces as tuples of indices) of a block, the points as they are built (a bound point is its property)."""
+    vertices = [(v.x, v.y, v.z) for v in obj.Vertices]
+    for index, name in point_properties(obj).items():
+        if index < len(vertices):
+            value = getattr(obj, name)
+            vertices[index] = (value.x, value.y, value.z)
+    return vertices, blockgeom.faces_from_text(obj.Faces)
 
 
 def write(obj, vertices, faces=None):
     """Set the points (and the faces when given) of a block; the shape follows at the next recompute."""
     import FreeCAD as App
     obj.Vertices = [App.Vector(*v) for v in vertices]
+    for index, name in point_properties(obj).items():
+        if index < len(vertices):
+            setattr(obj, name, App.Vector(*vertices[index]))
     if faces is not None:
         obj.Faces = blockgeom.faces_to_text(faces)
+
+
+def ensure_point(obj, index):
+    """Make the property that can carry an expression for point `index`; returns its name."""
+    import FreeCAD as App
+    name = f"Point{index}"
+    if name not in obj.PropertiesList:
+        value = read(obj)[0][index]                          # before the property exists, which would read as zero
+        obj.addProperty("App::PropertyVector", name, "Block points", f"Point {index} of the block, bound by expressions")
+        setattr(obj, name, App.Vector(*value))
+    return name
+
+
+def expressions(obj):
+    """(index, axis 0 to 2) -> expression of every component of a point that is bound."""
+    found = {}
+    for path, expression in getattr(obj, "ExpressionEngine", []):
+        match = re.fullmatch(r"\.?Point(\d+)\.([xyz])", path)
+        if match:
+            found[(int(match.group(1)), "xyz".index(match.group(2)))] = expression
+    return found
+
+
+def set_picked(obj, index):
+    """Remember `index` as the point of the block `obj` that the value panels show (None forgets it)."""
+    key = (obj.Document.Name, obj.Name)
+    if index is None:
+        _PICKED.pop(key, None)
+    else:
+        _PICKED[key] = index
+
+
+def picked(obj):
+    """The index of the point of the block that the value panels show, or None."""
+    return _PICKED.get((obj.Document.Name, obj.Name))
 
 
 def make(doc, vertices, faces, name="Block"):
@@ -133,6 +195,12 @@ def apply(doc, obj, vertices, faces=None):
     if error is not None:
         return error
     before = read(obj)
+    bound = expressions(obj)
+    for index, (new, old) in enumerate(zip(vertices, before[0])):
+        for axis in range(3):
+            if (index, axis) in bound and abs(new[axis] - old[axis]) > 1e-9:
+                from freecad.BlocksCAD.core.values import pretty_expression
+                return f"Point {index} is bound to {pretty_expression(bound[(index, axis)])}: unbind it first"
     write(obj, vertices, faces)
     doc.recompute()
     if not obj.isValid():

@@ -21,7 +21,7 @@ A value may be bound to an expression of the variables of the document (`cad/var
 variable when the value is bound to one variable alone, and refuse when the expression is more than that.
 `field_specs` is pure Python; FreeCAD is only used by the object."""
 
-from freecad.BlocksCAD.cad import edit, picking, variables
+from freecad.BlocksCAD.cad import block, edit, picking, variables
 from freecad.BlocksCAD.core.values import Field, ValueTarget, pretty_expression, single_variable
 
 LABELS = {"Radius1": "Radius 1", "Radius2": "Radius 2", "Circumradius": "Radius", "Xmax": "X size", "Ymax": "Y size", "Zmax": "Z size",
@@ -54,8 +54,14 @@ def source(doc, get_selection=None):
     for name, _ in get_selection(doc):
         obj = doc.getObject(name)
         if editable(obj):
+            index = block.picked(obj) if block.is_block(obj) else None
+            if index is not None and index < len(obj.Vertices):
+                return (doc.Name, name, index), (lambda d=doc, o=obj, i=index: BlockValues(d, o, i))
             return (doc.Name, name), (lambda d=doc, o=obj: ObjectValues(d, o))
     return None
+
+
+POINT_AXES = (("pt.x", "Point X"), ("pt.y", "Point Y"), ("pt.z", "Point Z"))
 
 
 class ObjectValues(ValueTarget):
@@ -167,3 +173,44 @@ class ObjectValues(ValueTarget):
             self._open = False
             self.doc.abortTransaction()
             self.doc.recompute()
+
+
+class BlockValues(ObjectValues):
+    """The values of a block while one of its points is picked (by the Points tool): the three coordinates of the point, then the position
+    of the block. The point is in the placement of the block; a coordinate can be bound to a variable like any value, which makes the
+    property that carries the expression (`cad/block.py`)."""
+
+    def __init__(self, doc, obj, index):
+        super().__init__(doc, obj)
+        self.index = index
+        self.title = f"{obj.Label} point {index}"
+
+    def _current(self, name):
+        if name.startswith("pt."):
+            return float(block.read(self.obj)[0][self.index]["xyz".index(name[3])])
+        return super()._current(name)
+
+    def _path(self, name):
+        return f"Point{self.index}.{name[3]}" if name.startswith("pt.") else ObjectValues._path(name)
+
+    def fields(self):
+        bound = self._expressions()
+        points = [Field(name, label, self._current(name), None, expression=bound.get(self._path(name))) for name, label in POINT_AXES]
+        return points + super().fields()
+
+    def _write(self, name, value):
+        if not name.startswith("pt."):
+            super()._write(name, value)
+            return
+        vertices, _ = block.read(self.obj)
+        axis = "xyz".index(name[3])
+        moved = tuple(value if i == axis else c for i, c in enumerate(vertices[self.index]))
+        error = block.apply(self.doc, self.obj, [moved if i == self.index else v for i, v in enumerate(vertices)])
+        if error is not None:
+            raise ValueError(error)
+
+    def bind(self, name, expression, value):
+        if name.startswith("pt."):
+            self._begin()
+            block.ensure_point(self.obj, self.index)
+        super().bind(name, expression, value)

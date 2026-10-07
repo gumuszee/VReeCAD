@@ -75,6 +75,9 @@ class FakeBlocks:
             obj.vertices, obj.faces = list(vertices), list(new_faces)
         return error
 
+    def set_picked(self, obj, index):
+        self.picked = (obj.Name, index)
+
     def to_local(self, obj, point):
         return tuple(point)
 
@@ -148,6 +151,7 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(self.doc.log[0], ("open", "Move point of BLOCK"))
         self.assertEqual(self.toasts[-1], "Moved point 1 of BLOCK")
         self.assertEqual(self.selection, [("block", "")])
+        self.assertEqual(self.tool.ctx.services["blocks"].picked, ("block", 1))     # the value panels show the point
 
     def test_the_a_button_leaves_the_point_off_the_grid(self):
         self.drag((123.0, -4.0, 17.0), button1=True)

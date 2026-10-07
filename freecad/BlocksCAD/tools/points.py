@@ -168,6 +168,7 @@ class PointsTool(TouchTool):
         self._drag = {"name": pick.name, "label": obj.Label, "index": what, "now": vertices[what], "changed": label == "Split",
                       "verb": label}
         self._forget_hover()
+        blocks.set_picked(obj, what)                        # the value panels show this point
         self._select(doc, [(pick.name, "")])
         self._haptic(0.3, 0.02)
 
