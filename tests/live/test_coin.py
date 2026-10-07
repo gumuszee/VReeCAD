@@ -1502,6 +1502,52 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(names, [])
         self.assertIn("too large", text)
 
+    def test_attaching_mates_two_faces_and_the_object_follows_its_support(self):
+        import FreeCAD as App
+        from freecad.BlocksCAD.cad import attach, edit
+        other = self.doc.addObject("Part::Box", "Other")
+        other.Length, other.Width, other.Height = 50.0, 40.0, 30.0
+        other.Placement = App.Placement(App.Vector(300, 300, 300), App.Rotation(App.Vector(1, 1, 0), 33))
+        self.doc.recompute()
+        text, name = attach.attach(self.doc, [(other.Name, "Face5"), (self.box.Name, "Face6")])
+        self.assertEqual(name, other.Name)
+        self.assertEqual(other.MapMode, "FlatFace")
+        face = other.Shape.getElement("Face5")                                               # the bottom lies on the top of the box
+        self.assertAlmostEqual(face.CenterOfMass.z, 100.0, places=4)
+        self.assertAlmostEqual(face.CenterOfMass.x, 50.0, places=4)
+        self.assertAlmostEqual(face.CenterOfMass.y, 50.0, places=4)
+        self.assertAlmostEqual(other.Shape.BoundBox.ZMin, 100.0, places=4)
+        self.assertAlmostEqual(other.Shape.Volume, 50.0 * 40.0 * 30.0, places=3)
+        self.box.Placement = App.Placement(App.Vector(500, 0, 0), App.Rotation())            # the support moves, the object follows
+        self.doc.recompute()
+        self.assertAlmostEqual(other.Shape.getElement("Face5").CenterOfMass.x, 550.0, places=4)
+        base, rotation = edit.placement(other)                                               # the Move tool shifts it through the offset
+        edit.set_placement(other, (base[0] + 10.0, base[1], base[2]), rotation)
+        self.assertAlmostEqual(other.Shape.getElement("Face5").CenterOfMass.x, 560.0, places=4)
+        self.assertEqual(other.MapMode, "FlatFace")
+        text, names = attach.detach(self.doc, [(other.Name, "")])
+        self.assertEqual(names, [other.Name])
+        self.assertEqual(other.MapMode, "Deactivated")
+        self.assertAlmostEqual(other.Shape.getElement("Face5").CenterOfMass.x, 560.0, places=4)
+        self.doc.undo()                                                                      # the detach
+        self.assertEqual(other.MapMode, "FlatFace")
+        self.doc.undo()                                                                      # the attach
+        self.assertEqual(other.MapMode, "Deactivated")
+
+    def test_attaching_refuses_curved_faces_and_a_loop(self):
+        import FreeCAD as App
+        from freecad.BlocksCAD.cad import attach
+        cylinder = self.doc.addObject("Part::Cylinder", "Tube")
+        self.doc.recompute()
+        text, name = attach.attach(self.doc, [(cylinder.Name, "Face1"), (self.box.Name, "Face6")])
+        self.assertEqual((text, name), ("Attach needs flat faces", None))
+        cut = self.doc.addObject("Part::Cut", "Cut")
+        cut.Base, cut.Tool = self.box, cylinder
+        self.doc.recompute()
+        text, name = attach.attach(self.doc, [(self.box.Name, "Face6"), (cut.Name, "Face1")])
+        self.assertIsNone(name)
+        self.assertIn("built from", text)
+
     def test_a_push_fuses_an_extrusion_of_the_face_a_pull_cuts_it_and_the_length_stays_editable(self):
         from freecad.BlocksCAD.cad import pushpull
         top = pushpull.face_info(self.box, "Face6")

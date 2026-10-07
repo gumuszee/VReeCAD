@@ -75,9 +75,22 @@ def placement(obj):
     return tuple(p.Base), (q[0], q[1], q[2], q[3])
 
 
+def attached(obj):
+    """Whether the placement of the object is computed from an attachment (`cad/attach.py`)."""
+    return bool(getattr(obj, "AttachmentSupport", None)) and getattr(obj, "MapMode", "Deactivated") != "Deactivated"
+
+
 def set_placement(obj, base, rotation):
+    """Put the object at the position and rotation in document millimetres. The placement of an attached object is computed by the
+    attacher, so it is the offset from the frame of its support that changes (and the document recomputes at once)."""
     import FreeCAD as App
-    obj.Placement = App.Placement(App.Vector(*base), App.Rotation(*rotation))
+    wanted = App.Placement(App.Vector(*base), App.Rotation(*rotation))
+    if attached(obj):
+        frame = obj.Placement * obj.AttachmentOffset.inverse()
+        obj.AttachmentOffset = frame.inverse() * wanted
+        obj.Document.recompute()
+    else:
+        obj.Placement = wanted
 
 
 def delete_objects(doc, items):

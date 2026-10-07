@@ -29,7 +29,7 @@ from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.core import stage, units
-from freecad.BlocksCAD.cad import colour, combine, duplicate, edges, edit, picking, sketching, values as object_values
+from freecad.BlocksCAD.cad import attach, colour, combine, duplicate, edges, edit, picking, sketching, values as object_values
 from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.render.highlight import Highlights
 from freecad.BlocksCAD.ui.controller import UiController
@@ -550,6 +550,8 @@ class XRwidget(QOpenGLWidget):
             "doc:extrude": self.extrude_selection,
             "doc:fillet": lambda: self.edge_selection("fillet"),
             "doc:chamfer": lambda: self.edge_selection("chamfer"),
+            "doc:attach": self.attach_selection,
+            "doc:detach": self.detach_selection,
             **{f"doc:mirror_{a}": (lambda i=i: self.duplicate_selection("mirror", i)) for i, a in enumerate("xyz")},
             **{f"doc:pattern_{a}": (lambda i=i: self.duplicate_selection("pattern", i)) for i, a in enumerate("xyz")},
             "app:close": lambda: QTimer.singleShot(0, close_xr_viewer),
@@ -651,6 +653,23 @@ class XRwidget(QOpenGLWidget):
         if names:
             picking.set_selection(doc, [(name, "") for name in names])
         return text
+
+    def attach_selection(self):
+        """Attach the object of the first selected face to the second selected face in one undo step; returns the text of the toast."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return "No document"
+        text, name = attach.attach(doc, picking.get_selection(doc))
+        if name is not None:
+            picking.set_selection(doc, [(name, "")])
+        return text
+
+    def detach_selection(self):
+        """Turn the attachment of the selected objects off in one undo step; returns the text of the toast."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return "No document"
+        return attach.detach(doc, picking.get_selection(doc))[0]
 
     def extrude_selection(self):
         """Extrude the selected sketches into solids in one undo step and select them; returns the text of the toast."""

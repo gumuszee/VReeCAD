@@ -140,6 +140,8 @@ class ObjectValues(ValueTarget):
         return variables.list_variables(self.doc)
 
     def bind(self, name, expression, value):
+        if name.startswith("pos.") and edit.attached(self.obj):
+            raise ValueError("Detach it before binding its position")
         self._begin()
         path = self._path(name)
         try:

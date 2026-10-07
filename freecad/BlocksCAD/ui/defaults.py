@@ -15,7 +15,7 @@
 # ***************************************************************************
 """The faces and the default layout. Tool faces are generated from the tool registry; the other faces are fixed.
 Action ids: "tool:<name>", "view:reset", "scene:reload", "doc:undo", "doc:redo", "doc:delete", "doc:fuse", "doc:cut", "doc:common",
-"doc:copy", "doc:fillet", "doc:chamfer", "doc:mirror_<axis>", "doc:pattern_<axis>", "doc:colour", "doc:extrude", "app:close", and, handled by the UI controller itself,
+"doc:copy", "doc:fillet", "doc:chamfer", "doc:attach", "doc:detach", "doc:mirror_<axis>", "doc:pattern_<axis>", "doc:colour", "doc:extrude", "app:close", and, handled by the UI controller itself,
 "layout:reset", "layout:show_hidden" and "pointer:mode".
 A slider is a face of kind "slider" (action "slider:<setting>"): it takes a whole row of its panel, so it sits in the first slot of a
 row and the other slots of that row stay empty. `SLIDERS` holds the range and step of each slider by face id."""
@@ -72,6 +72,8 @@ def build_faces(tool_names, tool_label, tool_hint=None):
         Face("doc.colour", "Colour", "doc:colour", tip="Give the selected objects the next colour"),
         Face("doc.fillet", "Fillet", "doc:fillet", tip="Round the selected edges"),
         Face("doc.chamfer", "Chamfer", "doc:chamfer", tip="Cut the selected edges off at an angle"),
+        Face("doc.attach", "Attach", "doc:attach", tip="Attach the object of the first selected face to the second selected face"),
+        Face("doc.detach", "Detach", "doc:detach", tip="Let the selected attached objects go, where they are"),
         Face("doc.extrude", "Extrude", "doc:extrude", tip="Extrude the selected sketches into solids"),
         Face("app.close", "Close VR", "app:close", tip="Close the VR viewer"),
         Face("pointer.mode", "Pointer", "pointer:mode", tip="Switch between laser and tip"),
@@ -88,7 +90,7 @@ def default_layout(tool_names):
         Page("Modify", ["doc.fuse", "doc.cut", "doc.common", "doc.copy",
                         "doc.mirror_x", "doc.mirror_y", "doc.mirror_z", "doc.colour",
                         "doc.pattern_x", "doc.pattern_y", "doc.pattern_z"]),
-        Page("Shape", ["doc.extrude", "doc.fillet", "doc.chamfer"]),
+        Page("Shape", ["doc.extrude", "doc.fillet", "doc.chamfer", "doc.attach", "doc.detach"]),
         Page("View", ["view.reset", "view.reload", "view.layout", "view.hidden"]),
         Page("Session", ["pointer.mode", "app.close", None, None,
                          "pointer.angle", None, None, None,

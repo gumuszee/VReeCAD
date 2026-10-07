@@ -65,7 +65,7 @@ The carousel is a prism around the long axis of the palette controller. It is at
 | Tools | Create, Select, Move, Push/Pull, Points, Sketch |
 | Edit | Undo, Redo, Delete |
 | Modify | Fuse, Cut, Common, Copy, Mirror X, Mirror Y, Mirror Z, Colour, Pattern X, Pattern Y, Pattern Z |
-| Shape | Extrude, Fillet, Chamfer |
+| Shape | Extrude, Fillet, Chamfer, Attach, Detach |
 | View | Reset view, Reload scene, Reset layout, Show hidden |
 | Session | Pointer (laser or tip), Close VR, and the sliders Angle and Length (tip angle and tip length) |
 
@@ -79,6 +79,8 @@ The carousel is a prism around the long axis of the palette controller. It is at
 - **Pattern X, Y, Z** repeats each selected object three times along that axis, one box length plus 10 mm apart, as a Draft array (`NumberX` and `IntervalX` and the like are properties of the array; the original is the first of the three and is hidden as a source). The arrays become the selection.
 - **Extrude** extrudes every selected sketch by 20 mm along its normal into a solid (a `Part::Extrusion` of the sketch, so the solid follows the sketch and its length is a value of the new solid: the Values panel shows it as **Length**). The sketch is hidden and the solids become the selection. A sketch without a closed outline is refused with a toast and nothing is made.
 - **Fillet** and **Chamfer** (panel Shape, with Extrude) work on selected edges, not on whole objects (select them with the Select tool, target Edge): each object that has edges selected gets one `Part::Fillet` or `Part::Chamfer` of those edges, 5 mm to begin with, and is hidden as a source. The size is the one value of the new feature, shown on the Values panel as **Radius** or **Length** (a slider, the stick and the keypad edit it; it cannot be bound to a variable, because a row of the `Edges` property takes no expression). A size the shape cannot take (larger than the edges allow) is refused with a toast and the document stays as it was. The new features become the selection.
+- **Attach** takes the first two selected faces (select them with the Select tool, target Face, Add): the object of the first face moves, the second face is the target. Both faces must be flat and on different objects. The moving object gets `AttachmentSupport` = the target face, `MapMode` = FlatFace and an `AttachmentOffset` that lays the two faces against each other with their centres together, so FreeCAD's Attacher computes the placement and the object follows its support when that is moved. Attaching an object to something that is built from it is refused with a toast. Moving, turning or typing the position of an attached object (Move tool, value panels) changes the `AttachmentOffset`, so it stays attached; its position cannot be bound to a variable. The moving object becomes the selection.
+- **Detach** turns the attachment of the selected objects off and keeps them where they are.
 - **Colour** gives every selected object (whole or by an element) the next colour of a palette of eight (grey, red, orange, yellow, green, blue, violet, white), each from its own current colour; the toast names the colour. A colour belongs to the view of the object, so it is not an undo step.
 - Every other action is one undo step.
 
