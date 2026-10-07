@@ -1292,6 +1292,31 @@ class MoveLiveTest(unittest.TestCase):
         tilted = (((0.0, 0.0, 0.0)), (0.0, 0.3826834, 0.0, 0.9238795))                      # 45 degrees about Y
         self.assertEqual(sketching.world_axes(tilted), (3, 1))
 
+    def test_an_arc_passes_through_its_three_points_is_tied_at_its_ends_and_can_be_picked_and_dimensioned(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))
+        geo, kept = sketching.add_arc(self.doc, sketch, (0.0, 40.0), (60.0, 40.0), (30.0, 70.0))      # over the top side
+        self.doc.recompute()
+        self.assertEqual(kept, 2)                                                                  # both ends coincide with corners
+        self.assertEqual(sketch.Geometry[geo].TypeId, "Part::GeomArcOfCircle")
+        arc = sketch.Geometry[geo]
+        self.assertAlmostEqual(arc.Radius, 30.0, places=6)                                         # chord 60, rise 30: a half circle
+        ends = sorted((round(p.x, 6), round(p.y, 6)) for p in (arc.StartPoint, arc.EndPoint))
+        self.assertEqual(ends, [(0.0, 40.0), (60.0, 40.0)])
+        top = arc.value(arc.FirstParameter + (arc.LastParameter - arc.FirstParameter) / 2.0)
+        self.assertAlmostEqual(top.y, 70.0, places=6)                                              # the middle of the arc is the third point
+        self.assertTrue(sketching.solved(sketch))
+        found = sketching.pick(self.doc, sketching.to_world(sketch, (30.0, 70.0, 0.0)), 1000.0, "edge")
+        self.assertEqual((found.name, found.sub), (sketch.Name, f"Curve{geo}"))
+        shown = sketching.display(sketch, f"Curve{geo}")
+        self.assertEqual(len(shown.polylines), 1)
+        text, name = sketching.dimension(self.doc, sketch, geo)
+        self.assertEqual(name, "radius")
+        self.assertIn("radius =", text)
+        with self.assertRaises(ValueError):
+            sketching.add_arc(self.doc, sketch, (0.0, 0.0), (60.0, 0.0), (30.0, 0.0))
+
     def test_the_own_points_of_a_sketch_leave_out_the_dragged_point_and_those_that_move_with_it(self):
         from freecad.BlocksCAD.cad import sketching
         sketch = self.sketch_on()

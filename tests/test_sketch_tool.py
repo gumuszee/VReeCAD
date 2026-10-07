@@ -2,7 +2,7 @@ import unittest
 
 import support  # noqa: F401
 from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.cad import picking, sketching
+from freecad.BlocksCAD.cad import picking, sketchinfer, sketching
 from freecad.BlocksCAD.tools import base
 from freecad.BlocksCAD.tools.sketch import SketchTool, plane_square
 
@@ -101,6 +101,12 @@ class FakeSketching:
     def add_rectangle(self, doc, sketch, c0, c2):
         sketch.shapes.append(("Rectangle", c0, c2))
         return len(sketch.shapes) - 1, 8
+
+    def add_arc(self, doc, sketch, start, end, middle):
+        if sketchinfer.arc_through(start, end, middle) is None:
+            raise ValueError("the three points lie on a line")
+        sketch.shapes.append(("Arc", start, end, middle))
+        return len(sketch.shapes) - 1, 2
 
     def add_circle(self, doc, sketch, centre, radius):
         sketch.shapes.append(("Circle", centre, radius))
@@ -270,14 +276,67 @@ class SketchToolTest(unittest.TestCase):
         self.drag((0.0, 0.0, 0.0), (0.0, 20.0, 0.0), release=False)
         self.assertEqual(self.readouts[-1], "Circle: radius 20 mm")
 
-    def test_the_stick_click_ends_the_sketch_and_turns_to_the_next_plane(self):
+    def test_choosing_another_plane_ends_the_sketch_and_the_next_one_lies_on_that_plane(self):
         self.drag((0.0, 0.0, 0.0), (50.0, 30.0, 0.0))
-        self.assertEqual(self.tool.stick_click(), "Next sketch on the XZ plane")
+        self.assertNotEqual(self.selection, [])
+        self.frames()
+        self.assertNotEqual(self.selection, [])                                   # the sketch stays current while the plane is the same
+        self.tool.values["plane"] = "XZ"
+        self.frames()
         self.assertEqual(self.selection, [])
         self.drag((0.0, 0.0, 0.0), (50.0, 30.0, 0.0))
         self.assertEqual([s.plane for s in self.sketches()], ["XY", "XZ"])
-        self.assertEqual(self.tool.stick_click(), "Next sketch on the YZ plane")
-        self.assertEqual(self.tool.stick_click(), "Next sketch on the XY plane")
+
+    def arc_drag(self, start, end, third, finish=True):
+        """The two ends dragged, then the third point and a press."""
+        self.tool.values["mode"] = "Arc"
+        self.drag(start, end)
+        self.assertTrue(self.tool.busy)                                           # the release of the chord does not finish the arc
+        self.cursor = list(third)
+        self.tool.update(self.sim.frame(0.02))
+        if finish:
+            self.sim.set_hand(1, trigger=1.0)
+            self.tool.update(self.sim.frame(0.02))
+            self.sim.set_hand(1, trigger=0.0)
+            self.tool.update(self.sim.frame(0.02))
+
+    def test_an_arc_takes_its_ends_from_the_drag_and_its_third_point_from_the_next_press_in_one_transaction(self):
+        self.arc_drag((0.0, 0.0, 0.0), (60.0, 0.0, 0.0), (31.0, 29.0, 0.0))
+        (sketch,) = self.sketches()
+        self.assertEqual(sketch.shapes, [("Arc", (0.0, 0.0), (60.0, 0.0), (30.0, 30.0))])
+        self.assertEqual(self.doc.log, [("open", "Sketch"), ("commit",)])
+        self.assertEqual(self.toasts[-1], "Arc drawn, 2 constraints")
+        self.assertFalse(self.tool.busy)
+
+    def test_the_arc_preview_and_the_readout_follow_the_hand_in_both_steps(self):
+        self.tool.values["mode"] = "Arc"
+        self.drag((0.0, 0.0, 0.0), (60.0, 0.0, 0.0), release=False)
+        self.assertEqual(self.readouts[-1], "Arc: chord 60 mm")
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.readouts[-1], "Arc: press on the third point")           # the third point is still the end
+        self.cursor = [30.0, 30.0, 0.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.readouts[-1], "Arc: radius 30 mm")
+        self.assertGreater(len(self.ghost.shapes[-1].outline[0]), 10)                  # a curve, not a chord
+
+    def test_three_points_on_a_line_are_refused_and_a_grip_cancels_the_arc(self):
+        self.arc_drag((0.0, 0.0, 0.0), (60.0, 0.0, 0.0), (30.0, 0.0, 0.0), finish=False)
+        self.sim.set_hand(1, trigger=1.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.toasts[-1], "The three points lie on a line")
+        self.assertTrue(self.tool.busy)
+        self.sim.set_hand(1, grip=1.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertFalse(self.tool.busy)
+        self.assertEqual(self.sketches(), [])
+        self.assertEqual(self.toasts[-1], "Cancelled")
+
+    def test_a_tap_in_the_arc_mode_draws_nothing(self):
+        self.tool.values["mode"] = "Arc"
+        self.drag((12.0, 8.0, 0.0), (13.0, 9.0, 0.0))
+        self.assertFalse(self.tool.busy)
+        self.assertEqual(self.sketches(), [])
 
     def test_edit_drags_a_point_of_a_sketch_and_one_transaction_keeps_it(self):
         self.tool.values["mode"] = "Line"
@@ -351,10 +410,12 @@ class SketchToolTest(unittest.TestCase):
     def test_the_disc_has_the_grid_and_the_four_modes_and_the_square_shows_the_plane(self):
         labels = [slot.label for slot in self.tool.disc_slots()]
         self.assertEqual(labels, ["Grid +", "Rectangle", "Circle", "Grid -", "Edit", "Line"])
+        self.assertEqual(self.tool.stick_click(), "Arc and planes")
+        self.assertEqual([slot.label for slot in self.tool.disc_slots()], ["Grid +", "Arc", "XY plane", "Grid -", "XZ plane", "YZ plane"])
+        self.assertEqual(self.tool.stick_click(), "Line, Rectangle, Circle and Edit")
         square = plane_square("XZ", (0.0, 0.0, 0.0), 10.0)
         self.assertEqual(len(square), 5)
         self.assertTrue(all(abs(p[1]) < 1e-9 for p in square))                  # the XZ plane has no Y extent
-        self.assertEqual(self.tool.stick_click()[:11], "Next sketch")
 
 
 if __name__ == "__main__":

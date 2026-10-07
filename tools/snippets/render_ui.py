@@ -427,6 +427,22 @@ try:
         _s.frame(0.02)
         _s.input.set_hand(1, grip=0.0, trigger=0.0)
         _s.frame(0.02)
+        # an arc: the two ends are dragged, then the third point follows the hand
+        _s.tool_manager.active.values["mode"] = "Arc"
+        _cursor((250.0, -30.0, 160.0))
+        _cursor((250.0, -30.0, 160.0), trigger=1.0)
+        _cursor((450.0, -30.0, 160.0), trigger=1.0)
+        _cursor((450.0, -30.0, 160.0), trigger=0.0)
+        _cursor((350.0, 70.0, 160.0))
+        for _ in range(3):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_sketch_arc.png"))
+        print("arc readout:", _s.ui.gesture_text)
+        _s.input.set_hand(1, grip=1.0)
+        _s.frame(0.02)
+        _s.input.set_hand(1, grip=0.0, trigger=0.0)
+        _s.frame(0.02)
+        _s.tool_manager.active.values["mode"] = "Rectangle"
         _pk.clear_selection()
         # the value panels: they follow the selection, so selecting the box adds a side with the panels Value, Number pad, Keys and Variables to the carousel
         from freecad.BlocksCAD.cad import picking as _pk

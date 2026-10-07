@@ -1,3 +1,4 @@
+import math
 import unittest
 
 import support  # noqa: F401
@@ -82,6 +83,42 @@ class CircleTest(unittest.TestCase):
         self.assertEqual(si.infer_circle(0, (20.0, 20.0), 5.0, si.Existing()), [])
         self.assertEqual(si.infer_circle(0, (0.0, 0.0), 5.0, si.Existing()), [("Coincident", 0, 3, -1, 1)])
         self.assertEqual(si.infer_circle(1, (20.0, 20.0), 5.0, si.Existing(points=[(0, 2, (20.0, 20.0))])), [("Coincident", 1, 3, 0, 2)])
+
+
+class ArcTest(unittest.TestCase):
+    def test_the_arc_through_three_points_has_their_circle(self):
+        centre, radius, first, last, p_first, p_last = si.arc_through((0.0, 0.0), (60.0, 0.0), (30.0, 30.0))
+        self.assertAlmostEqual(centre[0], 30.0)
+        self.assertAlmostEqual(centre[1], 0.0)
+        self.assertAlmostEqual(radius, 30.0)
+        self.assertEqual((p_first, p_last), ((60.0, 0.0), (0.0, 0.0)))        # over the top it runs counter-clockwise from the right end
+        self.assertAlmostEqual(first, 0.0)
+        self.assertAlmostEqual(last, 3.141592653589793)
+
+    def test_the_other_side_swaps_the_ends_and_the_arc_keeps_its_middle(self):
+        centre, radius, first, last, p_first, p_last = si.arc_through((0.0, 0.0), (60.0, 0.0), (30.0, -30.0))
+        self.assertEqual((p_first, p_last), ((0.0, 0.0), (60.0, 0.0)))
+        self.assertGreater(last, first)
+        mid = (first + last) / 2.0
+        self.assertAlmostEqual(centre[0] + radius * 0.0 + radius * math.cos(mid), 30.0)
+        self.assertAlmostEqual(centre[1] + radius * math.sin(mid), -30.0)
+
+    def test_points_on_a_line_make_no_arc(self):
+        self.assertIsNone(si.arc_through((0.0, 0.0), (60.0, 0.0), (30.0, 0.0)))
+        self.assertIsNone(si.arc_through((0.0, 0.0), (0.0, 0.0), (30.0, 5.0)))
+
+    def test_the_points_of_an_arc_run_from_the_first_angle_to_the_last(self):
+        points = si.arc_points((0.0, 0.0), 10.0, 0.0, 3.141592653589793, 4)
+        self.assertEqual(len(points), 5)
+        self.assertAlmostEqual(points[0][0], 10.0)
+        self.assertAlmostEqual(points[2][1], 10.0)
+        self.assertAlmostEqual(points[4][0], -10.0)
+
+    def test_the_ends_of_an_arc_are_tied_to_what_they_touch(self):
+        existing = si.Existing(points=[(0, 2, (60.0, 0.0))])
+        self.assertEqual(si.infer_arc(1, (0.0, 0.0), (60.0, 0.0), existing),
+                         [("Coincident", 1, 1, -1, 1), ("Coincident", 1, 2, 0, 2)])
+        self.assertEqual(si.infer_arc(1, (10.0, 10.0), (50.0, 10.0), existing), [])
 
 
 class NameTest(unittest.TestCase):

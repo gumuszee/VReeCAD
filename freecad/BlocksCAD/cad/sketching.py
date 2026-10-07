@@ -161,6 +161,7 @@ def existing(sketch):
         elif kind == "Part::GeomArcOfCircle":
             found.points += [(geo, 1, (g.StartPoint.x, g.StartPoint.y)), (geo, 2, (g.EndPoint.x, g.EndPoint.y)),
                              (geo, 3, (g.Center.x, g.Center.y))]
+            found.arcs.append((geo, (g.Center.x, g.Center.y), g.Radius, g.FirstParameter, g.LastParameter))
     return found
 
 
@@ -224,10 +225,30 @@ def add_circle(doc, sketch, centre, radius):
     return geo, _constrain(doc, sketch, [], sketchinfer.infer_circle(geo, centre, radius, found))
 
 
-def outline(kind, a, b, sketch=None):
-    """A preview of a shape in sketch coordinates as polylines of (x, y, 0): a line from `a` to `b`, the rectangle between them, or
-    the circle with centre `a` through `b`."""
-    if kind == "Line":
+def add_arc(doc, sketch, start, end, middle):
+    """Add the arc from `start` to `end` through `middle` (sketch coordinates) with its ends tied to what they touch; returns (geometry
+    id, constraints kept) or raises ValueError when the three points lie on a line."""
+    import FreeCAD as App
+    import Part
+    arc = sketchinfer.arc_through(start, end, middle)
+    if arc is None:
+        raise ValueError("the three points lie on a line")
+    centre, radius, first, last, p_first, p_last = arc
+    found = existing(sketch)
+    circle = Part.Circle(App.Vector(centre[0], centre[1], 0), App.Vector(0, 0, 1), radius)
+    geo = sketch.addGeometry(Part.ArcOfCircle(circle, first, last), False)
+    return geo, _constrain(doc, sketch, [], sketchinfer.infer_arc(geo, p_first, p_last, found))
+
+
+def outline(kind, a, b, sketch=None, c=None):
+    """A preview of a shape in sketch coordinates as polylines of (x, y, 0): a line from `a` to `b` (also an arc whose third point `c`
+    is not given yet or lies on the line), the rectangle between them, the circle with centre `a` through `b`, or the arc from `a` to
+    `b` through `c`."""
+    if kind == "Arc" and c is not None:
+        arc = sketchinfer.arc_through(a, b, c)
+        if arc is not None:
+            return [[(x, y, 0.0) for x, y in sketchinfer.arc_points(*arc[:4])]]
+    if kind in ("Line", "Arc"):
         return [[(a[0], a[1], 0.0), (b[0], b[1], 0.0)]]
     if kind == "Rectangle":
         corners = sketchinfer.rectangle(a, b)
@@ -256,10 +277,10 @@ def dimension(doc, sketch, geo):
     taken = {c.Name for c in sketch.Constraints if c.Name}
     if g.TypeId == "Part::GeomLineSegment":
         spec, base, label = ("Distance", geo, float((g.EndPoint - g.StartPoint).Length)), "length", "length"
-    elif g.TypeId == "Part::GeomCircle":
+    elif g.TypeId in ("Part::GeomCircle", "Part::GeomArcOfCircle"):
         spec, base, label = ("Radius", geo, float(g.Radius)), "radius", "radius"
     else:
-        return "Only lines and circles can be dimensioned", None
+        return "Only lines, circles and arcs can be dimensioned", None
     name = sketchinfer.length_name(taken, base)
     index = sketch.addConstraint(_constraint(spec))
     sketch.renameConstraint(index, name)
@@ -320,6 +341,8 @@ def pick(doc, point, mm_per_metre, kind):
                 found.append((_distance_to_segment(local, a, b), f"Curve{geo}"))
             for geo, centre, radius in current.circles:
                 found.append((_distance_to_circle(local, centre, radius), f"Curve{geo}"))
+            for geo, centre, radius, first, last in current.arcs:
+                found.append((_distance_to_arc(local, centre, radius, first, last), f"Curve{geo}"))
         for distance, sub in found:
             if grab.within_reach(kind, distance, mm_per_metre) and (best is None or distance < best.distance):
                 best = Pick(sketch.Name, kind, sub, distance)
@@ -337,6 +360,16 @@ def _distance_to_circle(p, centre, radius):
     """Distance from `p` to the circle; the point's height above the plane counts."""
     flat = math.hypot(p[0] - centre[0], p[1] - centre[1])
     return math.hypot(abs(flat - radius), p[2])
+
+
+def _distance_to_arc(p, centre, radius, first, last):
+    """Distance from `p` to the arc (counter-clockwise from the angle `first` to `last`): to the circle where the point lies within
+    the angles of the arc, else to the nearer end; the point's height above the plane counts."""
+    angle = math.atan2(p[1] - centre[1], p[0] - centre[0])
+    tau = 2.0 * math.pi
+    if (angle - first) % tau <= (last - first) % tau:
+        return _distance_to_circle(p, centre, radius)
+    return min(math.dist(p, (centre[0] + radius * math.cos(a), centre[1] + radius * math.sin(a), 0.0)) for a in (first, last))
 
 
 def parse_sub(sub):
@@ -363,6 +396,9 @@ def display(sketch, sub):
     for g, centre, radius in current.circles:
         if g == geo:
             polylines.append([to_world(sketch, p) for p in outline("Circle", centre, (centre[0] + radius, centre[1]))[0]])
+    for g, centre, radius, first, last in current.arcs:
+        if g == geo:
+            polylines.append([to_world(sketch, (x, y, 0.0)) for x, y in sketchinfer.arc_points(centre, radius, first, last)])
     return Display(polylines=polylines)
 
 
