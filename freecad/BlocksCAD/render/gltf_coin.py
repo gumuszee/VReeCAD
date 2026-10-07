@@ -35,23 +35,44 @@ class ModelPart:
         self.transform = transform
         self._base = (transform.translation.getValue().getValue(), transform.rotation.getValue().getValue(),
                       transform.scaleFactor.getValue().getValue())
+        # the fields are looked up once (a pivy field lookup costs about 20 microseconds) and written only when the value changes: a
+        # write drops the render caches above the node, and most parts of a controller stand still from one frame to the next
+        self._visible_field = switch.whichChild
+        self._move, self._turn = transform.translation, transform.rotation
+        self._visible = True
+        self._moved = self._base[0]
+        self._turned = self._base[1]
 
     def set_visible(self, visible):
-        self.switch.whichChild = coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE
+        if visible != self._visible:
+            self._visible = visible
+            self._visible_field.setValue(coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE)
+
+    def _move_to(self, position):
+        position = tuple(position)
+        if position != self._moved:
+            self._moved = position
+            self._move.setValue(*position)
+
+    def _turn_to(self, orientation):
+        orientation = tuple(orientation)
+        if orientation != self._turned:
+            self._turned = orientation
+            self._turn.setValue(*orientation)
 
     def set_pose(self, position, orientation):
         """Pose relative to the parent node (what XrRenderModelNodeStateEXT carries)."""
-        self.transform.translation.setValue(*position)
-        self.transform.rotation.setValue(*orientation)
+        self._move_to(position)
+        self._turn_to(orientation)
 
     def offset(self, dx, dy, dz):
         """Translate from the node's base position (used by generated shapes)."""
         base = self._base[0]
-        self.transform.translation.setValue(base[0] + dx, base[1] + dy, base[2] + dz)
+        self._move_to((base[0] + dx, base[1] + dy, base[2] + dz))
 
     def reset_pose(self):
-        self.transform.translation.setValue(*self._base[0])
-        self.transform.rotation.setValue(*self._base[1])
+        self._move_to(self._base[0])
+        self._turn_to(self._base[1])
 
 
 class Model:

@@ -336,19 +336,39 @@ class EditorTest(unittest.TestCase):
             self.editor.nudge(1)
         self.assertEqual(self.target.values["b"], 200.0)
 
-    def test_the_step_keys_choose_from_the_grid_steps(self):
+    def test_the_step_is_one_of_the_value_steps_from_a_hundredth_of_a_millimetre(self):
+        self.assertEqual(v.VALUE_STEPS[0], 0.01)
+        self.assertEqual(v.VALUE_STEPS[-1], 100.0)
         self.assertEqual(self.editor.step, 10.0)
-        self.editor.key("step+")
+        self.assertTrue(self.editor.set_step(self.editor.step_index + 1))
         self.assertEqual(self.editor.step, 20.0)
         self.editor.nudge(1)
         self.assertEqual(self.target.values["a"], 40.0)
-        for _ in range(10):
-            self.editor.key("step+")
+        self.assertTrue(self.editor.set_step(99))                            # clamped to the largest
         self.assertEqual(self.editor.step, 100.0)
-        for _ in range(10):
-            self.editor.key("step-")
-        self.assertEqual(self.editor.step, 1.0)
-        self.assertEqual(v.ValueEditor(self.target, step=7.0).step, 5.0)   # the nearest grid step
+        self.assertFalse(self.editor.set_step(99))
+        self.assertTrue(self.editor.set_step(-3))
+        self.assertEqual(self.editor.step, 0.01)
+        self.assertEqual(v.ValueEditor(self.target, step=7.0).step, 5.0)   # the nearest step
+        self.assertEqual(v.ValueEditor(self.target, step=0.001).step, 0.01)
+
+    def test_a_small_step_moves_the_value_by_hundredths_of_a_millimetre(self):
+        self.editor.set_step(0)
+        self.editor.nudge(-1)
+        self.assertAlmostEqual(self.target.values["a"], 22.99)
+        self.editor.set_step(3)                                                # 0.1 mm
+        self.editor.nudge(1)
+        self.assertAlmostEqual(self.target.values["a"], 23.0)
+        self.editor.nudge(1)
+        self.assertAlmostEqual(self.target.values["a"], 23.1)
+
+    def test_the_picked_value_goes_round_the_values(self):
+        self.assertEqual(self.editor.selected, 0)
+        self.assertTrue(self.editor.select_next(-1))
+        self.assertEqual(self.editor.selected, len(self.editor.fields) - 1)
+        self.type("5")
+        self.assertTrue(self.editor.select_next(1))
+        self.assertEqual((self.editor.selected, self.editor.entry), (0, None))     # typing starts again
 
     def test_typing_builds_a_text_that_enter_applies(self):
         self.type("2*3")

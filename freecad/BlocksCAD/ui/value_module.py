@@ -17,40 +17,41 @@
 Coin, OpenXR or FreeCAD imports.
 
 While an editable object is selected the carousel of the palette hand has one more side with four ordinary panels, so they are
-pointed at, hovered and pressed with the laser or the tip like the others: **Values** holds three sliders (the values of the
-object, three at a time), **Number pad** the digits with Del, Enter and Unit, **Keys** the rest (0, the point, the operators,
-brackets, Clear, the step and the next three values) and **Variables** the named lengths of the document (eight at a time, a press
-types the name into the expression) with the keys that make a variable of the picked value and free it again. The title of the
-Values panel names the object and the title of the Number pad shows the picked value and what is being typed. There is no editing mode: selecting another object rebinds the panels, clearing
-the selection removes them, and every gesture (a slider drag, one Enter, one push of the stick) is its own undo step.
+pointed at, hovered and pressed with the laser or the tip like the others. From the top: **Value** holds the readout of the picked
+value (its name, and the number or the text being typed, large), the slider of that value and the slider of the step; **Number
+pad** the digits with Del, Enter and Unit; **Keys** the rest of the expression (0, the point, the operators, brackets), the
+selector of the picked value (Previous value, "Value 2 of 6", Next value) and Clear; **Variables** the named lengths of the document
+(eight at a time, a press types the name into the expression) with the keys that make a variable of the picked value and free it
+again. The title of the Value panel names the object. There is no editing mode: selecting another object rebinds the panels,
+clearing the selection removes them, and every gesture (a slider drag, one Enter, one push of the stick) is its own undo step.
 
-A slider is **focused** when the pointer comes near it (the tip within a hand's breadth in front of the panel, the laser over the
-row): that picks its value, and as long as it stays focused the stick of the tool hand steps it, up and down, by one step, while the
-tool's own options keep the stick the rest of the time. A slider changes its value only when its bar is pressed and dragged.
+The slider of the value is **focused** when the pointer comes near it (the tip within a hand's breadth in front of the panel, the
+laser over the row): as long as it stays focused the stick of the tool hand steps the picked value, up and down, by one step, while
+the tool's own options keep the stick the rest of the time. A slider changes its value only when its bar is pressed and dragged.
 `ValueModule` holds the `core.values.ValueEditor` of the selected object and turns what the carousel reports (a face pressed, a
-slider dragged, a slider focused) into editor calls; the controller adds and removes the pages."""
+slider dragged, the value slider focused) into editor calls; the controller adds and removes the pages."""
 
 import math
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 from freecad.BlocksCAD.core import snapping, units
-from freecad.BlocksCAD.core.values import ValueEditor, pretty_expression
+from freecad.BlocksCAD.core.values import VALUE_STEPS, ValueEditor, pretty_expression
 from freecad.BlocksCAD.ui.layout import Face, Page
 from freecad.BlocksCAD.ui.options import FIRST_REPEAT, PUSH_OFF, PUSH_ON, REPEAT
 
-ROW_CHARS = 36                         # the text of a slider row is cut after this many characters
+ROW_CHARS = 36                         # the label line of the readout is cut after this many characters
 VARIABLE_REFRESH = 0.5                 # seconds between two readings of the variables of the document
-FOCUS_HOLD = 0.6                       # seconds a slider stays focused after the pointer has left it, so the thumb can work the stick
-SLIDERS = 3                            # sliders on the Values panel: the rows of a panel
-SLIDER_IDS = tuple(f"val.{i}" for i in range(SLIDERS))
-GROUP = "key.group"
+FOCUS_HOLD = 0.6                       # seconds the value slider stays focused after the pointer has left it, so the thumb can work the stick
+READOUT, VALUE_SLIDER, STEP_SLIDER = "val.readout", "val.slider", "val.step"
+SLIDER_IDS = (VALUE_SLIDER, STEP_SLIDER)
+PREV, WHICH, NEXT = "val.prev", "val.which", "val.next"
 VARIABLES = 8                          # variables shown on the Variables panel at a time
 VARIABLE_IDS = tuple(f"var.{i}" for i in range(VARIABLES))
 VARIABLE_GROUP = "var.group"
-PAGE_VALUES, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES = "Values", "Number pad", "Keys", "Variables"
-PAGE_NAMES = (PAGE_VALUES, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES)
-TITLE_CHARS = 34                       # the title of the Number pad shows at most this many characters of what is typed
+PAGE_VALUE, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES = "Value", "Number pad", "Keys", "Variables"
+PAGE_NAMES = (PAGE_VALUE, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES)
+TYPED_CHARS = 30                       # the readout shows at most this many characters of what is typed
 
 # face id -> (label, key of the editor, tooltip)
 KEYS = {
@@ -66,23 +67,27 @@ KEYS = {
     "key.unit": ("Unit", "unit", "Turn the unit at the end: mm, cm, m, in"),
     "key.enter": ("Enter", "enter", "Apply what is typed to the picked value"),
     "key.clear": ("Clear", "clear", "Throw away what is typed"),
-    "key.step": ("Step", "step", "Step of the stick and of the sliders"),
     "key.makevar": ("Make variable", "makevar", "Make a variable of the picked value (or of what is typed) and bind the value to it"),
     "key.unbind": ("Unbind", "unbind", "Free the picked value from its variable or expression; it keeps its number"),
 }
+VALUE_SLOTS = [READOUT, None, None, None, VALUE_SLIDER, None, None, None, STEP_SLIDER, None, None, None]
 PAD_SLOTS = ["key.7", "key.8", "key.9", "key.delete", "key.4", "key.5", "key.6", "key.enter", "key.1", "key.2", "key.3", "key.unit"]
 KEY_SLOTS = ["key.0", "key.point", "key.minus", "key.plus", "key.times", "key.divide", "key.open", "key.close",
-             "key.step", GROUP, "key.clear", None]
+             PREV, WHICH, NEXT, "key.clear"]
 VARIABLE_SLOTS = [*VARIABLE_IDS, "key.makevar", "key.unbind", VARIABLE_GROUP, None]
-VALUE_SLOTS = [SLIDER_IDS[0], None, None, None, SLIDER_IDS[1], None, None, None, SLIDER_IDS[2], None, None, None]
+WIDE_KINDS = ("slider", "readout")     # faces that take a whole row of their panel
 
 
 def faces():
     """Map of face id to `layout.Face` for every face of the module."""
     result = {fid: Face(fid, label, f"values:{fid}", tip=tip) for fid, (label, _, tip) in KEYS.items()}
-    result[GROUP] = Face(GROUP, "More values", f"values:{GROUP}", tip="Show the next three values on the sliders")
-    for fid in SLIDER_IDS:
-        result[fid] = Face(fid, "Value", f"values:{fid}", "slider", "Come close to pick a value, press the bar and drag, or use the stick")
+    result[READOUT] = Face(READOUT, "Value", f"values:{READOUT}", "readout", "The picked value, and what is typed for it")
+    result[VALUE_SLIDER] = Face(VALUE_SLIDER, "Value", f"values:{VALUE_SLIDER}", "slider",
+                                "Come close to use the stick, press the bar and drag to set the picked value")
+    result[STEP_SLIDER] = Face(STEP_SLIDER, "Step", f"values:{STEP_SLIDER}", "slider", "Press the bar and drag to set the step of the stick and of the value slider")
+    result[PREV] = Face(PREV, "Previous value", f"values:{PREV}", tip="Pick the previous value of the object")
+    result[NEXT] = Face(NEXT, "Next value", f"values:{NEXT}", tip="Pick the next value of the object")
+    result[WHICH] = Face(WHICH, "Value", f"values:{WHICH}", "display", "Which value of the object is picked")
     for fid in VARIABLE_IDS:
         result[fid] = Face(fid, "Variable", f"values:{fid}", tip="Type this variable into the expression")
     result[VARIABLE_GROUP] = Face(VARIABLE_GROUP, "More variables", f"values:{VARIABLE_GROUP}", tip="Show the next variables")
@@ -90,9 +95,10 @@ def faces():
 
 
 def pages(side):
-    """The four panels on carousel side `side`: Values at the bottom (nearest the user), the Number pad above it, Keys and Variables above."""
-    return [Page(PAGE_VALUES, list(VALUE_SLOTS), side, 0), Page(PAGE_PAD, list(PAD_SLOTS), side, 1), Page(PAGE_KEYS, list(KEY_SLOTS), side, 2),
-            Page(PAGE_VARIABLES, list(VARIABLE_SLOTS), side, 3)]
+    """The four panels on carousel side `side`, from the top: Value (rows count from the bottom, nearest the user, so it is the highest
+    row), the Number pad, Keys and Variables."""
+    return [Page(PAGE_VALUE, list(VALUE_SLOTS), side, 3), Page(PAGE_PAD, list(PAD_SLOTS), side, 2), Page(PAGE_KEYS, list(KEY_SLOTS), side, 1),
+            Page(PAGE_VARIABLES, list(VARIABLE_SLOTS), side, 0)]
 
 
 def nice_ceiling(value):
@@ -117,14 +123,13 @@ class ValueModule:
         self.hand = tool_hand
         self.editor: Optional[ValueEditor] = None
         self.key = None                     # what the editor is bound to (the selected object)
-        self.group = 0                      # the sliders show the values 3 * group to 3 * group + 2
         self.variable_group = 0             # the Variables panel shows the variables 8 * variable_group and the next seven
         self._variable_age = 0.0
         self.faces = faces()
-        self.step = 10.0                    # the step of the stick and the sliders, kept from one object to the next
-        self._ranges = {}                   # value index -> (lowest, highest) of its slider
+        self.step = 10.0                    # the step of the stick and the value slider, kept from one object to the next
+        self._ranges = {}                   # value index -> (lowest, highest) of the value slider while that value is picked
         self._range_step = None
-        self._focus = None                  # the slider that has the pointer close, or had it a moment ago
+        self._focus = False                 # the value slider has the pointer close, or had it a moment ago
         self._focus_age = 0.0
         self._dir = 0                       # direction of the stick up and down: 1, -1 or 0
         self._repeat = 0.0
@@ -136,15 +141,15 @@ class ValueModule:
 
     @property
     def engaged(self):
-        """A slider is focused: the stick of the tool hand belongs to the value panels."""
-        return self.editor is not None and self._focus is not None and self._focus_age < FOCUS_HOLD
+        """The value slider is focused: the stick of the tool hand belongs to the value panels."""
+        return self.editor is not None and self._focus and self._focus_age < FOCUS_HOLD
 
     def open(self, editor, key=None):
         """Bind the panels to the editor of an object; `key` names the object."""
         self.close()
         self.editor, self.key = editor, key
-        self.group, self.variable_group, self._ranges, self._range_step = 0, 0, {}, None
-        self._focus, self._dir = None, 0
+        self.variable_group, self._ranges, self._range_step = 0, {}, None
+        self._focus, self._dir = False, 0
         self._refresh_ranges(False)
 
     def close(self):
@@ -158,17 +163,6 @@ class ValueModule:
             self.editor, self.key = None, None
 
     # the sliders
-    @property
-    def groups(self):
-        return max(1, math.ceil(len(self.editor.fields) / SLIDERS)) if self.editor is not None else 1
-
-    def slider_field(self, slider):
-        """Index of the value that slider `slider` (0 to 2) shows, or None when it shows none."""
-        if self.editor is None:
-            return None
-        index = self.group * SLIDERS + slider
-        return index if index < len(self.editor.fields) else None
-
     def _range_for(self, index):
         value, step = self.editor.fields[index], self.editor.step
         hi = nice_ceiling(max(2.0 * abs(value.value), 10.0 * step))
@@ -186,51 +180,64 @@ class ValueModule:
             if span is None or (outside and not dragging):
                 self._ranges[index] = self._range_for(index)
 
+    def _range_text(self, low, high):
+        """The ends of the track as text: "0 to 200 mm", "-100 to 100 mm"."""
+        unit = units.unit_for(self.editor.system, high)
+        return f"{units.format_number(low / unit.mm)} to {units.format_length(high, self.editor.system, unit)}"
+
     def slider_states(self):
-        """face id -> (position along the track 0 to 1, text, picked) of the three sliders."""
-        states = {}
-        for slider, fid in enumerate(SLIDER_IDS):
-            index = self.slider_field(slider)
-            if index is None:
-                states[fid] = (0.0, "-", False)
-                continue
-            value = self.editor.fields[index]
-            low, high = self._ranges[index]
-            fraction = min(max((value.value - low) / (high - low), 0.0), 1.0)
-            text = f"{value.label} {self.editor.text_of(value)}"
-            if value.expression:
-                text = f"{text} = {pretty_expression(value.expression)}"
-                text = text if len(text) <= ROW_CHARS else text[:ROW_CHARS - 3] + "..."
-            states[fid] = (fraction, text, index == self.editor.selected)
-        return states
+        """face id -> (position along the track 0 to 1, text, picked) of the value slider (the track runs over the values it can take
+        and its text says where it begins and ends) and of the step slider."""
+        editor = self.editor
+        low, high = self._ranges[editor.selected]
+        fraction = min(max((editor.field.value - low) / (high - low), 0.0), 1.0)
+        step = editor.step_index / (len(VALUE_STEPS) - 1)
+        return {VALUE_SLIDER: (fraction, self._range_text(low, high), True),
+                STEP_SLIDER: (step, f"Step {units.format_length(editor.step, editor.system)}", False)}
 
-    def set_focus(self, slider):
-        """The pointer is close to slider `slider` (0 to 2): its value is picked and the stick works on it for a while."""
-        index = self.slider_field(slider)
-        if index is None:
-            return
-        self._focus, self._focus_age = slider, 0.0
-        self.editor.select(index)
+    def readouts(self):
+        """face id -> (small line, large line, typing) of the readout: the name of the picked value (and the expression it is bound to)
+        over its number, or while text is typed the text with a cursor, which Enter applies."""
+        editor = self.editor
+        picked = editor.field
+        if editor.entry is not None:
+            typed = editor.entry if len(editor.entry) <= TYPED_CHARS else "..." + editor.entry[-(TYPED_CHARS - 3):]
+            return {READOUT: (f"{picked.label}, Enter applies", typed + "|", True)}
+        small = picked.label
+        if picked.expression:
+            small = f"{small} = {pretty_expression(picked.expression)}"
+            small = small if len(small) <= ROW_CHARS else small[:ROW_CHARS - 3] + "..."
+        return {READOUT: (small, editor.text_of(picked), False)}
 
-    def drag(self, slider, along):
-        """A slider was dragged to `along` (0 to 1) of its track: set the value to the nearest step. Returns whether it changed."""
-        index = self.slider_field(slider)
-        if index is None:
+    def set_focus(self, face_id):
+        """The pointer is close to the slider `face_id`: for the value slider the stick works on the picked value for a while."""
+        if face_id == VALUE_SLIDER:
+            self._focus, self._focus_age = True, 0.0
+
+    def drag(self, face_id, along):
+        """A slider was dragged to `along` (0 to 1) of its track: the value slider sets the picked value to the nearest step, the step
+        slider takes the nearest of the steps. Returns whether it changed."""
+        along = min(max(along, 0.0), 1.0)
+        if face_id == STEP_SLIDER:
+            return self.editor.set_step(round(along * (len(VALUE_STEPS) - 1)))
+        if face_id != VALUE_SLIDER:
             return False
-        low, high = self._ranges[index]
-        return self.editor.set_value(index, snapping.snap(low + min(max(along, 0.0), 1.0) * (high - low), self.editor.step))
+        low, high = self._ranges[self.editor.selected]
+        return self.editor.set_value(self.editor.selected, snapping.snap(low + along * (high - low), self.editor.step))
 
     def end_drag(self):
         """A slider was let go: what the drag changed is one undo step."""
         if self.editor is not None:
             self.editor.commit()
 
-    # the keys and the titles
+    # the keys and the labels
     def labels(self):
         """Face id -> the text of the faces that show a value."""
         if self.editor is None:
             return {}
-        labels = {"key.step": f"Step {units.format_length(self.editor.step, self.editor.system)}"}
+        count = len(self.editor.fields)
+        labels = {PREV: "Previous value" if count > 1 else "-", NEXT: "Next value" if count > 1 else "-",
+                  WHICH: f"Value {self.editor.selected + 1} of {count}"}
         for slot, fid in enumerate(VARIABLE_IDS):
             entry = self.variable_at(slot)
             labels[fid] = "-" if entry is None else f"{entry[0]} {units.format_length(entry[1], self.editor.system)}"
@@ -244,26 +251,16 @@ class ValueModule:
         return self.editor.variables[index] if index < len(self.editor.variables) else None
 
     def titles(self):
-        """Page name -> title bar text for the panels of the module."""
-        if self.editor is None:
-            return {}
-        editor = self.editor
-        picked = editor.field
-        if editor.entry is not None:
-            typed = editor.entry[-TITLE_CHARS:] if len(editor.entry) <= TITLE_CHARS else "..." + editor.entry[-(TITLE_CHARS - 3):]
-            text = f"{picked.label}: {typed}|"
-        else:
-            text = f"{picked.label}: {editor.text_of(picked)}"
-        return {PAGE_VALUES: editor.target.title, PAGE_PAD: text}
+        """Page name -> title bar text for the panels of the module: the Value panel names the object."""
+        return {} if self.editor is None else {PAGE_VALUE: self.editor.target.title}
 
     def activate(self, face_id):
         """A face of the module was pressed; returns whether something changed."""
         editor = self.editor
         if editor is None:
             return False
-        if face_id == GROUP:
-            self.group = (self.group + 1) % self.groups
-            return editor.select(self.group * SLIDERS) or True
+        if face_id in (PREV, NEXT):
+            return editor.select_next(1 if face_id == NEXT else -1)
         if face_id == VARIABLE_GROUP:
             count = max(1, math.ceil(len(editor.variables) / VARIABLES))
             self.variable_group = (self.variable_group + 1) % count

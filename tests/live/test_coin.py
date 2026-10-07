@@ -484,6 +484,59 @@ class SimUiTest(unittest.TestCase):
         self.assertGreater(len(changes), 0)
         sensor.detach()
 
+    def test_a_moving_controller_writes_only_the_transform_of_the_carousel(self):
+        from pivy import coin
+        self.s.input.set_head(position=(0.0, 1.6, 0.0), look_at_point=(-0.25, 1.2, -0.35))
+        for _ in range(30):
+            self.s.frame(0.02)
+        changes = []
+        sensor = coin.SoNodeSensor(lambda *args: changes.append(1), None)
+        sensor.setPriority(0)
+        sensor.attach(self.s.ui.view._panels_sep)
+        for k in range(10):
+            self.s.input.set_hand(0, position=(-0.25 + 0.002 * k, 1.2, -0.35), point_at=(0.0, 1.2, -1.0))
+            self.s.frame(0.02)
+        self.assertEqual(changes, [])               # the panels stand in the frame of the carousel: a moving hand does not touch them
+        sensor.detach()
+
+    def test_the_carousel_is_drawn_with_a_handful_of_shapes_and_no_cubes(self):
+        from pivy import coin
+
+        def count(kind):
+            action = coin.SoSearchAction()
+            action.setType(kind.getClassTypeId())
+            action.setInterest(coin.SoSearchAction.ALL)
+            action.setSearchingAll(True)
+            action.apply(self.s.ui.view.root)
+            return action.getPaths().getLength()
+
+        self.show_carousel()
+        panels = len(self.s.ui.view._panels)
+        self.assertEqual(count(coin.SoFaceSet), 2 * panels + 1 + len(self.s.ui.view._ghosts) * 1)    # the plates of each panel and its back, the card
+        self.assertLessEqual(count(coin.SoCube), 1)                                                   # only the marker of a drop
+        self.assertLess(count(coin.SoSeparator), 40 * panels)
+
+    def test_a_panel_that_has_not_changed_is_not_refreshed(self):
+        self.show_carousel()
+        for _ in range(5):
+            self.s.frame(0.02)
+        panel = self.s.ui.view._panels[0]
+        self.assertTrue(panel.facing)
+        key = panel.key
+        self.assertIsNotNone(key)
+        calls = []
+        original = self.s.ui.view._refresh
+        self.s.ui.view._refresh = lambda *args: calls.append(args[1]) or original(*args)
+        for _ in range(5):
+            self.s.frame(0.02)
+        self.assertEqual(calls, [])
+        self.s.ui.settings.tip_angle = 0.0
+        self.s.input.set_hand(1, position=(0.25, 1.5, -0.25), point_at=self.s.ui.ring.slot_centre(0, 1)[0])
+        for _ in range(3):
+            self.s.frame(0.02)
+        self.assertIn(0, calls)                     # a hover on the panel refreshes it
+        self.s.ui.view._refresh = original
+
     def test_a_panel_seen_from_behind_draws_only_its_plate(self):
         from pivy import coin
         self.s.input.set_head(position=(0.0, 1.6, 0.0), look_at_point=(-0.25, 1.2, -0.35))
@@ -1204,7 +1257,7 @@ class MoveLiveTest(unittest.TestCase):
             s.frame(0.02)
         self.assertTrue(s.ui.module.is_open)
         self.assertEqual(s.ui.module.editor.target.title, made.Label + " point 6")
-        self.assertEqual(s.ui.module.slider_states()["val.0"][1], "Point X 500 mm")
+        self.assertEqual(s.ui.module.readouts()["val.readout"], ("Point X", "500 mm", False))
 
     def sketch_on(self, plane="XY", point=(0.0, 0.0, 0.0)):
         from freecad.BlocksCAD.cad import sketching
@@ -1965,7 +2018,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(module.is_open)                                                # no click is needed
         self.assertEqual(module.editor.target.title, self.box.Label)
         self.assertEqual([f.label for f in module.editor.fields], ["Length", "Width", "Height", "X", "Y", "Z"])
-        self.assertEqual([p.name for p in s.ui.shown_layout().pages][-4:], ["Values", "Number pad", "Keys", "Variables"])
+        self.assertEqual([p.name for p in s.ui.shown_layout().pages][-4:], ["Value", "Number pad", "Keys", "Variables"])
         self.assertEqual(len(s.ui.ring.display_sides()), sides + 1)
         self.assertEqual(s.ui.ring.front_side(), sides)                                # the carousel turned to them
         self.assertEqual(s.ui.view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
@@ -1983,8 +2036,6 @@ class MoveLiveTest(unittest.TestCase):
         s = self.session()
         module = self.select()
         self.assertEqual(module.key[1], self.box.Name)
-        self.press_face("key.group")
-        group = module.group
         self.select(cylinder.Name)
         self.assertEqual(module.key[1], cylinder.Name)
         self.assertEqual([f.label for f in module.editor.fields], ["Radius", "Height", "X", "Y", "Z"])
@@ -1993,7 +2044,6 @@ class MoveLiveTest(unittest.TestCase):
         self.assertFalse(module.is_open)
         self.select(self.box.Name, "Face6")                                            # a selected face selects its object for the panels
         self.assertEqual(module.key[1], self.box.Name)
-        self.assertEqual(group, 1)
 
     def test_the_value_panels_are_ordinary_depth_tested_geometry(self):
         from pivy import coin
@@ -2005,20 +2055,21 @@ class MoveLiveTest(unittest.TestCase):
         action.apply(s.ui.view.root)
         self.assertEqual(action.getPaths().getLength(), 0)                             # nothing of the carousel ignores the depth
 
-    def test_the_stick_steps_the_value_of_the_focused_slider_and_one_push_is_one_undo_step(self):
+    def test_the_stick_steps_the_picked_value_while_the_slider_is_focused_and_one_push_is_one_undo_step(self):
         s = self.session()
         module = self.select()
         steps = self.doc.UndoCount
-        self.focus("val.1")
+        self.press_face("val.next")
+        self.assertEqual(module.editor.selected, 1)                                    # Width is picked with the selector
+        self.focus("val.slider")
         self.assertTrue(module.engaged)
-        self.assertEqual(module.editor.selected, 1)                                    # Width is picked by coming close
         self.assertTrue(s.ui_update.owns_stick)
         self.push(0.0, 1.0)
         self.assertEqual(self.box.Width.Value, 110.0)
         self.assertEqual((self.box.Length.Value, self.box.Height.Value), (100.0, 100.0))
-        self.focus("val.1")
+        self.focus("val.slider")
         self.push(0.0, 1.0)
-        self.focus("val.1")
+        self.focus("val.slider")
         self.push(0.0, -1.0)
         self.assertEqual(self.box.Width.Value, 110.0)
         self.assertEqual(self.doc.UndoCount, steps + 3)                                # three pushes, three undo steps
@@ -2030,7 +2081,7 @@ class MoveLiveTest(unittest.TestCase):
         s = self.session()
         tool = s.tool_manager.active
         module = self.select()
-        self.tip_to(self.face_point("val.1", 0.5, 0.0, front=0.4), trigger=0.0)       # far from the panels
+        self.tip_to(self.face_point("val.slider", 0.5, 0.0, front=0.4), trigger=0.0)   # far from the panels
         self.assertFalse(module.engaged)
         self.push(0.0, 1.0)
         self.assertEqual(self.box.Width.Value, 100.0)
@@ -2041,32 +2092,48 @@ class MoveLiveTest(unittest.TestCase):
         s = self.session()
         module = self.select()
         steps = self.doc.UndoCount
-        point = self.face_point("val.0", 0.8, 0.015)                                   # the label part of the row
+        point = self.face_point("val.slider", 0.8, 0.015)                              # the label part of the row
         self.tip_to(point, trigger=0.0)
         self.tip_to(point, trigger=1.0)
         self.tip_to(point, trigger=0.0)
         self.assertEqual(self.box.Length.Value, 100.0)                                 # a press beside the bar does nothing
         self.assertEqual(module.editor.selected, 0)
-        self.drag_slider("val.0", 0.5, 0.62, 0.77)                                     # Length: the track is 0 to 200 mm, the step 10 mm
+        self.drag_slider("val.slider", 0.5, 0.62, 0.77)                                # Length: the track is 0 to 200 mm, the step 10 mm
         self.assertEqual(self.box.Length.Value, 150.0)
         self.assertEqual(self.box.Shape.BoundBox.XLength, 150.0)
-        self.assertEqual(module.slider_states()["val.0"][1], "Length 150 mm")
+        self.assertEqual(module.readouts()["val.readout"], ("Length", "150 mm", False))
         self.assertEqual(self.doc.UndoCount, steps + 1)                                # the whole drag is one undo step
-        self.drag_slider("val.1", 0.5, 0.1)
+        self.press_face("val.next")
+        self.drag_slider("val.slider", 0.5, 0.1)
         self.assertEqual(self.box.Width.Value, 20.0)
         self.assertEqual(module.editor.selected, 1)
         self.assertEqual(self.doc.UndoCount, steps + 2)
         self.doc.undo()
         self.assertEqual((self.box.Length.Value, self.box.Width.Value), (150.0, 100.0))
 
-    def test_the_sliders_show_the_next_three_values_on_the_more_values_key(self):
+    def test_the_selector_picks_the_value_the_readout_and_the_slider_show(self):
         module = self.select()
-        self.press_face("key.group")
-        self.assertEqual(module.group, 1)
-        self.assertEqual(module.slider_states()["val.0"][1], "X 0 mm")
-        self.drag_slider("val.1", 0.75)                                                # Y: a track from -100 to 100 mm
+        self.assertEqual(module.labels()["val.which"], "Value 1 of 6")
+        for _ in range(3):
+            self.press_face("val.next")
+        self.assertEqual(module.labels()["val.which"], "Value 4 of 6")
+        self.assertEqual(module.readouts()["val.readout"], ("X", "0 mm", False))
+        self.assertEqual(module.slider_states()["val.slider"][1], "-100 to 100 mm")
+        self.press_face("val.next")
+        self.drag_slider("val.slider", 0.75)                                           # Y: a track from -100 to 100 mm
         self.assertEqual(self.box.Placement.Base.y, 50.0)
         self.assertEqual(module.editor.selected, 4)
+        self.press_face("val.prev")
+        self.assertEqual(module.editor.selected, 3)
+
+    def test_the_step_slider_goes_down_to_a_hundredth_of_a_millimetre(self):
+        module = self.select()
+        self.drag_slider("val.step", 0.0)
+        self.assertEqual(module.editor.step, 0.01)
+        self.assertEqual(module.slider_states()["val.step"][1], "Step 10 µm")
+        self.focus("val.slider")
+        self.push(0.0, 1.0)
+        self.assertAlmostEqual(self.box.Length.Value, 100.01)
 
     def test_the_keys_of_the_carousel_type_an_expression_with_a_unit_and_enter_keeps_each_value(self):
         module = self.select()
@@ -2076,7 +2143,8 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(self.box.Length.Value, 60.0)
         self.assertIsNone(module.editor.entry)
         self.assertEqual(self.doc.UndoCount, steps + 1)
-        self.press_face("key.group")                                                   # the next group, the first of it (X) is picked
+        for _ in range(3):
+            self.press_face("val.next")                                                # X is picked
         for key in ("key.minus", "key.5", "key.enter"):
             self.press_face(key)
         self.assertEqual(self.box.Placement.Base.x, -5.0)
@@ -2084,16 +2152,17 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.undo()
         self.assertEqual((self.box.Length.Value, self.box.Placement.Base.x), (60.0, 0.0))
 
-    def test_the_title_of_the_number_pad_shows_what_is_typed_and_the_step_key_shows_the_step(self):
+    def test_the_readout_shows_what_is_typed_and_the_step_slider_sets_the_step_of_the_stick(self):
         s = self.session()
         module = self.select()
+        self.assertEqual(module.titles(), {"Value": self.box.Label})
         self.press_face("key.7")
-        self.assertEqual(module.titles()["Number pad"], "Length: 7|")
+        self.assertEqual(module.readouts()["val.readout"], ("Length, Enter applies", "7|", True))
         self.press_face("key.delete")
-        self.assertEqual(module.titles()["Number pad"], "Length: 100 mm")
-        self.press_face("key.step")
-        self.assertEqual(module.labels()["key.step"], "Step 20 mm")
-        self.focus("val.0")
+        self.assertEqual(module.readouts()["val.readout"], ("Length", "100 mm", False))
+        self.drag_slider("val.step", 10 / 12)
+        self.assertEqual(module.slider_states()["val.step"][1], "Step 20 mm")
+        self.focus("val.slider")
         self.push(0.0, 1.0)
         self.assertEqual(self.box.Length.Value, 120.0)                                 # the stick uses the new step
 
@@ -2127,13 +2196,13 @@ class MoveLiveTest(unittest.TestCase):
         module = self.select(torus.Name)
         self.assertEqual([f.label for f in module.editor.fields][:2], ["Radius 1", "Radius 2"])
         radius1, radius2 = torus.Radius1.Value, torus.Radius2.Value
-        self.focus("val.1")                                                            # pick Radius 2
+        self.press_face("val.next")                                                    # pick Radius 2
         for key in ("key.9", "key.9", "key.enter"):
             self.press_face(key)
         self.assertEqual((torus.Radius1.Value, torus.Radius2.Value), (radius1, radius2))
         self.assertTrue(torus.isValid())
         self.assertEqual([t.text for t in s.ui.toasts.items][-1], "The shape cannot take that value")
-        self.drag_slider("val.1", 1.0)                                                 # the slider is refused the same way
+        self.drag_slider("val.slider", 1.0)                                            # the slider is refused the same way
         self.assertTrue(torus.isValid())
         self.assertEqual(torus.Radius2.Value, radius2)
 

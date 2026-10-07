@@ -30,6 +30,7 @@ from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import units
 from freecad.BlocksCAD.core import values as value_editing
 from freecad.BlocksCAD.core.navigation import Navigator
+from freecad.BlocksCAD.profiling import PROFILER as prof
 from freecad.BlocksCAD.ui import defaults
 from freecad.BlocksCAD.ui import layout as lay
 from freecad.BlocksCAD.ui import pointing, settings as cfg
@@ -272,14 +273,14 @@ class UiController:
         labels = self.labels()
         return {fid: (spec.fraction(getattr(self.settings, spec.attr)), labels[fid]) for fid, spec in defaults.SLIDERS.items()}
 
-    def slider_rows(self):
-        """Pages and grid rows that hold a slider: page -> row -> face id."""
+    def slider_rows(self, kind="slider"):
+        """Pages and grid rows that hold a face of `kind` that takes the whole row, a "slider" or a "readout": page -> row -> face id."""
         rows = {}
         for p, page in enumerate(self.shown_layout().pages):
             for r in range(lay.ROWS):
                 face_id = page.slots[r * lay.COLS]
                 face = self.view_faces.get(face_id) if face_id else None
-                if face is not None and face.kind == "slider":
+                if face is not None and face.kind == kind:
                     rows.setdefault(p, {})[r] = face_id
         return rows
 
@@ -315,10 +316,12 @@ class UiController:
         out = UiUpdate()
         s = self.settings
         self._sync_values(out)
+        prof.lap("ui_values")
         self.pointer_poses = [pointing.pointer_pose(h.aim, s.pointer_mode, s.tip_angle, s.tip_length) for h in frame.hands]
         # in tip mode the world is held with the tips: it pivots about them and the ruler measures between them
         points = [p.position for p in self.pointer_poses] if s.pointer_mode == "tip" else None
         events = self.navigator.update(frame, points=points)
+        prof.lap("ui_nav")
         for event in events:
             if event[0] == "grab":
                 out.haptics += [(0, 0.25, 0.03), (1, 0.25, 0.03)]
@@ -341,24 +344,28 @@ class UiController:
         self.ring.fixed_from = len(self.layout.pages) if self.module.is_open else None
         self.ring.set_sides(carousel.sides())
         self.ring.slider_rows = self.slider_rows()
+        self.ring.readout_rows = self.slider_rows("readout")
+        self.ring.hold_visible = self.module.engaged       # the stick works the value slider: the carousel stays whatever the head sees
         pointers = list(self.pointer_poses)
         if self.radial.is_open:
             pointers[self.tool_hand] = replace(pointers[self.tool_hand], tracked=False)
+        prof.lap("ui_misc")
         result = self.ring.update(frame, navigating=self.navigator.navigating, pointers=pointers)
+        prof.lap("ui_ring")
         out.haptics += result.haptics + quick.haptics
         out.ray_end = result.ray_end
         out.consume_trigger = result.consume_trigger or self.radial.is_open or quick.activated is not None or quick.activated_hub
         if result.focus is not None:
             focused = carousel.face_at(*result.focus)
             if focused in value_module.SLIDER_IDS:
-                self.module.set_focus(value_module.SLIDER_IDS.index(focused))
+                self.module.set_focus(focused)
         if self.module.engaged:
             out.owns_stick = True                            # a value slider is focused: the stick of the tool hand steps its value
         if result.slider is not None:
             page, slot, along = result.slider
             face_id = carousel.face_at(page, slot)
             if face_id in value_module.SLIDER_IDS:
-                if self.module.drag(value_module.SLIDER_IDS.index(face_id), along):
+                if self.module.drag(face_id, along):
                     out.haptics.append((self.tool_hand, 0.15, 0.01))
             spec = defaults.SLIDERS.get(face_id)
             if spec is not None:
@@ -387,20 +394,24 @@ class UiController:
                 if target_page is None:
                     face = self.faces.get(self.layout.hidden[-1]) if self.layout.hidden else None
                     self.toast(f"Hidden: {face.label}" if face else "Face hidden")
+        prof.lap("ui_misc")
         edit = self.module.update(frame, dragging=self.ring.slider_drag is not None, blocked=bool(getattr(self.active_tool, "busy", False)))
         out.haptics += edit.haptics
         if edit.message:
             self.toast(edit.message)
+        prof.lap("ui_module")
         labels = {**self.labels(), **self.module.labels()}
         sliders = {**self.slider_states(), **self.module.slider_states()} if self.module.is_open else self.slider_states()
         self.view.update(self.ring, result, carousel, self.view_faces, frame.head.position, self.active_actions, labels, sliders,
-                         self.module.titles())
+                         self.module.titles(), self.module.readouts() if self.module.is_open else None)
+        prof.lap("ui_view")
         self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items],
                                 centre=labels.get(quick.hub, self.faces[quick.hub].label) if quick.hub else None)
         tooltip = self._tooltip(result, frame.dt, labels)
         text = readout or self.gesture_text
         self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, text or None, self._lock_hint(frame),
                              self._wrist_anchor(frame))
+        prof.lap("ui_feedback")
 
         if result.activated is not None:
             face_id = carousel.face_at(*result.activated)

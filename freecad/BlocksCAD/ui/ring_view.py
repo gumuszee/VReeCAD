@@ -14,8 +14,14 @@
 # *                                                                         *
 # ***************************************************************************
 """Coin3D drawing of the palette carousel (docs/ux-design.md, Visual style). Flat, unlit, high contrast: panels never depend on
-the scene lighting. Sizes are physical: the face edge is `ring.CELL`, label glyphs are about 7 mm tall (`style.PANEL_TEXT`). Every
-colour node is a `style.Paint` that is written only when the colour changes, so a still carousel costs the scene graph nothing."""
+the scene lighting. Sizes are physical: the face edge is `ring.CELL`, label glyphs are about 7 mm tall (`style.PANEL_TEXT`).
+
+The scene graph is built to cost the renderer as little as possible, because the carousel is drawn twice a frame for the headset:
+the carousel hangs under one transform that follows the controller, so a moving hand writes one node; the panels stand in the frame
+of the carousel and are placed only when the carousel turns or fades; all the flat rectangles of a panel (plate, title bar, faces,
+tracks) are one face set with a colour per rectangle, so a panel is a handful of draw calls plus its texts; panels that show their
+back, and panels whose input has not changed since the last frame, cost nothing. Every colour is written only when it changes, so a
+still carousel costs the scene graph nothing."""
 
 from pivy import coin
 
@@ -28,12 +34,8 @@ from freecad.BlocksCAD.ui import value_module
 DEPTH = 0.004
 TITLE_H = rg.TITLE_Y[1] - rg.TITLE_Y[0]
 TITLE_CENTRE = (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2
-
-
-def _cube(w, h, d):
-    cube = coin.SoCube()
-    cube.width, cube.height, cube.depth = w, h, d
-    return cube
+TEXT_LIFT = DEPTH * 0.5 + 0.0005      # text lies this far in front of the plane of the plates
+MARKER_LIFT = 0.003
 
 
 def _at(x, y, z):
@@ -42,19 +44,77 @@ def _at(x, y, z):
     return move
 
 
-def _plate(parent, w, h, rgb, x=0.0, y=0.0, z=0.0):
-    sep = coin.SoSeparator()
-    sep.addChild(_at(x, y, z))
-    paint = style.Paint(rgb)
-    sep.addChild(paint.node)
-    sep.addChild(_cube(w, h, DEPTH))
-    parent.addChild(sep)
-    return paint
+class _Plate:
+    """One rectangle of a `_Plates`: `set` changes its colour, `move` its place."""
+    __slots__ = ("owner", "index", "rgb")
+
+    def __init__(self, owner, index, rgb):
+        self.owner, self.index, self.rgb = owner, index, rgb
+
+    def set(self, rgb):
+        if rgb != self.rgb:
+            self.rgb = rgb
+            self.owner.rgb[self.index] = rgb
+            self.owner.dirty = True
+
+    def move(self, x, y):
+        self.owner.move(self.index, x, y)
+
+
+class _Plates:
+    """The flat rectangles of one panel (or a ghost) in one face set: one draw call, a colour for each rectangle. A rectangle lies in
+    the plane `z` in front of the panel and has only a front, which is all that is ever seen of it (a panel seen from behind shows
+    its back plate). `add` all of them, then hang `build()` in the scene."""
+
+    def __init__(self):
+        self.rects = []          # (width, height, x, y, z)
+        self.rgb = []
+        self.dirty = False
+        self._points = self._colours = None
+
+    def add(self, w, h, rgb, x=0.0, y=0.0, z=0.0):
+        self.rects.append((w, h, x, y, z))
+        rgb = tuple(rgb)
+        self.rgb.append(rgb)
+        return _Plate(self, len(self.rects) - 1, rgb)
+
+    @staticmethod
+    def _corners(w, h, x, y, z):
+        return [(x - w / 2, y - h / 2, z), (x + w / 2, y - h / 2, z), (x + w / 2, y + h / 2, z), (x - w / 2, y + h / 2, z)]
+
+    def build(self):
+        count = len(self.rects)
+        sep = style.cached(coin.SoSeparator())
+        coords = coin.SoCoordinate3()
+        coords.point.setValues(0, 4 * count, [p for rect in self.rects for p in self._corners(*rect)])
+        sep.addChild(coords)
+        binding = coin.SoMaterialBinding()
+        binding.value = coin.SoMaterialBinding.PER_FACE
+        sep.addChild(binding)
+        colours = coin.SoBaseColor()
+        colours.rgb.setValues(0, count, self.rgb)
+        sep.addChild(colours)
+        faces = coin.SoFaceSet()
+        faces.numVertices.setValues(0, count, [4] * count)
+        sep.addChild(faces)
+        self._points, self._colours = coords.point, colours.rgb
+        return sep
+
+    def move(self, index, x, y):
+        w, h, _, _, z = self.rects[index]
+        self.rects[index] = (w, h, x, y, z)
+        self._points.setValues(4 * index, 4, self._corners(w, h, x, y, z))
+
+    def flush(self):
+        """Write the colours that changed since the last flush (one write for all of them)."""
+        if self.dirty:
+            self.dirty = False
+            self._colours.setValues(0, len(self.rgb), self.rgb)
 
 
 def _text(parent, lines, x, y, z, rgb, justification=coin.SoText3.CENTER, factor=1.0):
     """Text lines centred vertically around y; returns the text node."""
-    sep = coin.SoSeparator()
+    sep = style.cached(coin.SoSeparator())
     sep.addChild(_at(x, y + (len(lines) - 1) * 0.5 * style.LINE_HEIGHT * factor - 0.0035 * factor, z))
     material = style.color(rgb)
     sep.addChild(material)
@@ -67,42 +127,55 @@ def _text(parent, lines, x, y, z, rgb, justification=coin.SoText3.CENTER, factor
     return text
 
 
-def _placement(owner, parent):
-    """Give `owner` a transform under `parent` and the fields `RingView._place` writes (looking a pivy field up costs about 20
-    microseconds, so they are looked up once)."""
-    transform = coin.SoTransform()
-    parent.addChild(transform)
-    owner.move, owner.turn, owner.scale, owner.size = transform.translation, transform.rotation, transform.scaleFactor, None
+class _Place:
+    """A transform that puts a panel (or a ghost) in the frame of the carousel and grows it from the axis while the carousel fades in.
+    It is written only when the place changes, that is when the carousel turns or fades."""
+
+    def __init__(self, parent):
+        transform = coin.SoTransform()
+        parent.addChild(transform)
+        self._move, self._turn, self._scale = transform.translation, transform.rotation, transform.scaleFactor
+        self._key = None
+
+    def set(self, pose, fade):
+        key = (pose.lcentre, pose.lu, fade)
+        if key != self._key:
+            self._key = key
+            self._move.setValue(*(pose.lcentre if fade >= 1.0 else mu.mul(pose.lcentre, fade)))
+            self._turn.setValue(*mu.quat_from_basis(pose.lu, pose.lv, pose.ln))
+            size = 0.5 + 0.5 * fade
+            self._scale.setValue(size, size, size)
 
 
 class _Cell:
-    def __init__(self, parent, x, y, face_label, palette):
-        self.sep = coin.SoSeparator()
-        self.sep.addChild(_at(x, y, 0.0))
+    """A face of a panel: its rectangle is in the plates of the panel, its text is a node of its own."""
+
+    def __init__(self, parent, x, y, face_label, palette, plates):
         self.palette = palette
-        self.plate_color = _plate(self.sep, rg.CELL, rg.CELL, palette.face if face_label is not None else palette.empty)
+        self.x, self.y = x, y
+        self.plate = plates.add(rg.CELL, rg.CELL, palette.face if face_label is not None else palette.empty, x, y, DEPTH * 0.5)
         self.text_color = None
         self.label = face_label
         if face_label is not None:
-            text_sep = coin.SoSeparator()
-            self._text_move = _at(0.0, 0.0, DEPTH * 0.5 + 0.0005)
+            text_sep = style.cached(coin.SoSeparator())
+            self._text_move = _at(x, y, TEXT_LIFT)
+            self._text_at = self._text_move.translation
             text_sep.addChild(self._text_move)
             self.text_color = style.Paint(style.TEXT)
             text_sep.addChild(self.text_color.node)
             text_sep.addChild(style.text_scale(style.PANEL_TEXT))
             self._text = coin.SoText3()
             self._text.justification = coin.SoText3.CENTER
+            self._string = self._text.string
             text_sep.addChild(self._text)
-            self.sep.addChild(text_sep)
+            parent.addChild(text_sep)
             self._write(face_label)
-        parent.addChild(self.sep)
 
     def _write(self, label):
         lines = lay.wrap_label(label)
-        self._text_move.translation.setValue(0.0, ((len(lines) - 1) * 0.5 * style.LINE_HEIGHT - 0.0035) * style.PANEL_TEXT,
-                                             DEPTH * 0.5 + 0.0005)
-        self._text.string.setNum(len(lines))
-        self._text.string.setValues(0, len(lines), lines)
+        self._text_at.setValue(self.x, self.y + ((len(lines) - 1) * 0.5 * style.LINE_HEIGHT - 0.0035) * style.PANEL_TEXT, TEXT_LIFT)
+        self._string.setNum(len(lines))
+        self._string.setValues(0, len(lines), lines)
 
     def set_label(self, label):
         """Change the text of the face (faces that show a value)."""
@@ -110,11 +183,12 @@ class _Cell:
             self.label = label
             self._write(label)
 
-    def set_state(self, hover, active, has_face, lifted=False, target=False):
-        """`lifted`: the face is held in the hand (its place is dimmed); `target`: a lifted face would land here."""
-        color = (self.palette.empty if not has_face or lifted else style.GRAB if target else style.ACTIVE if active
-                 else style.HOVER if hover else self.palette.face)
-        self.plate_color.set(color)
+    def set_state(self, hover, active, has_face, lifted=False, target=False, inert=False):
+        """`lifted`: the face is held in the hand (its place is dimmed); `target`: a lifted face would land here; `inert`: the face
+        only shows something, it is never lit by the pointer."""
+        color = (self.palette.empty if not has_face or lifted else style.GRAB if target else self.palette.picked if inert
+                 else style.ACTIVE if active else style.HOVER if hover else self.palette.face)
+        self.plate.set(color)
         if self.text_color is not None:
             self.text_color.set(style.TEXT_ON_ACTIVE if (active or target) and not lifted
                                 else style.TEXT_DIM if lifted else style.TEXT)
@@ -126,44 +200,85 @@ class _SliderRow:
     TRACK_Y = -0.009
     HANDLE = (0.007, 0.019)
 
-    def __init__(self, parent, y, palette):
+    def __init__(self, parent, y, palette, plates):
         self.low, self.high = -rg.GRID_W / 2 + rg.SLIDER_PAD, rg.GRID_W / 2 - rg.SLIDER_PAD
         self.palette = palette
-        self.sep = coin.SoSeparator()
-        self.sep.addChild(_at(0.0, y, 0.0))
-        self.plate_color = _plate(self.sep, rg.GRID_W, rg.CELL, palette.face)
-        self.track_color = _plate(self.sep, self.high - self.low, self.TRACK_H, palette.plate, 0.0, self.TRACK_Y, DEPTH * 0.5)
-        handle = coin.SoSeparator()
-        self._handle_move = coin.SoTranslation()
-        self._handle_at = self._handle_move.translation
-        self._handle_x = None
-        handle.addChild(self._handle_move)
-        self.handle_color = style.Paint(style.TEXT)
-        handle.addChild(self.handle_color.node)
-        handle.addChild(_cube(self.HANDLE[0], self.HANDLE[1], DEPTH))
-        self.sep.addChild(handle)
-        label = coin.SoSeparator()
-        label.addChild(_at(-rg.GRID_W / 2 + 0.009, 0.008, DEPTH * 0.5 + 0.0005))
+        self.y = y
+        self.plate_color = plates.add(rg.GRID_W, rg.CELL, palette.face, 0.0, y, DEPTH * 0.5)
+        self.track_color = plates.add(self.high - self.low, self.TRACK_H, palette.plate, 0.0, y + self.TRACK_Y, DEPTH)
+        self.handle_color = plates.add(self.HANDLE[0], self.HANDLE[1], style.TEXT, self.low, y + self.TRACK_Y, DEPTH * 1.5)
+        self._handle_x = self.low
+        label = style.cached(coin.SoSeparator())
+        label.addChild(_at(-rg.GRID_W / 2 + 0.009, y + 0.008, TEXT_LIFT))
         label.addChild(style.color(style.TEXT))
         label.addChild(style.text_scale(style.PANEL_TEXT * 1.1))
         self.text = coin.SoText3()
         self.text.justification = coin.SoText3.LEFT
+        self._string = self.text.string
         label.addChild(self.text)
-        self.sep.addChild(label)
+        parent.addChild(label)
         self.label = None
-        parent.addChild(self.sep)
 
     def set(self, fraction, label, hovered, dragged, picked=False, bar_hot=False):
         x = self.low + fraction * (self.high - self.low)
         if x != self._handle_x:
             self._handle_x = x
-            self._handle_at.setValue(x, self.TRACK_Y, DEPTH)
+            self.handle_color.move(x, self.y + self.TRACK_Y)
         if label != self.label:
             self.label = label
-            self.text.string = label
+            self._string.setValue(label)
         self.plate_color.set(style.HOVER if hovered else self.palette.picked if picked else self.palette.face)
         self.handle_color.set(style.ACTIVE if dragged else style.TEXT)
         self.track_color.set(style.TEXT if bar_hot else self.palette.plate)
+
+
+class _ReadoutRow:
+    """The readout of the picked value on a whole row of the grid: its name in small letters over its number in large ones (smaller
+    when the text is long). Text that is being typed is shown on an active plate, so it cannot be mistaken for the value."""
+    SMALL_Y, LARGE_Y = 0.0095, -0.0125         # baselines of the two lines, from the centre of the row
+    SMALL = 0.7
+    LARGE = ((14, 1.9), (21, 1.3), (999, 0.88))    # (longest text, size) for the large line
+
+    def __init__(self, parent, y, palette, plates):
+        self.palette = palette
+        self.plate_color = plates.add(rg.GRID_W, rg.CELL, palette.picked, 0.0, y, DEPTH * 0.5)
+        x = -rg.GRID_W / 2 + 0.009
+        self.small, self.small_color, _ = self._line(parent, x, y + self.SMALL_Y, self.SMALL)
+        self.large, self.large_color, self._large_scale = self._line(parent, x, y + self.LARGE_Y, self.LARGE[0][1])
+        self.texts = (None, None)
+        self.typing = None
+        self._size = self.LARGE[0][1]
+
+    @staticmethod
+    def _line(parent, x, y, size):
+        line = style.cached(coin.SoSeparator())
+        line.addChild(_at(x, y, TEXT_LIFT))
+        paint = style.Paint(style.TEXT)
+        line.addChild(paint.node)
+        scale = style.text_scale(size)
+        line.addChild(scale)
+        text = coin.SoText3()
+        text.justification = coin.SoText3.LEFT
+        line.addChild(text)
+        parent.addChild(line)
+        return text.string, paint, scale.scaleFactor
+
+    def set(self, small, large, typing):
+        if (small, large) != self.texts:
+            if small != self.texts[0]:
+                self.small.setValue(small)
+            if large != self.texts[1]:
+                self.large.setValue(large)
+                size = next(size for longest, size in self.LARGE if len(large) <= longest)
+                if size != self._size:
+                    self._size = size
+                    self._large_scale.setValue(style.TEXT_SCALE * size, style.TEXT_SCALE * size, style.TEXT_SCALE * size)
+            self.texts = (small, large)
+        if typing != self.typing:
+            self.typing = typing
+            self.plate_color.set(style.ACTIVE if typing else self.palette.picked)
+            self.small_color.set(style.TEXT_ON_ACTIVE if typing else style.TEXT)
+            self.large_color.set(style.TEXT_ON_ACTIVE if typing else style.TEXT)
 
 
 class _Panel:
@@ -171,48 +286,70 @@ class _Panel:
 
     def __init__(self, page, faces):
         self.switch = coin.SoSwitch()
-        self.switch.whichChild = coin.SO_SWITCH_NONE
+        self.shown = style.Show(self.switch)
         self.palette = style.panel_palette(page.name, page.name in value_module.PAGE_NAMES)
         palette = self.palette
         outer = coin.SoSeparator()
-        _placement(self, outer)
-        self.back_color = _plate(outer, rg.PANEL_W, rg.PANEL_H, palette.plate, 0.0, 0.0, -DEPTH)
+        self.place = _Place(outer)
+        back = _Plates()                        # the plate behind everything: all that shows when the panel is seen from behind
+        self.back_color = back.add(rg.PANEL_W, rg.PANEL_H, palette.plate, 0.0, 0.0, -DEPTH * 0.5)
+        self._back = back
+        outer.addChild(back.build())
         # everything in front of the plate: seen from behind it is hidden by the plate, so it is not drawn then
         self.front = coin.SoSwitch()
         self.front.whichChild = coin.SO_SWITCH_ALL
         self.facing = True
-        sep = coin.SoSeparator()
+        self._front_show = style.Show(self.front, True)
+        sep = style.cached(coin.SoSeparator())
         self.front.addChild(sep)
         outer.addChild(self.front)
-        self.title_color = _plate(sep, rg.GRID_W, TITLE_H, palette.title, 0.0, TITLE_CENTRE, 0.0)
-        self.title = _text(sep, [page.name], -rg.GRID_W / 2 + 0.006, TITLE_CENTRE, DEPTH * 0.5 + 0.0005, palette.title_text,
-                           coin.SoText3.LEFT, style.PANEL_TEXT)
-        self.title_text = page.name
+        self.plates = _Plates()
+        self.title_color = self.plates.add(rg.GRID_W, TITLE_H, palette.title, 0.0, TITLE_CENTRE, DEPTH * 0.5)
         for i in (-1, 0, 1):   # grooves: the title bar is the handle for lifting the panel
-            _plate(sep, 0.012, 0.0012, palette.groove, rg.GRID_W / 2 - 0.012, TITLE_CENTRE + i * 0.0045, DEPTH * 0.5)
+            self.plates.add(0.012, 0.0012, palette.groove, rg.GRID_W / 2 - 0.012, TITLE_CENTRE + i * 0.0045, DEPTH)
+        plates_at = sep.getNumChildren()
+        sep.addChild(coin.SoSeparator())         # the place of the plates, which are built once every row has added its rectangles
+        self.title = _text(sep, [page.name], -rg.GRID_W / 2 + 0.006, TITLE_CENTRE, TEXT_LIFT, palette.title_text,
+                           coin.SoText3.LEFT, style.PANEL_TEXT)
+        self._title_string = self.title.string
+        self.title_text = page.name
         self.cells = []
         self.sliders = {}          # row of the grid -> (slider view, face id)
+        self.readouts = {}         # row of the grid -> (readout view, face id)
         for row in range(lay.ROWS):
             face = faces.get(page.slots[row * lay.COLS]) if page.slots[row * lay.COLS] else None
+            y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
             if face is not None and face.kind == "slider":
-                y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
-                self.sliders[row] = (_SliderRow(sep, y, palette), face.id)
+                self.sliders[row] = (_SliderRow(sep, y, palette, self.plates), face.id)
+            elif face is not None and face.kind == "readout":
+                self.readouts[row] = (_ReadoutRow(sep, y, palette, self.plates), face.id)
         for slot, face_id in enumerate(page.slots):
             col, row = slot % lay.COLS, slot // lay.COLS
             x = (col - (lay.COLS - 1) / 2) * (rg.CELL + rg.GAP)
             y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
             face = faces.get(face_id) if face_id else None
-            if row in self.sliders:                      # the row belongs to its slider
+            if row in self.sliders or row in self.readouts:    # the row belongs to its slider or readout
                 self.cells.append((None, None))
                 continue
-            self.cells.append((_Cell(sep, x, y, face.label if face else None, palette), face))
+            self.cells.append((_Cell(sep, x, y, face.label if face else None, palette, self.plates), face))
+        sep.replaceChild(plates_at, self.plates.build())
         self.switch.addChild(outer)
+        self.key = None            # what the contents were last made for (`RingView.update`)
 
     def set_facing(self, facing):
         """Draw the contents of the panel only while the head is in front of its plate."""
         if facing != self.facing:
             self.facing = facing
-            self.front.whichChild = coin.SO_SWITCH_ALL if facing else coin.SO_SWITCH_NONE
+            self._front_show.set(facing)
+
+    def set_title(self, text):
+        if text != self.title_text:
+            self.title_text = text
+            self._title_string.setValue(text)
+
+    def flush(self):
+        self._back.flush()
+        self.plates.flush()
 
 
 class _Ghost:
@@ -222,18 +359,21 @@ class _Ghost:
 
     def __init__(self):
         self.switch = coin.SoSwitch()
-        self.switch.whichChild = coin.SO_SWITCH_NONE
+        self.shown = style.Show(self.switch)
         sep = coin.SoSeparator()
-        _placement(self, sep)
-        self.color = _plate(sep, rg.PANEL_W, rg.PANEL_H, style.DROP, 0.0, 0.0, -DEPTH)
+        self.place = _Place(sep)
+        self.plates = _Plates()
+        self.color = self.plates.add(rg.PANEL_W, rg.PANEL_H, style.DROP, 0.0, 0.0, -DEPTH * 0.5)
+        sep.addChild(self.plates.build())
         self.text = _text(sep, [self.PANEL_LABEL], 0.0, 0.0, 0.0005, style.TEXT, factor=1.2)
+        self._string = self.text.string
         self.label = self.PANEL_LABEL
         self.switch.addChild(sep)
 
     def set_label(self, label):
         if label != self.label:
             self.label = label
-            self.text.string = label
+            self._string.setValue(label)
 
 
 class _Card:
@@ -241,20 +381,33 @@ class _Card:
 
     def __init__(self):
         self.switch = coin.SoSwitch()
-        self.switch.whichChild = coin.SO_SWITCH_NONE
+        self.shown = style.Show(self.switch)
         sep = coin.SoSeparator()
         self.transform = coin.SoTransform()
+        self._move, self._turn = self.transform.translation, self.transform.rotation
         sep.addChild(self.transform)
-        _plate(sep, 0.11, 0.032, style.GRAB)
+        plates = _Plates()
+        plates.add(0.11, 0.032, style.GRAB, 0.0, 0.0, DEPTH * 0.5)
+        sep.addChild(plates.build())
         self.text = coin.SoText3()
-        text_sep = coin.SoSeparator()
-        text_sep.addChild(_at(0.0, -0.0035, DEPTH * 0.5 + 0.0005))
+        self._string = self.text.string
+        text_sep = style.cached(coin.SoSeparator())
+        text_sep.addChild(_at(0.0, -0.0035, TEXT_LIFT))
         text_sep.addChild(style.color(style.TEXT_ON_ACTIVE))
         text_sep.addChild(style.text_scale())
         self.text.justification = coin.SoText3.CENTER
         text_sep.addChild(self.text)
         sep.addChild(text_sep)
         self.switch.addChild(sep)
+        self.label = None
+
+    def show(self, label, point, rotation):
+        if label != self.label:
+            self.label = label
+            self._string.setValue(label)
+        self._move.setValue(*point)
+        self._turn.setValue(*rotation)
+        self.shown.set(True)
 
 
 class _Marker:
@@ -263,34 +416,39 @@ class _Marker:
 
     def __init__(self):
         self.switch = coin.SoSwitch()
-        self.switch.whichChild = coin.SO_SWITCH_NONE
+        self.shown = style.Show(self.switch)
         sep = coin.SoSeparator()
         self.transform = coin.SoTransform()
+        self._move, self._turn = self.transform.translation, self.transform.rotation
         sep.addChild(self.transform)
         sep.addChild(style.color(style.GRAB))
         self.bar = coin.SoCube()
         self.bar.depth = DEPTH
+        self._width, self._height = self.bar.width, self.bar.height
         sep.addChild(self.bar)
         self.switch.addChild(sep)
+        self._key = None
 
-    def show(self, pose, zone, origin, fade):
-        half = (rg.PANEL_W / 2 + rg.PANEL_GAP / 2, rg.PANEL_H / 2 + rg.PANEL_GAP / 2)
-        x, y, w, h = {"left": (-half[0], 0.0, self.BAR, rg.PANEL_H), "right": (half[0], 0.0, self.BAR, rg.PANEL_H),
-                      "above": (0.0, half[1], rg.PANEL_W, self.BAR), "below": (0.0, -half[1], rg.PANEL_W, self.BAR)}[zone]
-        self.bar.width, self.bar.height = w, h
-        centre = mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y)))
-        centre = mu.add(centre, mu.mul(pose.n, 0.003))
-        if fade < 1.0:
-            centre = mu.lerp(origin, centre, fade)
-        self.transform.translation.setValue(*centre)
-        self.transform.rotation.setValue(*mu.quat_from_basis(pose.u, pose.v, pose.n))
-        self.switch.whichChild = coin.SO_SWITCH_ALL
+    def show(self, pose, zone, fade):
+        key = (pose.lcentre, pose.lu, zone, fade)
+        if key != self._key:
+            self._key = key
+            half = (rg.PANEL_W / 2 + rg.PANEL_GAP / 2, rg.PANEL_H / 2 + rg.PANEL_GAP / 2)
+            x, y, w, h = {"left": (-half[0], 0.0, self.BAR, rg.PANEL_H), "right": (half[0], 0.0, self.BAR, rg.PANEL_H),
+                          "above": (0.0, half[1], rg.PANEL_W, self.BAR), "below": (0.0, -half[1], rg.PANEL_W, self.BAR)}[zone]
+            self._width.setValue(w)
+            self._height.setValue(h)
+            centre = mu.add(pose.lcentre, mu.add(mu.mul(pose.lu, x), mu.mul(pose.lv, y)))
+            centre = mu.add(centre, mu.mul(pose.ln, MARKER_LIFT))
+            self._move.setValue(*(centre if fade >= 1.0 else mu.mul(centre, fade)))
+            self._turn.setValue(*mu.quat_from_basis(pose.lu, pose.lv, pose.ln))
+        self.shown.set(True)
 
 
 class RingView:
     def __init__(self):
         self.root = coin.SoSwitch()
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show = style.Show(self.root)
         sep = coin.SoSeparator()
         pick = coin.SoPickStyle()
         pick.style = coin.SoPickStyle.UNPICKABLE
@@ -299,18 +457,25 @@ class RingView:
         light.model = coin.SoLightModel.BASE_COLOR
         sep.addChild(light)
         sep.addChild(style.font())
+        self._carousel = coin.SoSeparator()      # everything that turns with the controller: one transform places all of it
+        frame = coin.SoTransform()
+        self._frame_at, self._frame_turn = frame.translation, frame.rotation
+        self._frame_key = None
+        self._carousel.addChild(frame)
         self._panels_sep = coin.SoSeparator()
-        sep.addChild(self._panels_sep)
+        self._carousel.addChild(self._panels_sep)
         self._ghosts = {}                # side -> ghost slot of an empty side
         self._ghost_sep = coin.SoSeparator()
-        sep.addChild(self._ghost_sep)
+        self._carousel.addChild(self._ghost_sep)
         self._marker = _Marker()
-        self._card = _Card()
-        sep.addChild(self._marker.switch)
+        self._carousel.addChild(self._marker.switch)
+        sep.addChild(self._carousel)
+        self._card = _Card()                     # in the room: it follows the ray
         sep.addChild(self._card.switch)
         self.root.addChild(sep)
         self._panels = []
         self._built_for = None
+        self._data = None
 
     @staticmethod
     def _signature(layout):
@@ -325,77 +490,97 @@ class RingView:
             self._panels.append(view)
             self._panels_sep.addChild(view.switch)
         self._built_for = self._signature(layout)
+        self._data = None
 
     def needs_build(self, layout):
         return self._built_for != self._signature(layout)
 
-    @staticmethod
-    def _place(view, pose, origin, fade):
-        """Place a panel (or a ghost); it grows from the carousel axis while the carousel fades in."""
-        centre = pose.centre if fade >= 1.0 else mu.lerp(origin, pose.centre, fade)
-        view.move.setValue(*centre)
-        view.turn.setValue(*mu.quat_from_basis(pose.u, pose.v, pose.n))
-        s = 0.5 + 0.5 * fade
-        if s != view.size:
-            view.size = s
-            view.scale.setValue(s, s, s)
+    def _refresh(self, view, index, name, ring, result, active_actions, labels, sliders, titles, readouts):
+        """The contents of one panel: titles, sliders, readouts and the state of each face."""
+        view.set_title((titles or {}).get(name, name))
+        for row, (slider_view, face_id) in view.sliders.items():
+            fraction, text, *picked = (sliders or {}).get(face_id, (0.0, "-"))
+            hovered = result.hover == (index, row * lay.COLS)
+            slider_view.set(fraction, text, hovered, hovered and ring.slider_drag is not None, bool(picked and picked[0]),
+                            result.bar_hover == (index, row * lay.COLS))
+        for row, (readout_view, face_id) in view.readouts.items():
+            readout_view.set(*(readouts or {}).get(face_id, ("-", "-", False)))
+        for slot, (cell, face) in enumerate(view.cells):
+            if cell is None:
+                continue
+            hovered = result.hover == (index, slot)
+            active = face is not None and face.action in active_actions
+            if face is not None and labels and face.id in labels:
+                cell.set_label(labels[face.id])
+            cell.set_state(hovered, active, face is not None, result.lifted_face == (index, slot),
+                           result.face_target == (index, slot), face is not None and face.kind == "display")
 
-    def update(self, ring, result, layout, faces, head, active_actions=(), labels=None, sliders=None, titles=None):
+    def update(self, ring, result, layout, faces, head, active_actions=(), labels=None, sliders=None, titles=None, readouts=None):
         if ring.fade <= 0.02:
-            self.root.whichChild = coin.SO_SWITCH_NONE
+            self._show.set(False)
             return
         if self.needs_build(layout):
             self.build(layout, faces)
-        self.root.whichChild = coin.SO_SWITCH_ALL
+        self._show.set(True)
+        frame = ring.frame
+        key = (frame.origin, frame.orientation)
+        if key != self._frame_key:
+            self._frame_key = key
+            self._frame_at.setValue(*frame.origin)
+            self._frame_turn.setValue(*frame.orientation)
+        fade = ring.fade
+        # the head in the frame of the carousel: whether a panel faces it is then a dot product with no panel pose worked out
+        d = mu.sub(head, frame.origin)
+        head_local = (mu.dot(d, frame.right), mu.dot(d, frame.up), mu.dot(d, frame.back))
+        data = (frozenset(active_actions), dict(labels or {}), dict(sliders or {}), dict(titles or {}), dict(readouts or {}))
+        same = data == self._data
+        self._data = data
+        hover, hover_title, lifted_face, face_target = result.hover, result.hover_title, result.lifted_face, result.face_target
+        drag = ring.slider_drag is not None
         for index, view in enumerate(self._panels):
             pose = ring.poses.get(index)
             if pose is None:
-                view.switch.whichChild = coin.SO_SWITCH_NONE
+                view.shown.set(False)
                 continue
-            view.switch.whichChild = coin.SO_SWITCH_ALL
-            self._place(view, pose, ring.origin, ring.fade)
+            view.shown.set(True)
+            view.place.set(pose, fade)
             under_ray = result.drop_marker is not None and result.drop_marker[0] == index
             view.back_color.set(view.palette.plate_lit if under_ray else view.palette.plate)
-            view.set_facing(mu.dot(mu.sub(head, pose.centre), pose.n) > 0.0)
-            if not view.facing:
-                continue                                   # seen from behind: only the plate shows
-            view.title_color.set(style.HOVER if result.hover_title == index else view.palette.title)
-            text = (titles or {}).get(layout.pages[index].name, layout.pages[index].name)
-            if text != view.title_text:
-                view.title_text = text
-                view.title.string = text
-            for row, (slider_view, face_id) in view.sliders.items():
-                fraction, text, *picked = (sliders or {}).get(face_id, (0.0, "-"))
-                hovered = result.hover == (index, row * lay.COLS)
-                slider_view.set(fraction, text, hovered, hovered and ring.slider_drag is not None, bool(picked and picked[0]),
-                                result.bar_hover == (index, row * lay.COLS))
-            for slot, (cell, face) in enumerate(view.cells):
-                if cell is None:
-                    continue
-                hovered = result.hover == (index, slot)
-                active = face is not None and face.action in active_actions
-                if face is not None and labels and face.id in labels:
-                    cell.set_label(labels[face.id])
-                cell.set_state(hovered, active, face is not None, result.lifted_face == (index, slot),
-                               result.face_target == (index, slot))
+            lc, ln = pose.lcentre, pose.ln
+            facing = (head_local[0] - lc[0]) * ln[0] + (head_local[1] - lc[1]) * ln[1] + (head_local[2] - lc[2]) * ln[2] > 0.0
+            view.set_facing(facing)
+            if facing:                                     # seen from behind: only the plate shows
+                state = (hover[1] if hover is not None and hover[0] == index else None, hover_title == index,
+                         lifted_face[1] if lifted_face is not None and lifted_face[0] == index else None,
+                         face_target[1] if face_target is not None and face_target[0] == index else None,
+                         result.bar_hover[1] if result.bar_hover is not None and result.bar_hover[0] == index else None,
+                         drag)
+                if not same or state != view.key:
+                    view.key = state
+                    view.title_color.set(style.HOVER if hover_title == index else view.palette.title)
+                    self._refresh(view, index, layout.pages[index].name, ring, result, active_actions, labels, sliders, titles, readouts)
+            else:
+                view.key = None
+            view.flush()
         for side, ghost_view in self._ghosts.items():
             if side not in ring.ghosts:
-                ghost_view.switch.whichChild = coin.SO_SWITCH_NONE
+                ghost_view.shown.set(False)
         for side, ghost in ring.ghosts.items():
             if side not in self._ghosts:
                 self._ghosts[side] = _Ghost()
                 self._ghost_sep.addChild(self._ghosts[side].switch)
             view = self._ghosts[side]
-            view.switch.whichChild = coin.SO_SWITCH_ALL
-            self._place(view, ghost, ring.origin, ring.fade)
+            view.shown.set(True)
+            view.place.set(ghost, fade)
             view.set_label(_Ghost.FACE_LABEL if result.lifted_face is not None else _Ghost.PANEL_LABEL)
             over = result.drop_marker is not None and result.drop_marker[0] is None and result.drop_marker[2] == side
             view.color.set(style.HOVER if over else style.DROP)
+            view.plates.flush()
         marker = result.drop_marker
         if marker is not None and marker[0] is not None and marker[0] in ring.poses:
-            self._marker.show(ring.poses[marker[0]], marker[1], ring.origin, ring.fade)
+            self._marker.show(ring.poses[marker[0]], marker[1], fade)
         else:
-            self._marker.switch.whichChild = coin.SO_SWITCH_NONE
+            self._marker.shown.set(False)
         card = None
         if result.lifted is not None:
             card = layout.pages[result.lifted].name
@@ -403,11 +588,8 @@ class RingView:
             face = faces.get(layout.face_at(*result.lifted_face))
             card = (labels or {}).get(face.id, face.label) if face is not None else None
         if card is not None and result.lift_point is not None:
-            self._card.switch.whichChild = coin.SO_SWITCH_ALL
-            self._card.text.string = card
             up = (0.0, 1.0, 0.0)
             point = mu.add(result.lift_point, mu.mul(up, 0.04))
-            self._card.transform.translation.setValue(*point)
-            self._card.transform.rotation.setValue(*mu.quat_multiply(mu.look_at(point, head), mu.quat_from_axis_angle(up, 3.141592653589793)))
+            self._card.show(card, point, mu.quat_multiply(mu.look_at(point, head), mu.quat_from_axis_angle(up, 3.141592653589793)))
         else:
-            self._card.switch.whichChild = coin.SO_SWITCH_NONE
+            self._card.shown.set(False)

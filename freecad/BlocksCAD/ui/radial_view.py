@@ -32,10 +32,10 @@ CURSOR = 0.012        # edge of the dot that follows the hand
 
 
 def _strip(parent, points, rgb, z):
-    """A filled triangle strip in the plane of the disc; returns its colour node."""
-    sep = coin.SoSeparator()
-    colour = style.color(rgb)
-    sep.addChild(colour)
+    """A filled triangle strip in the plane of the disc; returns its `style.Paint`."""
+    sep = style.cached(coin.SoSeparator())
+    colour = style.Paint(rgb)
+    sep.addChild(colour.node)
     coords = coin.SoCoordinate3()
     coords.point.setValues(0, len(points), [(x, y, z) for x, y in points])
     sep.addChild(coords)
@@ -56,13 +56,13 @@ def _disc(radius, steps=48):
 
 
 def _text(parent, lines, x, y, z, rgb, factor=1.0):
-    """Lines of text centred on (x, y); returns the colour node."""
-    sep = coin.SoSeparator()
+    """Lines of text centred on (x, y); returns its `style.Paint`."""
+    sep = style.cached(coin.SoSeparator())
     move = coin.SoTranslation()
     move.translation.setValue(x, y + (len(lines) - 1) * 0.5 * style.LINE_HEIGHT * factor - 0.0035 * factor, z)
     sep.addChild(move)
-    colour = style.color(rgb)
-    sep.addChild(colour)
+    colour = style.Paint(rgb)
+    sep.addChild(colour.node)
     sep.addChild(style.text_scale(factor))
     text = coin.SoText3()
     text.justification = coin.SoText3.CENTER
@@ -76,7 +76,7 @@ class RadialView:
     def __init__(self, outer=rd.OUTER, inner=rd.INNER, text_factor=1.0):
         self.outer, self.inner, self.text_factor = outer, inner, text_factor
         self.root = coin.SoSwitch()
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show = style.Show(self.root)
         sep = coin.SoSeparator()
         pick = coin.SoPickStyle()
         pick.style = coin.SoPickStyle.UNPICKABLE
@@ -89,11 +89,12 @@ class RadialView:
         depth.getField("write").setValue(False)
         sep.addChild(depth)
         sep.addChild(style.font())
-        self._transform = coin.SoTransform()
-        sep.addChild(self._transform)
+        transform = coin.SoTransform()
+        self._at, self._turn = transform.translation, transform.rotation
+        sep.addChild(transform)
         self._items = coin.SoSeparator()
         sep.addChild(self._items)
-        hub = coin.SoSeparator()
+        hub = style.cached(coin.SoSeparator())
         hub_move = coin.SoTranslation()
         hub_move.translation.setValue(0.0, 0.0, DEPTH)
         hub.addChild(hub_move)
@@ -101,12 +102,14 @@ class RadialView:
         hub.addChild(style.text_scale(0.9 * text_factor))
         self._hub = coin.SoText3()
         self._hub.justification = coin.SoText3.CENTER
+        self._hub_string = self._hub.string
         hub.addChild(self._hub)
-        self._hub_shift = hub_move
+        self._hub_shift = hub_move.translation
         sep.addChild(hub)
         cursor = coin.SoSeparator()
-        self._cursor_move = coin.SoTranslation()
-        cursor.addChild(self._cursor_move)
+        cursor_move = coin.SoTranslation()
+        self._cursor_at = cursor_move.translation
+        cursor.addChild(cursor_move)
         cursor.addChild(style.color(style.TEXT))
         dot = coin.SoCube()
         dot.width, dot.height, dot.depth = CURSOR, CURSOR, DEPTH
@@ -139,35 +142,35 @@ class RadialView:
     def _write_hub(self, lines):
         if lines != self._hub_lines:
             self._hub_lines = lines
-            self._hub.string.setValues(0, len(lines), lines or [""])
-            self._hub.string.setNum(max(len(lines), 1))
-            self._hub_shift.translation.setValue(0.0, (len(lines) - 1) * 0.5 * style.LINE_HEIGHT * 0.9 - 0.0035, DEPTH)
+            self._hub_string.setValues(0, len(lines), lines or [""])
+            self._hub_string.setNum(max(len(lines), 1))
+            self._hub_shift.setValue(0.0, (len(lines) - 1) * 0.5 * style.LINE_HEIGHT * 0.9 - 0.0035, DEPTH)
 
     def update(self, state, labels, active=None, hub=None, centre=None):
         """Show the disc for a `radial.RadialState`; `labels` are the texts of its items (an empty text is an empty segment),
         `active` flags the items that hold the current value of their option and `hub` the lines of text in the middle. `centre` is
         the label of an item in the hub: it is drawn as a segment of its own, lit while no segment is chosen."""
         if not state.open:
-            self.root.whichChild = coin.SO_SWITCH_NONE
+            self._show.set(False)
             return
         if self._built_for != tuple(labels):
             self._build(labels)
-        self.root.whichChild = coin.SO_SWITCH_ALL
+        self._show.set(True)
         normal = mu.cross(state.right, state.up)
-        self._transform.translation.setValue(*state.centre)
-        self._transform.rotation.setValue(*mu.quat_from_basis(state.right, state.up, normal))
+        self._at.setValue(*state.centre)
+        self._turn.setValue(*mu.quat_from_basis(state.right, state.up, normal))
         reach = math.hypot(*state.cursor)
         scale = min(reach, self.outer) / reach if reach > 1e-9 else 0.0
-        self._cursor_move.translation.setValue(state.cursor[0] * scale, state.cursor[1] * scale, DEPTH)
+        self._cursor_at.setValue(state.cursor[0] * scale, state.cursor[1] * scale, DEPTH)
         self._write_hub(list(hub or lay.wrap_label(centre or "")))
         rgb = style.EMPTY if not centre else style.HOVER if state.selected is None else style.FACE
         if rgb != self._hub_rgb:
             self._hub_rgb = rgb
-            self._hub_plate.rgb = coin.SbColor(*rgb)
+            self._hub_plate.set(rgb)
         for i, (plate, text) in enumerate(self._segments):
             if text is None:
-                plate.rgb = coin.SbColor(*style.EMPTY)
+                plate.set(style.EMPTY)
                 continue
             lit = bool(active and active[i])
-            plate.rgb = coin.SbColor(*(style.HOVER if state.selected == i else style.ACTIVE if lit else style.FACE))
-            text.rgb = coin.SbColor(*(style.TEXT_ON_ACTIVE if lit and state.selected != i else style.TEXT))
+            plate.set(style.HOVER if state.selected == i else style.ACTIVE if lit else style.FACE)
+            text.set(style.TEXT_ON_ACTIVE if lit and state.selected != i else style.TEXT)

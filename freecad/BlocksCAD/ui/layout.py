@@ -41,7 +41,7 @@ class Face:
     id: str
     label: str
     action: str
-    kind: str = "button"   # "button" or "slider" (a slider takes a whole row of its panel)
+    kind: str = "button"   # "button", "slider" or "readout" (these two take a whole row of their panel) or "display" (a cell that only shows a text)
     tip: str = ""          # one line shown as a tooltip while the face is hovered
 
 

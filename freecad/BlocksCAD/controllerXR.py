@@ -25,7 +25,6 @@
 controller is not tracked. The pose of the node comes from the `InputFrame`; picking and the tools never use it."""
 
 from pivy.coin import SoSeparator
-from pivy.coin import SbVec3f, SbRotation
 from pivy.coin import SoTransform
 from pivy.coin import SoPickStyle
 from pivy.coin import SoSwitch, SO_SWITCH_NONE, SO_SWITCH_ALL
@@ -34,13 +33,31 @@ from freecad.BlocksCAD.render.controller_shape import build_fallback
 from freecad.BlocksCAD.render.model_anchor import button_anchor, stage_frame
 
 
+class _PoseWriter:
+    """Writes the pose of a `SoTransform`, with the fields looked up once and only when the pose changes."""
+
+    def __init__(self, transform):
+        self._move, self._turn = transform.translation, transform.rotation
+        self._key = None
+
+    def set(self, position, orientation):
+        key = (tuple(position), tuple(orientation))
+        if key != self._key:
+            self._key = key
+            self._move.setValue(*position)
+            self._turn.setValue(*orientation)
+
+
 class xrController:
     def __init__(self, iden=0):
         self.iden = iden
         # this node contains everything that moves with the controller; a SoSwitch can behave like a standard node
         self.controller_node = SoSwitch()
         self.controller_node.whichChild = SO_SWITCH_ALL
+        self._shown = True
+        self._which = self.controller_node.whichChild
         self.aim_transform = SoTransform()      # the aim pose: where the generated controller shape is drawn
+        self._aim_writer = _PoseWriter(self.aim_transform)
         self.runtime_model = None
         self._aim_pose = None                   # (position, orientation) the generated shape is drawn at, stage frame
         self._model_pose = None                 # the same for the runtime model
@@ -64,6 +81,7 @@ class xrController:
         self.runtime_switch = SoSwitch()
         self.runtime_sep = SoSeparator()
         self.model_transform = SoTransform()
+        self._model_writer = _PoseWriter(self.model_transform)
         self.runtime_sep.addChild(self.model_transform)
         self.runtime_switch.addChild(self.runtime_sep)
         self.runtime_switch.whichChild = SO_SWITCH_NONE
@@ -95,21 +113,15 @@ class xrController:
             anchor = self._anchors[key] = button_anchor(model, names, lift)
         return None if anchor is None else stage_frame(pose, anchor)
 
-    @staticmethod
-    def _set_pose(target, position, orientation):
-        target.translation.setValue(SbVec3f(*position))
-        target.rotation.setValue(SbRotation(*orientation))
-        target.center.setValue(SbVec3f(0, 0, 0))
-
     def update_pose(self, position, orientation):
         """Aim pose in the stage frame: position (x, y, z) and orientation quaternion (x, y, z, w)."""
         self._aim_pose = (tuple(position), tuple(orientation))
-        self._set_pose(self.aim_transform, position, orientation)
+        self._aim_writer.set(position, orientation)
 
     def update_model_pose(self, position, orientation):
         """Pose of the runtime model (stage frame, metres)."""
         self._model_pose = (tuple(position), tuple(orientation))
-        self._set_pose(self.model_transform, position, orientation)
+        self._model_writer.set(position, orientation)
 
     def apply_node_states(self, states):
         """Animate the runtime model from `openxr_models.NodeState`s."""
@@ -125,7 +137,11 @@ class xrController:
         return self.controller_node
 
     def show_controller(self):
-        self.controller_node.whichChild = SO_SWITCH_ALL
+        if not self._shown:
+            self._shown = True
+            self._which.setValue(SO_SWITCH_ALL)
 
     def hide_controller(self):
-        self.controller_node.whichChild = SO_SWITCH_NONE
+        if self._shown:
+            self._shown = False
+            self._which.setValue(SO_SWITCH_NONE)

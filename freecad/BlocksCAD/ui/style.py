@@ -134,6 +134,30 @@ class Paint:
             self._field.setValue(*rgb)
 
 
+def cached(sep):
+    """Make a `SoSeparator` keep a display list of its subgraph (`renderCaching` ON) and return it. Coin's automatic caching does not
+    engage in the XR render loop, and an uncached `SoText3` costs about 0.2 ms of CPU every frame and eye, so every separator that
+    holds text or a panel's rectangles is cached explicitly: it is compiled once and again only when something below it changes."""
+    sep.renderCaching = coin.SoSeparator.ON
+    return sep
+
+
+class Show:
+    """The visibility of a `SoSwitch` that holds one subgraph: all of it or none. The field is looked up once (looking a pivy field up
+    costs about 20 microseconds) and written only when the visibility changes."""
+
+    def __init__(self, switch, on=False):
+        self.node = switch
+        self._field = switch.whichChild
+        self.on = None
+        self.set(on)
+
+    def set(self, on):
+        if on is not self.on:
+            self.on = on
+            self._field.setValue(coin.SO_SWITCH_ALL if on else coin.SO_SWITCH_NONE)
+
+
 def text_scale(factor=1.0):
     node = coin.SoScale()
     s = TEXT_SCALE * factor

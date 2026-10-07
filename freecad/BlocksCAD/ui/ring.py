@@ -47,11 +47,14 @@ TITLE_Y = (GRID_Y + GRID_H / 2 + 0.003, GRID_Y + GRID_H / 2 + 0.024)   # title b
 PANEL_GAP = 0.008
 FORWARD = 0.09         # distance of the carousel centre in front of the grip point, along the controller
 RADIUS_MIN = 0.09      # distance of the side planes from the controller axis
-GAZE_COS = math.cos(math.radians(35.0))
+GAZE_SHOW = math.radians(35.0)    # the carousel appears when the gaze is this close (radians) to the controller or the centre of a panel
+GAZE_STAY = math.radians(48.0)    # and, once shown, stays until the gaze is this far from them
+GAZE_BUSY = math.radians(75.0)    # while the pointer works on it, it stays until the gaze is this far from them
 GAZE_RANGE = (0.12, 0.95)
 FLICK_ON, FLICK_OFF = 0.65, 0.3
 FADE_RATE = 8.0        # per second
 TURN_RATE = 14.0       # exponential approach rate of the carousel angle
+TURN_SNAP = 1e-4       # radians: the carousel is at its angle from here
 POINT_COS = -0.3       # sides turned further away than this cannot be pointed at
 EDGE_ZONE = 0.5        # while lifting: the outer quarter above and below a panel (fraction of its half height)
 SLIDER_PAD = 0.010     # the track of a slider ends this far inside the grid
@@ -64,15 +67,64 @@ HOLD_LIFT = 0.4        # seconds the trigger is held on a face before the face i
 DropTarget = Tuple[int, int, Optional[int], bool]    # (side, row, page to insert before or None, new row at `row`)
 
 
-@dataclass
+class Frame:
+    """The frame of the carousel in the room: the origin on its axis and the directions of its right, up and back (towards the wrist).
+    Local coordinates (x right, y up, z back) turn with the controller."""
+    __slots__ = ("origin", "right", "up", "back", "orientation")
+
+    def __init__(self, origin, right, up, back, orientation):
+        self.origin, self.right, self.up, self.back, self.orientation = origin, right, up, back, orientation
+
+    def point(self, local):
+        x, y, z = local
+        o, r, u, b = self.origin, self.right, self.up, self.back
+        return (o[0] + r[0] * x + u[0] * y + b[0] * z, o[1] + r[1] * x + u[1] * y + b[1] * z, o[2] + r[2] * x + u[2] * y + b[2] * z)
+
+    def vector(self, local):
+        x, y, z = local
+        r, u, b = self.right, self.up, self.back
+        return (r[0] * x + u[0] * y + b[0] * z, r[1] * x + u[1] * y + b[1] * z, r[2] * x + u[2] * y + b[2] * z)
+
+
 class PanelPose:
-    centre: Tuple[float, float, float]
-    u: Tuple[float, float, float]      # right on the panel as seen from outside
-    v: Tuple[float, float, float]      # up on the panel: the direction the controller points
-    n: Tuple[float, float, float]      # outward normal
-    cos: float = 1.0                   # cosine of the angle of its side from the front: 1 = facing up from the controller
-    side: int = 0                      # carousel side the panel stands on
-    row: int = 0                       # row on the side
+    """Where a panel (or the empty slot of a side) is. The local fields (`lcentre`, `lu`, `lv`, `ln`) are in the frame of the carousel
+    and change only when the carousel turns or its panels change, the room fields (`centre`, `u`, `v`, `n`) are worked out when asked."""
+    __slots__ = ("lcentre", "lu", "lv", "ln", "cos", "side", "row", "_frame", "_centre", "_u", "_v", "_n")
+
+    def __init__(self, local, cos, side, row, frame):
+        self.lcentre, self.lu, self.lv, self.ln = local
+        self.cos = cos                 # cosine of the angle of its side from the front: 1 = facing up from the controller
+        self.side = side               # carousel side the panel stands on
+        self.row = row                 # row on the side
+        self._frame = frame
+        self._centre = self._u = self._v = self._n = None
+
+    @property
+    def centre(self):
+        if self._centre is None:
+            self._centre = self._frame.point(self.lcentre)
+        return self._centre
+
+    @property
+    def u(self):
+        """Right on the panel as seen from outside."""
+        if self._u is None:
+            self._u = self._frame.vector(self.lu)
+        return self._u
+
+    @property
+    def v(self):
+        """Up on the panel: the direction the controller points."""
+        if self._v is None:
+            self._v = self._frame.vector(self.lv)
+        return self._v
+
+    @property
+    def n(self):
+        """Outward normal."""
+        if self._n is None:
+            self._n = self._frame.vector(self.ln)
+        return self._n
 
 
 @dataclass
@@ -150,15 +202,25 @@ class PaletteRing:
         self.can_lift = lambda page, slot: True          # set by the host: whether the slot holds a face that can be lifted
         self.can_drop = lambda src, dst: True            # set by the host: whether a lifted face can go to a slot
         self.fixed_from = None                           # set by the host: pages from this index on are never lifted nor dropped on
+        self.hold_visible = False                        # set by the host: something on the carousel is being worked, so it stays
         self.press: Optional[Tuple[int, int]] = None     # (page, slot) of the face the trigger went down on
         self._press_age = 0.0
         self._press_dead = False                         # the pointer left the face: the press does nothing
         self.slider_rows: Dict[int, Dict[int, str]] = {}   # page -> row of the grid -> face id, for the rows that hold a slider
+        self.readout_rows: Dict[int, Dict[int, str]] = {}  # the same for the rows that hold a readout: one face over the whole row
         self.slider_drag: Optional[Tuple[int, int]] = None  # (page, slot) of the slider being dragged
         self.poses: Dict[int, PanelPose] = {}
         self.ghosts: Dict[int, PanelPose] = {}       # empty sides while lifting
         self.origin = (0.0, 0.0, 0.0)  # centre of the carousel axis
+        self.frame: Optional[Frame] = None               # the frame of the carousel in the room (`Frame`), set by `update`
         self.radius = RADIUS_MIN
+        self._sides_version = 0        # counts the changes of `sides`
+        self._structure_version = None  # what `_shown` and `_layouts` were made for
+        self._shown, self._layouts = [], []
+        self._local_angle = None       # the angle `_locals` were made for
+        self._locals, self._local_ghosts = {}, {}   # page / empty side -> (local pose, cos, side, row)
+        self._frame_key = None
+        self._laid = None              # what `poses` and `ghosts` were made from
         self._armed = True             # the stick must return to the centre before the next flick
         self._count = max(1, len(self.sides))
         self._known_count = None
@@ -168,7 +230,10 @@ class PaletteRing:
 
     # structure
     def set_sides(self, sides):
-        self.sides = [[list(r) for r in s] for s in sides]
+        sides = [[list(r) for r in s] for s in sides]
+        if sides != self.sides:
+            self.sides = sides
+            self._sides_version += 1
 
     def display_sides(self):
         """The sides as drawn: without the lifted page, and while lifting with one empty side at the end to start a new side (or, for
@@ -208,36 +273,53 @@ class PaletteRing:
         right, up, forward = mu.rotate(q, (1.0, 0.0, 0.0)), mu.rotate(q, (0.0, 1.0, 0.0)), mu.rotate(q, (0.0, 0.0, -1.0))
         return mu.add(pose.position, mu.mul(forward, FORWARD)), right, up, forward
 
-    def side_frame(self, side, pose):
-        """(centre, u, v, n) of the plane of a carousel side at the current angle."""
-        origin, right, up, forward = self.controller_axes(pose)
-        a = self.angle + side * self.step
-        n = mu.add(mu.mul(up, math.cos(a)), mu.mul(right, math.sin(a)))
-        u = mu.cross(forward, n)
-        return mu.add(origin, mu.mul(n, self.radius)), u, forward, n
+    def _prepare(self):
+        """Work out what depends only on the structure of the sides (the layout of each side, the radius) and on the angle (the local
+        poses of the panels); each is kept until its input changes."""
+        version = (self._sides_version, self.lifted, self.lifted_face is not None)
+        if version != self._structure_version:
+            self._structure_version = version
+            self._shown = self.display_sides()
+            self._layouts = [side_layout(rows) for rows in self._shown]
+            self._count = max(1, len(self._shown))
+            half = max([lo[1] for lo in self._layouts] or [PANEL_W / 2])
+            self.radius = max(RADIUS_MIN, half / math.tan(math.pi / self._count)) if self._count >= 3 else RADIUS_MIN
+            self._local_angle = None
+        if self._local_angle != self.angle:
+            self._local_angle = self.angle
+            self._locals, self._local_ghosts = {}, {}
+            step, radius = self.step, self.radius
+            for side, (rows, (centres, _, _)) in enumerate(zip(self._shown, self._layouts)):
+                a = self.angle + side * step
+                sa, ca = math.sin(a), math.cos(a)
+                # in the frame of the carousel (x right, y up, z back) the side faces (sin a, cos a, 0) and the controller points along -z
+                u, v, n = (ca, -sa, 0.0), (0.0, 0.0, -1.0), (sa, ca, 0.0)
+                if not rows:
+                    self._local_ghosts[side] = (((sa * radius, ca * radius, 0.0), u, v, n), ca, side, 0)
+                for r, row in enumerate(rows):
+                    for page in row:
+                        x, y = centres[page]
+                        self._locals[page] = (((sa * radius + ca * x, ca * radius - sa * x, -y), u, v, n), ca, side, r)
 
-    def _pose_at(self, side, row, x, y, pose):
-        centre, u, v, n = self.side_frame(side, pose)
-        a = self.angle + side * self.step
-        return PanelPose(mu.add(centre, mu.add(mu.mul(u, x), mu.mul(v, y))), u, v, n, math.cos(a), side, row)
+    def _frame_for(self, pose):
+        """The `Frame` of the carousel for a palette controller pose (the same object while the controller does not move)."""
+        key = (pose.position, pose.orientation)
+        if key != self._frame_key:
+            self._frame_key = key
+            origin, right, up, forward = self.controller_axes(pose)
+            self.frame = Frame(origin, right, up, (-forward[0], -forward[1], -forward[2]), pose.orientation)
+        self.origin = self.frame.origin
+        return self.frame
 
     def layout_poses(self, pose):
         """Compute the pose of every panel (and of the ghost slots of empty sides while lifting) for a palette controller pose."""
-        shown = self.display_sides()
-        self._count = max(1, len(shown))
-        layouts = [side_layout(rows) for rows in shown]
-        half = max([lo[1] for lo in layouts] or [PANEL_W / 2])
-        self.radius = max(RADIUS_MIN, half / math.tan(math.pi / self._count)) if self._count >= 3 else RADIUS_MIN
-        self.origin = self.controller_axes(pose)[0]
-        self.poses, self.ghosts = {}, {}
-        for side, (rows, (centres, _, _)) in enumerate(zip(shown, layouts)):
-            if not rows:
-                self.ghosts[side] = self._pose_at(side, 0, 0.0, 0.0, pose)
-            for r, row in enumerate(rows):
-                for page in row:
-                    x, y = centres[page]
-                    self.poses[page] = self._pose_at(side, r, x, y, pose)
-        return shown
+        self._prepare()
+        frame = self._frame_for(pose)
+        if self._laid is None or self._laid[0] is not frame or self._laid[1] is not self._locals or self._laid[2] is not self._local_ghosts:
+            self._laid = (frame, self._locals, self._local_ghosts)
+            self.poses = {page: PanelPose(local, cos, side, row, frame) for page, (local, cos, side, row) in self._locals.items()}
+            self.ghosts = {side: PanelPose(local, cos, side, row, frame) for side, (local, cos, side, row) in self._local_ghosts.items()}
+        return self._shown
 
     @staticmethod
     def locate_slot(x, y):
@@ -255,7 +337,8 @@ class PaletteRing:
         if pose is None:
             return None
         row = slot // COLS
-        x = 0.0 if row in self.slider_rows.get(page, ()) else (slot % COLS - (COLS - 1) / 2) * (CELL + GAP)
+        wide = row in self.slider_rows.get(page, ()) or row in self.readout_rows.get(page, ())
+        x = 0.0 if wide else (slot % COLS - (COLS - 1) / 2) * (CELL + GAP)
         y = ((ROWS - 1) / 2 - row) * (CELL + GAP) + GRID_Y
         return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.u, pose.v
 
@@ -284,6 +367,8 @@ class PaletteRing:
             dy = (y - GRID_Y) - ((ROWS - 1) / 2 - row) * (CELL + GAP)
             return Hit("slider", pose.side, pose.row, page, row * COLS, point, distance, zone, slider_along(x),
                        BAR_BAND[0] <= dy <= BAR_BAND[1])
+        if slot is not None and slot // COLS in self.readout_rows.get(page, ()):
+            slot = slot // COLS * COLS                   # a readout is one face over its whole row
         return Hit("face" if slot is not None else "body", pose.side, pose.row, page, slot, point, distance, zone)
 
     def hit_test(self, origin, direction):
@@ -364,18 +449,36 @@ class PaletteRing:
             self.slider_drag = None
         return result
 
-    def wants_visible(self, origin, head, head_orientation):
+    def gaze_angle(self, origin, head, head_orientation):
+        """The angle (radians) between the gaze and the nearest of the carousel axis and the panels' centres, None when the axis is too
+        near or too far from the head to be looked at. The panels count, not only the axis: the panels of the values are a column
+        over half a metre long, and its far end is looked at from the side of the hand."""
         to_ctrl = mu.sub(origin, head)
         dist = mu.length(to_ctrl)
         if not GAZE_RANGE[0] <= dist <= GAZE_RANGE[1]:
-            return False
+            return None
         forward = mu.rotate(head_orientation, (0.0, 0.0, -1.0))
-        return mu.dot(forward, mu.mul(to_ctrl, 1.0 / dist)) >= GAZE_COS
+        best = mu.dot(forward, mu.mul(to_ctrl, 1.0 / dist))
+        if self.frame is not None:
+            for local, *_ in self._locals.values():
+                to_panel = mu.sub(self.frame.point(local[0]), head)
+                d = mu.length(to_panel)
+                if d > 1e-6:
+                    best = max(best, mu.dot(forward, mu.mul(to_panel, 1.0 / d)))
+        return math.acos(max(-1.0, min(1.0, best)))
+
+    def wants_visible(self, origin, head, head_orientation, shown=False, busy=False):
+        """Whether the gaze asks for the carousel: it appears when the gaze comes within `GAZE_SHOW` of the controller or a panel and,
+        once shown, stays until the gaze is `GAZE_STAY` away (`GAZE_BUSY` while the pointer works on it); the margin keeps it from
+        flickering at the edge."""
+        angle = self.gaze_angle(origin, head, head_orientation)
+        return angle is not None and angle <= (GAZE_BUSY if busy and shown else GAZE_STAY if shown else GAZE_SHOW)
 
     def _hide(self):
         self.hover = self.hover_title = self.lifted = self._target = self.slider_drag = None
         self.lifted_face = self._face_target = self.press = None
         self.poses, self.ghosts = {}, {}
+        self._laid = None
 
     def update(self, frame, navigating=False, pointers=None):
         """One frame. `pointers` holds the `pointing.PointerPose` of each hand; without it the tool hand casts a ray along its aim."""
@@ -391,9 +494,13 @@ class PaletteRing:
 
         if "button1" in palette.pressed:
             self.pinned = not self.pinned
-        self.layout_poses(pose)
+        self._prepare()
+        self._frame_for(pose)
+        # the carousel stays more stubbornly while the pointer works on it (a hover, a press, a drag)
+        busy = (self.hold_visible or self.hover is not None or self.hover_title is not None or self.press is not None
+                or self.slider_drag is not None)
         want = (self.pinned or self.lifted is not None or self.lifted_face is not None
-                or self.wants_visible(self.origin, head, frame.head.orientation)) and not navigating
+                or self.wants_visible(self.origin, head, frame.head.orientation, self.fade > 0.0, busy)) and not navigating
         self.fade = min(1.0, self.fade + FADE_RATE * dt) if want else max(0.0, self.fade - FADE_RATE * dt)
         if self.fade <= 0.0:
             self._hide()
@@ -406,7 +513,6 @@ class PaletteRing:
             self._known_count = self._count
             self.index %= self._count
             self.angle = self.target_angle
-            self.layout_poses(pose)
 
         # stick flick turns the carousel one side
         x = palette.stick[0]
@@ -416,7 +522,8 @@ class PaletteRing:
             result.haptics.append((self.palette_hand, 0.35, 0.025))
         elif abs(x) <= FLICK_OFF:
             self._armed = True
-        self.angle += (self.target_angle - self.angle) * min(1.0, TURN_RATE * dt)
+        gap = self.target_angle - self.angle
+        self.angle = self.target_angle if abs(gap) < TURN_SNAP else self.angle + gap * min(1.0, TURN_RATE * dt)
         self.layout_poses(pose)
 
         # ray hover, activation and rearranging

@@ -17,8 +17,8 @@
 
 `evaluate` reads what the keypad types: numbers with the operators + - * / and brackets and the units mm, cm, m, in and ft, so
 "2 * (3 cm + 4)" is a length. `ValueEditor` is the state of the panel: the values of one object (`ValueTarget`), the value that is
-picked, the text being typed, and the step of the stick. The stick up and down changes the picked value by whole steps, the keypad
-types an expression that is applied with Enter. Every change goes to the target at once, so the object follows in the scene; the
+picked, the text being typed, and the step of the stick and the sliders (one of `VALUE_STEPS`, from 0.01 mm to 100 mm). The stick up and
+down changes the picked value by whole steps, the keypad types an expression that is applied with Enter. Every change goes to the target at once, so the object follows in the scene; the
 target keeps the changes of one gesture (a slider drag, a push of the stick, one Enter) in one transaction that `commit` keeps as
 one undo step. There is no editing mode: the editor follows whatever object is selected and is simply dropped with it."""
 
@@ -27,10 +27,11 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional
 
-from freecad.BlocksCAD.core import snapping, units
+from freecad.BlocksCAD.core import units
 
 UNITS = {"mm": 1.0, "cm": 10.0, "m": 1000.0, "in": 25.4, "ft": 304.8}
 UNIT_CYCLE = ("mm", "cm", "m", "in")       # the unit key turns the unit at the end of the text through these
+VALUE_STEPS = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0)   # millimetres: the steps of the stick and of the sliders
 ENTRY_KEYS = frozenset("0123456789.+-*/()")
 MAX_ENTRY = 40                              # characters
 
@@ -280,7 +281,7 @@ def step_down(value, step):
 
 class ValueEditor:
     """The state of the value panels for one `ValueTarget`. Keys: the characters of `ENTRY_KEYS`, "back", "clear", "unit", "enter"
-    (apply the typed text and keep it), "step+", "step-" and "step" (the next step, round). `message` is the last thing to tell the
+    (apply the typed text and keep it). `message` is the last thing to tell the
     user (None when everything went well); `dirty` says there are changes that `commit` has not kept yet."""
 
     def __init__(self, target, system=units.METRIC_MM, step=10.0):
@@ -290,14 +291,14 @@ class ValueEditor:
         self.fields = target.fields()
         self.selected = 0
         self.entry = None              # the text being typed, None when nothing is
-        self.step_index = min(range(len(snapping.GRID_STEPS)), key=lambda i: abs(snapping.GRID_STEPS[i] - step))
+        self.step_index = min(range(len(VALUE_STEPS)), key=lambda i: abs(math.log(VALUE_STEPS[i] / step)))
         self.message = None
         self.dirty = False             # a value was changed and not kept yet
         self.variables = target.variables()      # (name, millimetres) of the variables that an expression may use
 
     @property
     def step(self):
-        return snapping.GRID_STEPS[self.step_index]
+        return VALUE_STEPS[self.step_index]
 
     @property
     def field(self):
@@ -315,6 +316,17 @@ class ValueEditor:
             self.selected, self.entry = index, None
             return True
         return False
+
+    def select_next(self, direction):
+        """Pick the next (+1) or previous (-1) value, round the ends; returns whether another value is picked."""
+        return self.select((self.selected + direction) % len(self.fields))
+
+    def set_step(self, index):
+        """Choose the step `VALUE_STEPS[index]` (clamped); returns whether it changed."""
+        index = min(max(index, 0), len(VALUE_STEPS) - 1)
+        changed = index != self.step_index
+        self.step_index = index
+        return changed
 
     def _apply(self, value):
         """Set the picked field; returns whether the object took it."""
@@ -463,13 +475,6 @@ class ValueEditor:
         elif key == "unbind":
             self._unbind()
             self.commit()
-        elif key in ("step+", "step-"):
-            index = self.step_index + (1 if key == "step+" else -1)
-            if not 0 <= index < len(snapping.GRID_STEPS):
-                return False
-            self.step_index = index
-        elif key == "step":                      # the next step, the smallest again after the largest
-            self.step_index = (self.step_index + 1) % len(snapping.GRID_STEPS)
         else:
             raise ValueError(f"unknown key '{key}'")
         return True

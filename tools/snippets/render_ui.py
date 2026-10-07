@@ -420,7 +420,7 @@ try:
         _s.input.set_hand(1, grip=0.0, trigger=0.0)
         _s.frame(0.02)
         _pk.clear_selection()
-        # the value panels: they follow the selection, so selecting the box adds a side with the panels Values, Number pad and Keys to the carousel
+        # the value panels: they follow the selection, so selecting the box adds a side with the panels Value, Number pad, Keys and Variables to the carousel
         from freecad.BlocksCAD.cad import picking as _pk
         _pk.set_selection(_temp, [(_temp.Objects[0].Name, "")])
         _cursor((600.0, 0.0, 400.0))

@@ -32,7 +32,7 @@ STEM = (0.4, 0.5, 0.65)
 class Pointer:
     def __init__(self):
         self.root = coin.SoSwitch()
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show = style.Show(self.root)
         sep = coin.SoSeparator()
         pick = coin.SoPickStyle()
         pick.style = coin.SoPickStyle.UNPICKABLE
@@ -44,28 +44,32 @@ class Pointer:
         depth.test.setValue(False)
         depth.getField("write").setValue(False)
         sep.addChild(depth)
-        self._color = style.color(IDLE)
-        sep.addChild(self._color)
+        self._color = style.Paint(IDLE)
+        sep.addChild(self._color.node)
         beam = coin.SoSeparator()
-        self._beam_xf = coin.SoTransform()
-        beam.addChild(self._beam_xf)
+        beam_xf = coin.SoTransform()
+        self._beam_at, self._beam_turn = beam_xf.translation, beam_xf.rotation
+        beam.addChild(beam_xf)
         self._beam = coin.SoCylinder()
         self._beam.radius = BEAM_RADIUS
+        self._beam_height = self._beam.height
         beam.addChild(self._beam)
         sep.addChild(beam)
         dot = coin.SoSeparator()
-        self._dot_xf = coin.SoTranslation()
-        dot.addChild(self._dot_xf)
+        dot_xf = coin.SoTranslation()
+        self._dot_at = dot_xf.translation
+        dot.addChild(dot_xf)
         self._dot = coin.SoSphere()
         self._dot.radius = DOT_RADIUS
         dot.addChild(self._dot)
         self._dot_switch = coin.SoSwitch()
         self._dot_switch.addChild(dot)
+        self._dot_show = style.Show(self._dot_switch)
         sep.addChild(self._dot_switch)
         self.root.addChild(sep)
 
     def hide(self):
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show.set(False)
 
     def show(self, origin, direction, end=None):
         """Draw the beam from `origin` along `direction` (unit vector), ending at the point `end` when it hits something."""
@@ -74,14 +78,14 @@ class Pointer:
             self.hide()
             return
         middle = mu.add(origin, mu.mul(direction, length / 2))
-        self._beam.height = length
-        self._beam_xf.translation.setValue(*middle)
-        self._beam_xf.rotation.setValue(*mu.quat_between((0.0, 1.0, 0.0), direction))
-        self._color.rgb = coin.SbColor(*(HIT if end is not None else IDLE))
-        self._dot_switch.whichChild = coin.SO_SWITCH_ALL if end is not None else coin.SO_SWITCH_NONE
+        self._beam_height.setValue(length)
+        self._beam_at.setValue(*middle)
+        self._beam_turn.setValue(*mu.quat_between((0.0, 1.0, 0.0), direction))
+        self._color.set(HIT if end is not None else IDLE)
+        self._dot_show.set(end is not None)
         if end is not None:
-            self._dot_xf.translation.setValue(*end)
-        self.root.whichChild = coin.SO_SWITCH_ALL
+            self._dot_at.setValue(*end)
+        self._show.set(True)
 
 
 class _TipShape:
@@ -102,17 +106,20 @@ class _TipShape:
         stem = coin.SoSeparator()
         self._stem_color = style.color(self._shade(STEM))
         stem.addChild(self._stem_color)
-        self._stem_xf = coin.SoTransform()
-        stem.addChild(self._stem_xf)
+        stem_xf = coin.SoTransform()
+        self._stem_at, self._stem_turn = stem_xf.translation, stem_xf.rotation
+        stem.addChild(stem_xf)
         self._stem = coin.SoCone()           # the apex is at +Y: it is turned to point at the tip
         self._stem.bottomRadius = TipMarker.BASE_RADIUS
+        self._stem_height = self._stem.height
         stem.addChild(self._stem)
         self.sep.addChild(stem)
         tip = coin.SoSeparator()
-        self._color = style.color(self._shade(IDLE))
-        tip.addChild(self._color)
-        self._tip_xf = coin.SoTranslation()
-        tip.addChild(self._tip_xf)
+        self._color = style.Paint(self._shade(IDLE))
+        tip.addChild(self._color.node)
+        tip_xf = coin.SoTranslation()
+        self._tip_at = tip_xf.translation
+        tip.addChild(tip_xf)
         sphere = coin.SoSphere()
         sphere.radius = TipMarker.TIP_RADIUS
         tip.addChild(sphere)
@@ -126,14 +133,13 @@ class _TipShape:
         length = mu.length(span)
         if length > 1e-3:
             direction = mu.mul(span, 1.0 / length)
-            self._stem.height = length
-            self._stem_xf.translation.setValue(*mu.add(start, mu.mul(span, 0.5)))
-            self._stem_xf.rotation.setValue(*mu.quat_between((0.0, 1.0, 0.0), direction))
-            self._stem_xf.scaleFactor.setValue(1.0, 1.0, 1.0)
+            self._stem_height.setValue(length)
+            self._stem_at.setValue(*mu.add(start, mu.mul(span, 0.5)))
+            self._stem_turn.setValue(*mu.quat_between((0.0, 1.0, 0.0), direction))
         else:
-            self._stem.height = 1e-4
-        self._tip_xf.translation.setValue(*tip)
-        self._color.rgb = coin.SbColor(*self._shade(HIT if touching else IDLE))
+            self._stem_height.setValue(1e-4)
+        self._tip_at.setValue(*tip)
+        self._color.set(self._shade(HIT if touching else IDLE))
 
 
 class TipMarker:
@@ -146,7 +152,7 @@ class TipMarker:
 
     def __init__(self):
         self.root = coin.SoSwitch()
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show = style.Show(self.root)
         sep = coin.SoSeparator()
         pick = coin.SoPickStyle()
         pick.style = coin.SoPickStyle.UNPICKABLE
@@ -158,10 +164,10 @@ class TipMarker:
         self.root.addChild(sep)
 
     def hide(self):
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show.set(False)
 
     def show(self, start, tip, touching=False):
         """Draw the tip at `tip` with its cone from `start` (the controller)."""
         for shape in self._passes:
             shape.show(start, tip, touching)
-        self.root.whichChild = coin.SO_SWITCH_ALL
+        self._show.set(True)

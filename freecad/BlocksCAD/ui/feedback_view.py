@@ -37,6 +37,22 @@ WRIST_PITCH = 0.028     # metres between stacked toasts on the wrist
 TOOLTIP_LIFT = 0.045    # metres above the centre of a face
 
 
+class _Placement:
+    """The fields of a `SoTransform` that puts a flat label in space, written only when the place changes."""
+
+    def __init__(self, transform):
+        self._at, self._turn, self._scale = transform.translation, transform.rotation, transform.scaleFactor
+        self._key = None
+
+    def set(self, centre, right, up, scale):
+        key = (centre, right, up, scale)
+        if key != self._key:
+            self._key = key
+            self._at.setValue(*centre)
+            self._turn.setValue(*mu.quat_from_basis(right, up, mu.cross(right, up)))
+            self._scale.setValue(scale, scale, scale)
+
+
 class LockIcon:
     """A padlock on a small dark plate, open or closed: the hint over the button that locks a grab to the grid and the angles. It
     lies in the plane of the top of the controller over the button and turns with the controller. Closed is orange (locked),
@@ -46,10 +62,12 @@ class LockIcon:
 
     def __init__(self):
         self.root = coin.SoSwitch()
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show = style.Show(self.root)
         sep = coin.SoSeparator()
-        self._transform = coin.SoTransform()
-        sep.addChild(self._transform)
+        transform = coin.SoTransform()
+        self._transform = transform
+        self._place = _Placement(transform)
+        sep.addChild(transform)
         sep.addChild(style.color(style.PLATE))
         plate = coin.SoCube()
         plate.width = plate.height = self.SIZE
@@ -83,17 +101,19 @@ class LockIcon:
             one.addChild(shackle)
             self._states.addChild(one)
         sep.addChild(self._states)
+        self._closed = self._states.whichChild
+        self._closed_now = None
         self.root.addChild(sep)
 
     def place(self, centre, right, up, closed):
-        self._transform.translation.setValue(*centre)
-        self._transform.rotation.setValue(*mu.quat_from_basis(right, up, mu.cross(right, up)))
-        self._transform.scaleFactor.setValue(self.SCALE, self.SCALE, self.SCALE)
-        self._states.whichChild = 1 if closed else 0
-        self.root.whichChild = coin.SO_SWITCH_ALL
+        self._place.set(centre, right, up, self.SCALE)
+        if closed != self._closed_now:
+            self._closed_now = closed
+            self._closed.setValue(1 if closed else 0)
+        self._show.set(True)
 
     def hide(self):
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show.set(False)
 
 
 class LabelPlate:
@@ -101,15 +121,18 @@ class LabelPlate:
 
     def __init__(self, rgb=style.PLATE, text_rgb=style.TEXT):
         self.root = coin.SoSwitch()
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show = style.Show(self.root)
         sep = coin.SoSeparator()
-        self._transform = coin.SoTransform()
-        sep.addChild(self._transform)
+        transform = coin.SoTransform()
+        self._transform = transform
+        self._place = _Placement(transform)
+        sep.addChild(transform)
         sep.addChild(style.color(rgb))
         self._plate = coin.SoCube()
         self._plate.height, self._plate.depth = HEIGHT, DEPTH
+        self._plate_width = self._plate.width
         sep.addChild(self._plate)
-        text = coin.SoSeparator()
+        text = style.cached(coin.SoSeparator())
         move = coin.SoTranslation()
         move.translation.setValue(0.0, -0.0035, DEPTH * 0.5 + 0.0005)
         text.addChild(move)
@@ -117,6 +140,7 @@ class LabelPlate:
         text.addChild(style.text_scale())
         self._text = coin.SoText3()
         self._text.justification = coin.SoText3.CENTER
+        self._string = self._text.string
         text.addChild(self._text)
         sep.addChild(text)
         self.root.addChild(sep)
@@ -125,17 +149,15 @@ class LabelPlate:
     def set_text(self, text):
         if text != self.label:
             self.label = text
-            self._text.string = text
-            self._plate.width = len(text) * CHAR_WIDTH + 2 * PAD
+            self._string.setValue(text)
+            self._plate_width.setValue(len(text) * CHAR_WIDTH + 2 * PAD)
 
     def place(self, centre, right, up, scale=1.0):
-        self._transform.translation.setValue(*centre)
-        self._transform.rotation.setValue(*mu.quat_from_basis(right, up, mu.cross(right, up)))
-        self._transform.scaleFactor.setValue(scale, scale, scale)
-        self.root.whichChild = coin.SO_SWITCH_ALL
+        self._place.set(centre, right, up, scale)
+        self._show.set(True)
 
     def hide(self):
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show.set(False)
 
 
 def head_axes(head):

@@ -72,6 +72,55 @@ class RingTest(unittest.TestCase):
         self.assertFalse(self.run_frames().visible)
         self.assertEqual(self.ring.fade, 0.0)
 
+    def look_off(self, degrees):
+        """Turn the head about the vertical so that its gaze is `degrees` (within a degree) away from the nearest part of the carousel;
+        returns the angle reached."""
+        origin = self.ring.origin
+        base = mu.normalize(mu.sub(origin, HEAD))
+        best = None
+        for yaw in range(-120, 121):
+            direction = mu.rotate(mu.quat_from_axis_angle((0.0, 1.0, 0.0), math.radians(yaw)), base)
+            self.sim.set_head(look_at_point=mu.add(HEAD, direction))
+            angle = math.degrees(self.ring.gaze_angle(origin, HEAD, self.sim.head.orientation))
+            if best is None or abs(angle - degrees) < abs(best[0] - degrees):
+                best = (angle, yaw)
+        self.sim.set_head(look_at_point=mu.add(HEAD, mu.rotate(mu.quat_from_axis_angle((0.0, 1.0, 0.0), math.radians(best[1])), base)))
+        return best[0]
+
+    def test_the_carousel_appears_inside_a_narrow_gaze_cone_and_stays_inside_a_wider_one(self):
+        self.run_frames()
+        self.look_off(42.0)                                  # between the two cones
+        self.assertTrue(self.run_frames(10).visible)         # shown, so it stays
+        self.look_off(90.0)
+        self.assertFalse(self.run_frames(30).visible)
+        self.look_off(42.0)
+        self.assertFalse(self.run_frames(30).visible)        # hidden, so it does not appear yet
+        self.look_off(30.0)
+        self.assertTrue(self.run_frames(30).visible)
+
+    def test_the_far_end_of_a_long_column_of_panels_keeps_the_carousel_shown(self):
+        self.ring = rg.PaletteRing([[[0]], [[1]], [[2]], [[3], [4], [5], [6]]])
+        self.run_frames(30)
+        far = max(self.ring.poses.values(), key=lambda p: mu.length(mu.sub(p.centre, self.ring.origin))).centre
+        head = (0.05, 1.3, -0.65)                           # beside the far end of the column, as when the values are worked
+        self.sim.set_head(position=head, look_at_point=far)
+        r = self.run_frames(30)
+        self.assertTrue(r.visible)
+        origin_cone = mu.dot(mu.normalize(mu.sub(self.ring.origin, head)), mu.normalize(mu.sub(far, head)))
+        self.assertLess(origin_cone, math.cos(math.radians(35.0)))   # the controller alone is outside the cone: the panel keeps it shown
+
+    def test_working_the_carousel_keeps_it_shown_in_a_wide_cone(self):
+        self.run_frames()
+        self.look_off(60.0)
+        self.assertFalse(self.run_frames(30).visible)
+        self.look_off(30.0)
+        self.run_frames(30)
+        self.look_off(60.0)
+        self.ring.hold_visible = True
+        self.assertTrue(self.run_frames(30).visible)
+        self.ring.hold_visible = False
+        self.assertFalse(self.run_frames(30).visible)
+
     def test_pin_shows_the_ring_without_gaze_and_navigation_hides_it(self):
         self.sim.set_head(look_at_point=(0.0, 1.6, 2.0))
         self.sim.set_hand(0, button1=True)
@@ -386,6 +435,25 @@ class RingTest(unittest.TestCase):
         self.assertAlmostEqual(self.run_tip().slider[2], 0.1, places=4)
         self.sim.set_hand(1, trigger=0.0)
         self.assertEqual(self.run_tip().slider_done, (0, 4))
+
+    def test_a_readout_row_is_one_face_over_the_whole_row_and_is_never_dragged(self):
+        self.ring = rg.PaletteRing([[[0]], [[1]], [[2]]])
+        self.ring.readout_rows = {0: {0: "val.readout"}}
+        self.run_frames(30)
+        pose = self.ring.poses[0]
+        top = rg.GRID_Y + (rg.CELL + rg.GAP)                                      # the middle of the first row
+        for x in (-0.06, 0.0, 0.06):                                              # over the first slot and over the last
+            point = mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, top)))
+            self.aim_at(point, pose.n)
+            r = self.run_frames(1)
+            self.assertEqual(r.hover, (0, 0), x)                                  # the first slot of the row, wherever it is hit
+            self.assertIsNone(r.slider)
+        self.assertEqual(self.ring.slot_centre(0, 0)[0], mu.add(pose.centre, mu.mul(pose.v, top)))   # centred on the panel
+        self.sim.set_hand(1, trigger=1.0)
+        self.run_frames(1)
+        self.assertIsNone(self.ring.slider_drag)
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertEqual(self.run_frames(1).activated, (0, 0))                    # a tap presses it like a button
 
     def bar_setup(self):
         self.slider_setup()

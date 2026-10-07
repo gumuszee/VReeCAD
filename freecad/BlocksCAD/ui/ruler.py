@@ -65,9 +65,10 @@ class _LineSet:
 class _Label:
     def __init__(self, parent):
         self.switch = coin.SoSwitch()
-        self.switch.whichChild = coin.SO_SWITCH_NONE
+        self._on = style.Show(self.switch)
         sep = coin.SoSeparator()
         self.transform = coin.SoTransform()
+        self._at, self._turn = self.transform.translation, self.transform.rotation
         sep.addChild(self.transform)
         plate_sep = coin.SoSeparator()
         plate_sep.addChild(style.color(style.PLATE))
@@ -107,18 +108,18 @@ class _Label:
             height = len(lines) * style.LINE_HEIGHT * factor
             self.plate.width = max(len(line) for line in lines) * CHAR_W * factor + 0.012
             self.plate.height = height + 0.008
-        self.transform.translation.setValue(*position)
-        self.transform.rotation.setValue(*rotation)
-        self.switch.whichChild = coin.SO_SWITCH_ALL
+        self._at.setValue(*position)
+        self._turn.setValue(*rotation)
+        self._on.set(True)
 
     def hide(self):
-        self.switch.whichChild = coin.SO_SWITCH_NONE
+        self._on.set(False)
 
 
 class Ruler:
     def __init__(self):
         self.root = coin.SoSwitch()
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show = style.Show(self.root)
         sep = coin.SoSeparator()
         pick = coin.SoPickStyle()
         pick.style = coin.SoPickStyle.UNPICKABLE
@@ -141,7 +142,7 @@ class Ruler:
         self.root.addChild(sep)
 
     def hide(self):
-        self.root.whichChild = coin.SO_SWITCH_NONE
+        self._show.set(False)
 
     def update(self, left, right, head, scale, mm_to_stage, system, level, locked=False):
         """Draw the ruler between the hand positions `left` and `right` (stage metres). `scale` is the world scale (stage metres per
@@ -151,7 +152,7 @@ class Ruler:
         if distance < 0.03:
             self.hide()
             return
-        self.root.whichChild = coin.SO_SWITCH_ALL
+        self._show.set(True)
         direction = mu.mul(span, 1.0 / distance)
         middle = mu.lerp(left, right, 0.5)
         to_head = mu.sub(head.position, middle)
@@ -208,7 +209,7 @@ class Ruler:
 
     def show_single(self, hand, head, scale, level, locked):
         """With one grip there is no span to measure: only the scale ratio and the modes float above the gripping hand."""
-        self.root.whichChild = coin.SO_SWITCH_ALL
+        self._show.set(True)
         self._outline.set([])
         self._lines.set([])
         for label in self._labels:
