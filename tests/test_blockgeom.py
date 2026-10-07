@@ -149,5 +149,38 @@ class TextTest(unittest.TestCase):
         self.assertEqual(bg.faces_to_text([(0, 3, 2, 1)]), ["0 3 2 1"])
 
 
+
+class FlatFacesTest(unittest.TestCase):
+    def test_a_corner_of_a_box_is_held_by_the_planes_of_its_three_faces(self):
+        vertices, faces = bg.box((0, 0, 0), (100, 100, 100))
+        planes = bg.face_planes(vertices, faces, 1)
+        self.assertEqual(len(planes), 3)
+        point = bg.constrain_to_planes((130.0, -20.0, 40.0), planes)
+        self.assertEqual(tuple(round(c, 9) for c in point), (100.0, 0.0, 0.0))
+
+    def test_a_point_on_an_edge_moves_along_the_edge_and_in_a_face_in_the_plane_of_the_face(self):
+        vertices, faces = bg.box((0, 0, 0), (100, 100, 100))
+        vertices, faces, index = bg.split_edge(vertices, faces, 0, 1, (50.0, 0.0, 0.0))
+        planes = bg.face_planes(vertices, faces, index)
+        self.assertEqual(len(planes), 2)
+        point = bg.constrain_to_planes((80.0, -30.0, 10.0), planes)
+        self.assertEqual(tuple(round(c, 9) for c in point), (80.0, 0.0, 0.0))
+        self.assertEqual(tuple(round(c, 9) for c in bg.constrain_to_planes((80.0, -30.0, 10.0), planes[:1])[:1]), (80.0,))
+        one = bg.constrain_to_planes((80.0, -30.0, 10.0), [((0.0, 0.0, 1.0), (0.0, 0.0, 5.0))])
+        self.assertEqual(one, (80.0, -30.0, 5.0))
+
+    def test_triangles_and_corners_on_a_line_set_no_plane(self):
+        vertices = [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (0.0, 10.0, 0.0), (0.0, 0.0, 10.0)]
+        faces = [(0, 2, 1), (0, 1, 3), (1, 2, 3), (0, 3, 2)]                    # a tetrahedron: only triangles
+        self.assertEqual(bg.face_planes(vertices, faces, 0), [])
+        self.assertEqual(bg.constrain_to_planes((3.0, 4.0, 5.0), []), (3.0, 4.0, 5.0))
+        line = bg.face_planes([(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0), (5.0, 5.0, 5.0)], [(0, 1, 2, 3)], 3)
+        self.assertEqual(line, [])
+
+    def test_planes_that_run_along_each_other_count_once(self):
+        planes = [((0.0, 0.0, 1.0), (0.0, 0.0, 5.0)), ((0.0, 0.0, -1.0), (1.0, 1.0, 5.0)), ((1.0, 0.0, 0.0), (7.0, 0.0, 0.0))]
+        self.assertEqual(bg.constrain_to_planes((1.0, 2.0, 9.0), planes), (7.0, 2.0, 5.0))
+
+
 if __name__ == "__main__":
     unittest.main()

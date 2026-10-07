@@ -1200,6 +1200,23 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(len(made.Vertices), 8)
         self.assertEqual(len(made.Shape.Faces), 6)
 
+    def test_with_flat_faces_a_dragged_corner_stays_in_its_planes_and_the_block_keeps_its_faces(self):
+        from freecad.BlocksCAD.cad import block
+        made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        s = self.session()
+        s.select_tool("points")
+        s.tool_manager.active.values["faces"] = "Flat"
+        s.tool_manager.active.values["mode"] = "Split"
+        self.hand(1, (450.0, 1.0, 1.0))
+        self.hand(1, (450.0, 1.0, 1.0), trigger=1.0)
+        self.hand(1, (480.0, -30.0, 40.0), trigger=1.0)                                       # off the edge in every direction
+        self.assertTrue(s.ui.gesture_text.endswith("(flat)"), s.ui.gesture_text)
+        self.hand(1, (480.0, -30.0, 40.0), trigger=0.0)
+        vertices, faces = block.read(made)
+        self.assertEqual(tuple(round(c, 6) for c in vertices[8]), (480.0, 0.0, 0.0))          # it slid along the edge
+        self.assertEqual(len(made.Shape.Faces), 6)                                           # no face was cut into triangles
+        self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
+
     def test_the_coordinates_of_a_picked_point_are_values_that_can_be_bound_to_a_variable(self):
         from freecad.BlocksCAD.cad import block, values as object_values, variables
         from freecad.BlocksCAD.core import values as editing

@@ -20,8 +20,11 @@ touches is highlighted (`tools/touch.py`). In the **Move** mode the trigger pres
 cursor, rounded to the grid (the A button held leaves it free), and the block is built again at every step, so the solid follows the
 hand; a position that makes no solid (a block turned inside out, a flat block) is refused and the point stays at the last good one.
 In the **Split** mode the trigger pressed on an edge adds a point on it, where the cursor is nearest, and the drag goes on with that
-new point. Releasing keeps the change as one undo step and selects the block (so the value panels follow it); a grip cancels.
-The stick chooses from an option disc: the grid larger and smaller and the two modes; its click puts the grid and the mode back.
+new point. With the faces **Flat** the dragged point stays in the planes of the faces that have it (every face of four or more corners
+is held flat: the plane of its other corners), so it moves in a plane, along a line or not at all; with **Free** faces a face that
+bends is built from triangles. Releasing keeps the change as one undo step and selects the block (so the value panels follow it); a
+grip cancels. The stick chooses from an option disc: the grid larger and smaller, the two modes and the two kinds of faces; its click
+puts the grid, the mode and the faces back.
 
 Services besides those of `TouchTool`: `blocks`, an object with the functions of `cad.block` that the tool uses (`pick`, `display`,
 `handles`, `signature`, `read`, `apply`, `to_local`, `to_world`), replaced in tests."""
@@ -35,6 +38,7 @@ from freecad.BlocksCAD.tools.touch import TouchTool
 GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
 MODES = ("Move", "Split")
 KINDS = {"Move": "vertex", "Split": "edge"}
+FACES = ("Free", "Flat")
 
 
 @register
@@ -43,7 +47,8 @@ class PointsTool(TouchTool):
     label = "Points"
     hint = "Press on a point of a block and drag it; the stick switches to splitting an edge"
     options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
-               ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES))
+               ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),
+               ToolOption("faces", "Faces", "choice", default=FACES[0], choices=FACES))
 
     def __init__(self, ctx):
         super().__init__(ctx)
@@ -63,16 +68,17 @@ class PointsTool(TouchTool):
         return KINDS[self.values["mode"]]
 
     def disc_slots(self):
-        """The option disc, clockwise from the top: grid up, the two modes, grid down."""
+        """The option disc, clockwise from the top: grid up, the two modes, grid down, free faces, flat faces."""
         return (DiscSlot("Grid +", "grid", 1, "step"), DiscSlot("Move point", "mode", MODES[0]), DiscSlot("Split edge", "mode", MODES[1]),
-                DiscSlot("Grid -", "grid", -1, "step"), DiscSlot(""), DiscSlot(""))
+                DiscSlot("Grid -", "grid", -1, "step"), DiscSlot("Free faces", "faces", FACES[0]), DiscSlot("Flat faces", "faces", FACES[1]))
 
     def disc_hub(self):
-        return [self.values["grid"], self.values["mode"]]
+        return [self.values["grid"], f"{self.values['mode']}, {self.values['faces'].lower()}"]
 
     def stick_click(self):
-        self.values["grid"], self.values["mode"] = (o.default for o in self.options)
-        return "Grid and mode reset"
+        for option in self.options:
+            self.values[option.name] = option.default
+        return "Grid, mode and faces reset"
 
     def _blocks(self):
         service = self._service("blocks")
@@ -166,8 +172,9 @@ class PointsTool(TouchTool):
             vertices, faces, what, label = new_vertices, new_faces, index, "Split"
         else:
             label = "Moved"
+        planes = blockgeom.face_planes(vertices, faces, what) if self.values["faces"] == "Flat" else []
         self._drag = {"name": pick.name, "label": obj.Label, "index": what, "now": vertices[what], "changed": label == "Split",
-                      "verb": label}
+                      "verb": label, "planes": planes}
         self._forget_hover()
         blocks.set_picked(obj, what)                        # the value panels show this point
         self._select(doc, [(pick.name, "")])
@@ -195,6 +202,8 @@ class PointsTool(TouchTool):
             target, guides = self.align(raw, snapping.snap_point(raw, self.grid), (state["name"],))
             self.show_guides(guides, self.grid * 0.5)
         local = tuple(blocks.to_local(obj, target))
+        if state["planes"]:
+            local = blockgeom.constrain_to_planes(local, state["planes"])
         if local != state["now"]:
             vertices, _ = blocks.read(obj)
             error = blocks.apply(doc, obj, blockgeom.move_vertex(vertices, state["index"], local))
@@ -205,7 +214,8 @@ class PointsTool(TouchTool):
                 self._readout(error)
                 return
         world = blocks.to_world(obj, state["now"])
-        self._readout(f"Point {state['index']}: " + ", ".join("0" if abs(c) < 1e-6 else self._format(c) for c in world))
+        held = " (flat)" if state["planes"] else ""
+        self._readout(f"Point {state['index']}: " + ", ".join("0" if abs(c) < 1e-6 else self._format(c) for c in world) + held)
 
     def _finish(self, doc):
         state, self._drag = self._drag, None

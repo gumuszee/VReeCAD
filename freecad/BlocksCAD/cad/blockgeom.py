@@ -218,6 +218,60 @@ def move_vertex(vertices, index, point):
     return moved
 
 
+def face_planes(vertices, faces, index):
+    """The planes that vertex `index` has to stay in for every face that has it to stay flat, as (unit normal, a point) pairs: for a face
+    of four or more corners the plane of its other corners (the best fit of them when there are more than three). A triangle sets no
+    plane, and neither do other corners that lie on a line."""
+    planes = []
+    for face in faces:
+        if index not in face or len(face) < 4:
+            continue
+        others = [vertices[i] for i in face if i != index]
+        normal, centroid = newell(others)
+        if mu.length(normal) > 0.5:                       # `newell` gives the zero vector for corners without area
+            planes.append((normal, centroid))
+    return planes
+
+
+def _solve(matrix, rhs):
+    """The solution of the small linear system `matrix` y = `rhs` by elimination with the largest pivot."""
+    n = len(rhs)
+    rows = [list(matrix[i]) + [rhs[i]] for i in range(n)]
+    for col in range(n):
+        pivot = max(range(col, n), key=lambda r: abs(rows[r][col]))
+        rows[col], rows[pivot] = rows[pivot], rows[col]
+        for r in range(n):
+            if r != col:
+                factor = rows[r][col] / rows[col][col]
+                rows[r] = [a - factor * b for a, b in zip(rows[r], rows[col])]
+    return [rows[i][n] / rows[i][i] for i in range(n)]
+
+
+def constrain_to_planes(point, planes):
+    """The point nearest to `point` that lies in all the `planes` ((unit normal, a point) pairs): the point itself with no plane, in
+    the plane with one, on the line with two, the one corner with three. A plane that runs along one that is kept already is left out."""
+    kept, basis = [], []
+    for normal, origin in planes:
+        residual = normal
+        for q in basis:
+            residual = mu.sub(residual, mu.mul(q, mu.dot(residual, q)))
+        if mu.length(residual) < 1e-6:
+            continue
+        basis.append(mu.mul(residual, 1.0 / mu.length(residual)))
+        kept.append((normal, mu.dot(normal, origin)))
+        if len(kept) == 3:
+            break
+    if not kept:
+        return tuple(point)
+    gram = [[mu.dot(a[0], b[0]) for b in kept] for a in kept]
+    gap = [mu.dot(n, point) - d for n, d in kept]
+    weights = _solve(gram, gap)
+    result = tuple(point)
+    for (normal, _), w in zip(kept, weights):
+        result = mu.sub(result, mu.mul(normal, w))
+    return result
+
+
 def faces_to_text(faces):
     """A list of faces as strings of indices ("0 3 2 1"), the form a FreeCAD property keeps."""
     return [" ".join(str(i) for i in face) for face in faces]

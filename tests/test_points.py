@@ -199,6 +199,25 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(len(self.block.vertices), 9)
         self.assertEqual(self.block.vertices[8], (50.0, 0.0, 0.0))
 
+    def test_flat_faces_hold_a_corner_where_its_faces_are_and_free_faces_let_it_go(self):
+        self.tool.values["faces"] = "Flat"
+        self.drag((130.0, -20.0, 40.0), release=False)
+        self.assertEqual(self.block.vertices[1], (100.0, 0.0, 0.0))                 # three flat faces: the corner cannot move
+        self.assertTrue(self.readouts[-1].endswith("(flat)"))
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.tool.values["faces"] = "Free"
+        self.cursor = [100.0, 0.0, 0.0]
+        self.drag((130.0, -20.0, 40.0))
+        self.assertEqual(self.block.vertices[1], (130.0, -20.0, 40.0))
+
+    def test_a_split_point_slides_along_its_edge_while_the_faces_are_flat(self):
+        self.tool.values["mode"], self.tool.values["faces"] = "Split", "Flat"
+        self.cursor = [50.0, 2.0, 1.0]
+        self.drag((80.0, -30.0, 10.0))
+        self.assertEqual(self.block.vertices[8], (80.0, 0.0, 0.0))
+        self.assertIsNone(bg.validate(self.block.vertices, self.block.faces))
+
     def test_nothing_is_touched_far_from_the_points(self):
         self.cursor = [50.0, 50.0, 50.0]
         self.drag((60.0, 60.0, 60.0))
@@ -209,8 +228,10 @@ class PointsToolTest(unittest.TestCase):
         self.frames()
         self.assertGreater(self.highlights.selected.shown, 0)
         labels = [slot.label for slot in self.tool.disc_slots()]
-        self.assertEqual(labels[:4], ["Grid +", "Move point", "Split edge", "Grid -"])
-        self.assertEqual(self.tool.stick_click(), "Grid and mode reset")
+        self.assertEqual(labels, ["Grid +", "Move point", "Split edge", "Grid -", "Free faces", "Flat faces"])
+        self.tool.values["faces"] = "Flat"
+        self.assertEqual(self.tool.stick_click(), "Grid, mode and faces reset")
+        self.assertEqual(self.tool.values["faces"], "Free")
         self.assertEqual((self.tool.pick_kind, self.tool.grid), ("vertex", 10.0))
         self.tool.values["mode"] = "Split"
         self.assertEqual(self.tool.pick_kind, "edge")
