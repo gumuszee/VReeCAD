@@ -17,10 +17,12 @@
 and the position of any object that has a placement. `ObjectValues` is the `core.values.ValueTarget` for one object: every `set`
 changes the real property and recomputes, inside one transaction that is opened by the first change and kept (one undo step) by
 `commit` or aborted by `cancel`; `source` finds the object to edit in the selection. A value the feature cannot take (a torus whose tube is wider than its ring) is taken back and refused.
+A value may be bound to an expression of the variables of the document (`cad/variables.py`): a slider, the stick or the keypad then edit the
+variable when the value is bound to one variable alone, and refuse when the expression is more than that.
 `field_specs` is pure Python; FreeCAD is only used by the object."""
 
-from freecad.BlocksCAD.cad import edit, picking
-from freecad.BlocksCAD.core.values import Field, ValueTarget
+from freecad.BlocksCAD.cad import edit, picking, variables
+from freecad.BlocksCAD.core.values import Field, ValueTarget, pretty_expression, single_variable
 
 LABELS = {"Radius1": "Radius 1", "Radius2": "Radius 2", "Circumradius": "Radius", "Xmax": "X size", "Ymax": "Y size", "Zmax": "Z size",
           "X2max": "Top X size"}
@@ -68,8 +70,23 @@ class ObjectValues(ValueTarget):
         value = getattr(self.obj, name)
         return float(getattr(value, "Value", value))
 
+    @staticmethod
+    def _path(name):
+        return "Placement.Base." + name[4] if name.startswith("pos.") else name
+
+    def _expressions(self):
+        """Property path -> expression of every bound property of the object (FreeCAD writes a placement path with a leading dot)."""
+        return {path.lstrip("."): expression for path, expression in getattr(self.obj, "ExpressionEngine", [])}
+
     def fields(self):
-        return [Field(name, label, self._current(name), low) for name, label, low in field_specs(self.obj.TypeId)]
+        bound = self._expressions()
+        return [Field(name, label, self._current(name), low, expression=bound.get(self._path(name)))
+                for name, label, low in field_specs(self.obj.TypeId)]
+
+    def _begin(self):
+        if not self._open:
+            self.doc.openTransaction(f"Edit {self.obj.Label}")
+            self._open = True
 
     def _write(self, name, value):
         if name.startswith("pos."):
@@ -80,9 +97,11 @@ class ObjectValues(ValueTarget):
             setattr(self.obj, name, value)
 
     def set(self, name, value):
-        if not self._open:
-            self.doc.openTransaction(f"Edit {self.obj.Label}")
-            self._open = True
+        expression = self._expressions().get(self._path(name))
+        if expression is not None:
+            self._set_variable(expression, value)
+            return
+        self._begin()
         before = self._current(name)
         self._write(name, value)
         self.doc.recompute()
@@ -90,6 +109,53 @@ class ObjectValues(ValueTarget):
             self._write(name, before)
             self.doc.recompute()
             raise ValueError("The shape cannot take that value")
+
+    def _set_variable(self, expression, value):
+        """The value is bound: when it is bound to one variable alone, the variable takes the new value (and with it everything else that
+        is bound to it); any other expression is refused."""
+        variable = single_variable(expression)
+        if variable is None:
+            raise ValueError(f"Bound to {pretty_expression(expression)}: unbind it first")
+        self._begin()
+        before = dict(variables.list_variables(self.doc)).get(variable)
+        variables.set_value(self.doc, variable, value)
+        self.doc.recompute()
+        if not self.obj.isValid():
+            variables.set_value(self.doc, variable, before)
+            self.doc.recompute()
+            raise ValueError("The shape cannot take that value")
+
+    # variables
+    def variables(self):
+        return variables.list_variables(self.doc)
+
+    def bind(self, name, expression, value):
+        self._begin()
+        path = self._path(name)
+        try:
+            self.obj.setExpression(path, expression)
+            self.doc.recompute()
+        except Exception as error:
+            self._unbind_quietly(path)
+            raise ValueError("That expression cannot be used") from error
+        if not self.obj.isValid():
+            self._unbind_quietly(path)
+            raise ValueError("The shape cannot take that value")
+
+    def _unbind_quietly(self, path):
+        try:
+            self.obj.setExpression(path, None)
+        finally:
+            self.doc.recompute()
+
+    def unbind(self, name):
+        self._begin()
+        self.obj.setExpression(self._path(name), None)
+        self.doc.recompute()
+
+    def make_variable(self, name, value):
+        self._begin()
+        variables.define(self.doc, name, value)
 
     def commit(self):
         if self._open:

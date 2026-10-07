@@ -388,6 +388,27 @@ try:
         _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_values.png"))
         print("value panels:", _s.ui.module.editor.target.title, [(f.label, f.value) for f in _s.ui.module.editor.fields][:3], _s.ui.module.editor.entry,
               _s.ui.ring.hover)
+        # the Variables panel: the picked value becomes a variable, a second value is bound to an expression of it
+        _editor = _s.ui.module.editor
+        _editor.entry = None
+        _editor.select(0)
+        _editor.key("makevar")
+        _editor.select(1)
+        _editor.entry = "length * 2 + 10 mm"
+        _editor.key("enter")
+        _s.ui.module.activate("var.0")
+        for _ in range(6):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_variables.png"))
+        _vpage = next(i for i, p in enumerate(_s.ui.shown_layout().pages) if p.name == "Variables")
+        _vc, _, _ = _s.ui.ring.slot_centre(_vpage, 5)
+        _vn = _s.ui.ring.poses[_vpage].n
+        _s.input.set_head(position=_mu.add(_vc, _mu.mul(_vn, 0.45)), look_at_point=_vc)
+        for _ in range(4):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_variables_panel.png"))
+        _s.input.set_head(position=_head, look_at_point=_ctrl)
+        print("variables:", _editor.variables, [(f.label, f.expression) for f in _editor.fields][:3], _editor.entry)
         _pk.clear_selection()
         for _ in range(3):
             _s.frame(0.02)

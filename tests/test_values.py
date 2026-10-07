@@ -72,6 +72,229 @@ class EvaluateTest(unittest.TestCase):
         self.assertEqual(v.cycle_unit("3+"), "3+")
 
 
+class VariableNameTest(unittest.TestCase):
+    def test_a_label_becomes_a_lower_case_name_that_is_not_taken_and_not_a_unit(self):
+        self.assertEqual(v.variable_name("Radius 1", set()), "radius_1")
+        self.assertEqual(v.variable_name("Length", {"length"}), "length2")
+        self.assertEqual(v.variable_name("Length", {"length", "length2"}), "length3")
+        self.assertEqual(v.variable_name("m", set()), "m_value")
+        self.assertEqual(v.variable_name("3d", set()), "v_3d")
+        self.assertEqual(v.variable_name("  ", set()), "value")
+
+    def test_pretty_and_single(self):
+        self.assertEqual(v.pretty_expression("(Variables.width * (2 * 1 mm))"), "width * 2 mm")
+        self.assertEqual(v.pretty_expression("Variables.width"), "width")
+        self.assertEqual(v.pretty_expression("Variables.length * 2 + 10 * 1 mm"), "length * 2 + 10 mm")      # FreeCAD drops brackets
+        self.assertEqual(v.pretty_expression("(a) + (b)"), "(a) + (b)")
+        self.assertEqual(v.single_variable("Variables.width"), "width")
+        self.assertEqual(v.single_variable("(Variables.width)"), "width")
+        self.assertIsNone(v.single_variable("(Variables.width * 2)"))
+        self.assertIsNone(v.single_variable("5 mm"))
+
+
+class VariableExpressionTest(unittest.TestCase):
+    WIDTH = {"width": 50.0, "depth": 30.0}
+
+    def test_a_number_without_variables_has_no_expression(self):
+        self.assertEqual(v.evaluate_bound("2*(3 cm+4)", 1.0, self.WIDTH), (68.0, None))
+
+    def test_a_variable_is_a_length_and_the_expression_refers_to_the_sheet(self):
+        value, expression = v.evaluate_bound("width", 1.0, self.WIDTH)
+        self.assertEqual((value, expression), (50.0, "Variables.width"))
+        value, expression = v.evaluate_bound("width * 2", 1.0, self.WIDTH)
+        self.assertEqual(value, 100.0)
+        self.assertEqual(expression, "(Variables.width * 2)")
+
+    def test_a_plain_number_next_to_a_length_is_written_in_the_default_unit(self):
+        value, expression = v.evaluate_bound("width + 4", 25.4, self.WIDTH)
+        self.assertAlmostEqual(value, 50.0 + 4 * 25.4)
+        self.assertEqual(expression, "(Variables.width + (4 * 25.4 mm))")
+
+    def test_a_plain_result_is_a_length_in_the_default_unit(self):
+        value, expression = v.evaluate_bound("depth / depth * 3", 10.0, self.WIDTH)
+        self.assertEqual(value, 30.0)
+        self.assertTrue(expression.endswith("* 10 mm)"), expression)
+
+    def test_units_in_an_expression_are_written_as_units(self):
+        value, expression = v.evaluate_bound("width + 2 cm", 1.0, self.WIDTH)
+        self.assertEqual(value, 70.0)
+        self.assertEqual(expression, "(Variables.width + (2 * 1 cm))")
+
+    def test_unknown_names_are_refused_and_without_variables_nothing_changes(self):
+        with self.assertRaises(ValueError) as raised:
+            v.evaluate_bound("height * 2", 1.0, self.WIDTH)
+        self.assertEqual(str(raised.exception), "Unknown variable 'height'")
+        with self.assertRaises(ValueError):
+            v.evaluate("width")
+        with self.assertRaises(ValueError):
+            v.evaluate_bound("width * width", 1.0, self.WIDTH)           # a length times a length is not a length
+
+    def test_a_variable_is_not_a_unit_and_a_unit_cannot_follow_a_variable(self):
+        with self.assertRaises(ValueError):
+            v.evaluate_bound("width cm", 1.0, self.WIDTH)
+
+
+class VarTarget(Target):
+    """A fake object whose fields can be bound to variables of a fake document."""
+
+    def __init__(self):
+        super().__init__()
+        self.vars = {"width": 80.0}
+        self.bound = {}                       # field -> expression
+        self.fail_bind = False
+
+    def fields(self):
+        base = super().fields()
+        for field in base:
+            field.expression = self.bound.get(field.name)
+        return base
+
+    def variables(self):
+        return list(self.vars.items())
+
+    def set(self, name, value):
+        expression = self.bound.get(name)
+        if expression is not None:
+            variable = v.single_variable(expression)
+            if variable is None:
+                raise ValueError("Bound to " + v.pretty_expression(expression) + ": unbind it first")
+            self.vars[variable] = value
+            self.values[name] = value
+            self.log.append(("variable", variable, value))
+            return
+        super().set(name, value)
+
+    def bind(self, name, expression, value):
+        if self.fail_bind:
+            raise ValueError("The shape cannot take that value")
+        self.bound[name] = expression
+        self.values[name] = value
+        self.log.append(("bind", name, expression))
+
+    def unbind(self, name):
+        self.bound.pop(name, None)
+        self.log.append(("unbind", name))
+
+    def make_variable(self, name, value):
+        self.vars[name] = value
+        self.log.append(("make", name, value))
+
+
+class VariableEditorTest(unittest.TestCase):
+    def setUp(self):
+        self.target = VarTarget()
+        self.editor = v.ValueEditor(self.target, step=10.0)
+
+    def type(self, text):
+        for key in text:
+            self.editor.key(key)
+
+    def test_the_editor_knows_the_variables(self):
+        self.assertEqual(self.editor.variables, [("width", 80.0)])
+
+    def test_a_variable_key_types_its_name_and_enter_binds_the_expression(self):
+        self.editor.key("var:width")
+        self.type("*2")
+        self.assertEqual(self.editor.entry, "width*2")
+        self.editor.key("enter")
+        self.assertEqual(self.target.bound["a"], "(Variables.width * 2)")
+        self.assertEqual(self.target.values["a"], 160.0)
+        self.assertEqual(self.editor.message, "A = width * 2")
+        self.assertEqual(self.target.log[-1], "commit")
+        self.assertIsNotNone(self.editor.field.expression)
+
+    def test_a_variable_after_a_digit_gets_a_space_and_an_unknown_key_does_nothing(self):
+        self.type("2")
+        self.editor.key("var:width")
+        self.assertEqual(self.editor.entry, "2 width")
+        self.assertFalse(self.editor.key("var:nothing"))
+        self.assertEqual(self.editor.entry, "2 width")
+
+    def test_a_name_that_is_not_known_is_refused_when_typed(self):
+        self.editor.entry = "height"
+        self.editor.key("enter")
+        self.assertEqual(self.editor.message, "Unknown variable 'height'")
+        self.assertEqual(self.editor.entry, "height")
+        self.assertNotIn("a", self.target.bound)
+
+    def test_a_value_the_object_refuses_stays_unbound(self):
+        self.target.fail_bind = True
+        self.editor.key("var:width")
+        self.editor.key("enter")
+        self.assertEqual(self.editor.message, "The shape cannot take that value")
+        self.assertEqual(self.target.bound, {})
+
+    def test_the_stick_and_numbers_edit_the_variable_when_the_value_is_bound_to_it_alone(self):
+        self.editor.key("var:width")
+        self.editor.key("enter")
+        self.assertEqual(self.target.bound["a"], "Variables.width")
+        self.assertTrue(self.editor.nudge(1))
+        self.assertEqual(self.target.vars["width"], 90.0)
+        self.type("120")
+        self.editor.key("enter")
+        self.assertEqual(self.target.vars["width"], 120.0)
+        self.assertEqual(self.target.bound["a"], "Variables.width")
+
+    def test_a_value_bound_to_an_expression_refuses_numbers(self):
+        self.editor.key("var:width")
+        self.type("*2")
+        self.editor.key("enter")
+        self.assertFalse(self.editor.nudge(1))
+        self.assertEqual(self.editor.message, "Bound to width * 2: unbind it first")
+        self.assertEqual(self.target.vars["width"], 80.0)
+
+    def test_make_variable_names_it_after_the_value_binds_and_keeps_one_step(self):
+        self.editor.select(1)
+        self.editor.key("makevar")
+        self.assertEqual(self.target.vars["position_b"], 100.0)          # a one letter label (X, Y, Z) is a position
+        self.assertEqual(self.target.bound["b"], "Variables.position_b")
+        self.assertEqual(self.editor.message, "Variable position_b = 100 mm")
+        self.assertEqual(self.target.log[-3:], [("make", "position_b", 100.0), ("bind", "b", "Variables.position_b"), "commit"])
+        self.assertIn(("position_b", 100.0), self.editor.variables)
+
+    def test_make_variable_takes_a_typed_value_and_never_a_taken_name(self):
+        self.editor.select(1)
+        self.editor.key("makevar")
+        self.editor.select(1)
+        self.editor.key("unbind")
+        self.type("40")
+        self.editor.key("makevar")
+        self.assertEqual(self.target.vars["position_b2"], 40.0)
+        self.assertEqual(self.target.values["b"], 40.0)
+        self.assertIsNone(self.editor.entry)
+
+    def test_make_variable_refuses_an_expression_and_a_value_that_is_bound_to_a_variable_already(self):
+        self.editor.key("var:width")
+        self.type("*2")
+        self.editor.key("makevar")
+        self.assertEqual(self.editor.message, "Type a plain value to make a variable")
+        self.editor.entry = None
+        self.editor.key("var:width")
+        self.editor.key("enter")
+        self.editor.key("makevar")
+        self.assertEqual(self.editor.message, "A is bound to width already")
+
+    def test_a_failed_binding_after_making_the_variable_takes_everything_back(self):
+        self.target.fail_bind = True
+        self.editor.key("makevar")
+        self.assertIn("cancel", self.target.log)
+        self.assertFalse(self.editor.dirty)
+
+    def test_unbind_frees_the_value_and_says_so_when_it_was_not_bound(self):
+        self.editor.key("unbind")
+        self.assertEqual(self.editor.message, "A is not bound")
+        self.editor.key("var:width")
+        self.editor.key("enter")
+        self.editor.key("unbind")
+        self.assertEqual(self.editor.message, "A is a number again")
+        self.assertNotIn("a", self.target.bound)
+
+    def test_the_variables_are_read_again_on_request(self):
+        self.target.vars["depth"] = 30.0
+        self.editor.refresh_variables()
+        self.assertEqual(self.editor.variables, [("width", 80.0), ("depth", 30.0)])
+
+
 class StepTest(unittest.TestCase):
     def test_a_step_goes_to_the_next_multiple(self):
         self.assertEqual(v.step_up(23.0, 10.0), 30.0)

@@ -964,6 +964,66 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.undo()
         self.assertIsNone(self.doc.getObject(names[0]))
 
+    def test_variables_live_in_a_sheet_and_everything_bound_to_one_follows_it(self):
+        from freecad.BlocksCAD.cad import values as object_values, variables
+        from freecad.BlocksCAD.core import values as editing
+        self.assertEqual(variables.list_variables(self.doc), [])
+        target = object_values.ObjectValues(self.doc, self.box)
+        editor = editing.ValueEditor(target, step=10.0)
+        editor.select(0)                                                                     # Length
+        editor.key("makevar")
+        self.assertEqual(editor.message, "Variable length = 100 mm")
+        self.assertEqual(variables.list_variables(self.doc), [("length", 100.0)])
+        self.assertEqual(self.box.ExpressionEngine, [("Length", "Variables.length")])
+        editor.select(1)                                                                     # Width = length * 2 + 10 mm
+        editor.entry = "length * 2 + 10 mm"
+        editor.key("enter")
+        self.assertEqual(editor.message, "Width = (length * 2) + 10 mm")
+        self.assertAlmostEqual(self.box.Width.Value, 210.0)
+        editor.select(0)
+        self.assertTrue(editor.nudge(1))                                                     # the stick edits the variable
+        editor.commit()
+        self.assertEqual(variables.list_variables(self.doc), [("length", 110.0)])
+        self.assertAlmostEqual(self.box.Length.Value, 110.0)
+        self.assertAlmostEqual(self.box.Width.Value, 230.0)                                  # the bound expression followed
+        editor.select(1)
+        self.assertFalse(editor.nudge(1))                                                    # a compound expression is not edited by number
+        self.assertTrue(editor.message.startswith("Bound to"), editor.message)
+        editor.key("unbind")
+        self.assertEqual([e[0] for e in self.box.ExpressionEngine], ["Length"])
+        self.assertAlmostEqual(self.box.Width.Value, 230.0)                                  # it keeps its number
+        self.assertTrue(editor.nudge(1))
+        self.assertAlmostEqual(self.box.Width.Value, 240.0)
+        editor.commit()
+        self.doc.undo()
+        self.assertAlmostEqual(self.box.Width.Value, 230.0)
+        for _ in range(4):                                                                   # unbind, the stick, the width, the variable
+            self.doc.undo()
+        self.assertEqual(variables.list_variables(self.doc), [])                             # the sheet went with its first binding
+        self.assertEqual(self.box.ExpressionEngine, [])
+
+    def test_a_position_can_be_bound_and_a_variable_the_shape_cannot_take_is_refused(self):
+        from freecad.BlocksCAD.cad import values as object_values, variables
+        from freecad.BlocksCAD.core import values as editing
+        editor = editing.ValueEditor(object_values.ObjectValues(self.doc, self.box), step=10.0)
+        editor.select(3)                                                                     # X
+        editor.entry = "40"
+        editor.key("makevar")
+        self.assertEqual(variables.list_variables(self.doc), [("position_x", 40.0)])
+        self.assertAlmostEqual(self.box.Placement.Base.x, 40.0)
+        self.assertEqual(editor.field.expression, "Variables.position_x")
+        editor.select(0)
+        editor.entry = "0"
+        editor.key("makevar")                                                                # a length of zero is not allowed
+        self.assertEqual(editor.message, "Length cannot be that small")
+        self.assertEqual([n for n, _ in variables.list_variables(self.doc)], ["position_x"])
+        editor.entry = "length"
+        editor.key("enter")                                                                  # no such variable
+        self.assertEqual(editor.message, "Unknown variable 'length'")
+        variables.set_value(self.doc, "position_x", 70.0)
+        self.doc.recompute()
+        self.assertAlmostEqual(self.box.Placement.Base.x, 70.0)
+
     def test_a_mirror_is_a_parametric_image_one_gap_beyond_the_object(self):
         from freecad.BlocksCAD.cad import duplicate
         text, names = duplicate.mirror(self.doc, [(self.box.Name, "")], 0)
@@ -1319,7 +1379,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(module.is_open)                                                # no click is needed
         self.assertEqual(module.editor.target.title, self.box.Label)
         self.assertEqual([f.label for f in module.editor.fields], ["Length", "Width", "Height", "X", "Y", "Z"])
-        self.assertEqual([p.name for p in s.ui.shown_layout().pages][-3:], ["Values", "Number pad", "Keys"])
+        self.assertEqual([p.name for p in s.ui.shown_layout().pages][-4:], ["Values", "Number pad", "Keys", "Variables"])
         self.assertEqual(len(s.ui.ring.display_sides()), sides + 1)
         self.assertEqual(s.ui.ring.front_side(), sides)                                # the carousel turned to them
         self.assertEqual(s.ui.view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)

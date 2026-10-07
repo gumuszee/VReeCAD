@@ -13,14 +13,15 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""The value module: three panels on a carousel side of their own that follow the selection (docs/ux-design.md, Value panels). No
+"""The value module: four panels on a carousel side of their own that follow the selection (docs/ux-design.md, Value panels). No
 Coin, OpenXR or FreeCAD imports.
 
-While an editable object is selected the carousel of the palette hand has one more side with three ordinary panels, so they are
+While an editable object is selected the carousel of the palette hand has one more side with four ordinary panels, so they are
 pointed at, hovered and pressed with the laser or the tip like the others: **Values** holds three sliders (the values of the
 object, three at a time), **Number pad** the digits with Del, Enter and Unit, **Keys** the rest (0, the point, the operators,
-brackets, Clear, the step and the next three values). The title of the Values panel names the object and the title of the Number
-pad shows the picked value and what is being typed. There is no editing mode: selecting another object rebinds the panels, clearing
+brackets, Clear, the step and the next three values) and **Variables** the named lengths of the document (eight at a time, a press
+types the name into the expression) with the keys that make a variable of the picked value and free it again. The title of the
+Values panel names the object and the title of the Number pad shows the picked value and what is being typed. There is no editing mode: selecting another object rebinds the panels, clearing
 the selection removes them, and every gesture (a slider drag, one Enter, one push of the stick) is its own undo step.
 
 A slider is **focused** when the pointer comes near it (the tip within a hand's breadth in front of the panel, the laser over the
@@ -34,16 +35,21 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from freecad.BlocksCAD.core import snapping, units
-from freecad.BlocksCAD.core.values import ValueEditor
+from freecad.BlocksCAD.core.values import ValueEditor, pretty_expression
 from freecad.BlocksCAD.ui.layout import Face, Page
 from freecad.BlocksCAD.ui.options import FIRST_REPEAT, PUSH_OFF, PUSH_ON, REPEAT
 
+ROW_CHARS = 36                         # the text of a slider row is cut after this many characters
+VARIABLE_REFRESH = 0.5                 # seconds between two readings of the variables of the document
 FOCUS_HOLD = 0.6                       # seconds a slider stays focused after the pointer has left it, so the thumb can work the stick
 SLIDERS = 3                            # sliders on the Values panel: the rows of a panel
 SLIDER_IDS = tuple(f"val.{i}" for i in range(SLIDERS))
 GROUP = "key.group"
-PAGE_VALUES, PAGE_PAD, PAGE_KEYS = "Values", "Number pad", "Keys"
-PAGE_NAMES = (PAGE_VALUES, PAGE_PAD, PAGE_KEYS)
+VARIABLES = 8                          # variables shown on the Variables panel at a time
+VARIABLE_IDS = tuple(f"var.{i}" for i in range(VARIABLES))
+VARIABLE_GROUP = "var.group"
+PAGE_VALUES, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES = "Values", "Number pad", "Keys", "Variables"
+PAGE_NAMES = (PAGE_VALUES, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES)
 TITLE_CHARS = 34                       # the title of the Number pad shows at most this many characters of what is typed
 
 # face id -> (label, key of the editor, tooltip)
@@ -61,10 +67,13 @@ KEYS = {
     "key.enter": ("Enter", "enter", "Apply what is typed to the picked value"),
     "key.clear": ("Clear", "clear", "Throw away what is typed"),
     "key.step": ("Step", "step", "Step of the stick and of the sliders"),
+    "key.makevar": ("Make variable", "makevar", "Make a variable of the picked value (or of what is typed) and bind the value to it"),
+    "key.unbind": ("Unbind", "unbind", "Free the picked value from its variable or expression; it keeps its number"),
 }
 PAD_SLOTS = ["key.7", "key.8", "key.9", "key.delete", "key.4", "key.5", "key.6", "key.enter", "key.1", "key.2", "key.3", "key.unit"]
 KEY_SLOTS = ["key.0", "key.point", "key.minus", "key.plus", "key.times", "key.divide", "key.open", "key.close",
              "key.step", GROUP, "key.clear", None]
+VARIABLE_SLOTS = [*VARIABLE_IDS, "key.makevar", "key.unbind", VARIABLE_GROUP, None]
 VALUE_SLOTS = [SLIDER_IDS[0], None, None, None, SLIDER_IDS[1], None, None, None, SLIDER_IDS[2], None, None, None]
 
 
@@ -74,12 +83,16 @@ def faces():
     result[GROUP] = Face(GROUP, "More values", f"values:{GROUP}", tip="Show the next three values on the sliders")
     for fid in SLIDER_IDS:
         result[fid] = Face(fid, "Value", f"values:{fid}", "slider", "Come close to pick a value, press the bar and drag, or use the stick")
+    for fid in VARIABLE_IDS:
+        result[fid] = Face(fid, "Variable", f"values:{fid}", tip="Type this variable into the expression")
+    result[VARIABLE_GROUP] = Face(VARIABLE_GROUP, "More variables", f"values:{VARIABLE_GROUP}", tip="Show the next variables")
     return result
 
 
 def pages(side):
-    """The three panels on carousel side `side`: Values at the bottom (nearest the user), the Number pad above it and Keys above that."""
-    return [Page(PAGE_VALUES, list(VALUE_SLOTS), side, 0), Page(PAGE_PAD, list(PAD_SLOTS), side, 1), Page(PAGE_KEYS, list(KEY_SLOTS), side, 2)]
+    """The four panels on carousel side `side`: Values at the bottom (nearest the user), the Number pad above it, Keys and Variables above."""
+    return [Page(PAGE_VALUES, list(VALUE_SLOTS), side, 0), Page(PAGE_PAD, list(PAD_SLOTS), side, 1), Page(PAGE_KEYS, list(KEY_SLOTS), side, 2),
+            Page(PAGE_VARIABLES, list(VARIABLE_SLOTS), side, 3)]
 
 
 def nice_ceiling(value):
@@ -105,6 +118,8 @@ class ValueModule:
         self.editor: Optional[ValueEditor] = None
         self.key = None                     # what the editor is bound to (the selected object)
         self.group = 0                      # the sliders show the values 3 * group to 3 * group + 2
+        self.variable_group = 0             # the Variables panel shows the variables 8 * variable_group and the next seven
+        self._variable_age = 0.0
         self.faces = faces()
         self.step = 10.0                    # the step of the stick and the sliders, kept from one object to the next
         self._ranges = {}                   # value index -> (lowest, highest) of its slider
@@ -128,7 +143,7 @@ class ValueModule:
         """Bind the panels to the editor of an object; `key` names the object."""
         self.close()
         self.editor, self.key = editor, key
-        self.group, self._ranges, self._range_step = 0, {}, None
+        self.group, self.variable_group, self._ranges, self._range_step = 0, 0, {}, None
         self._focus, self._dir = None, 0
         self._refresh_ranges(False)
 
@@ -182,7 +197,11 @@ class ValueModule:
             value = self.editor.fields[index]
             low, high = self._ranges[index]
             fraction = min(max((value.value - low) / (high - low), 0.0), 1.0)
-            states[fid] = (fraction, f"{value.label} {self.editor.text_of(value)}", index == self.editor.selected)
+            text = f"{value.label} {self.editor.text_of(value)}"
+            if value.expression:
+                text = f"{text} = {pretty_expression(value.expression)}"
+                text = text if len(text) <= ROW_CHARS else text[:ROW_CHARS - 3] + "..."
+            states[fid] = (fraction, text, index == self.editor.selected)
         return states
 
     def set_focus(self, slider):
@@ -211,7 +230,18 @@ class ValueModule:
         """Face id -> the text of the faces that show a value."""
         if self.editor is None:
             return {}
-        return {"key.step": f"Step {units.format_length(self.editor.step, self.editor.system)}"}
+        labels = {"key.step": f"Step {units.format_length(self.editor.step, self.editor.system)}"}
+        for slot, fid in enumerate(VARIABLE_IDS):
+            entry = self.variable_at(slot)
+            labels[fid] = "-" if entry is None else f"{entry[0]} {units.format_length(entry[1], self.editor.system)}"
+        return labels
+
+    def variable_at(self, slot):
+        """(name, millimetres) of the variable on slot `slot` (0 to 7) of the Variables panel, or None when it shows none."""
+        if self.editor is None:
+            return None
+        index = self.variable_group * VARIABLES + slot
+        return self.editor.variables[index] if index < len(self.editor.variables) else None
 
     def titles(self):
         """Page name -> title bar text for the panels of the module."""
@@ -234,10 +264,18 @@ class ValueModule:
         if face_id == GROUP:
             self.group = (self.group + 1) % self.groups
             return editor.select(self.group * SLIDERS) or True
+        if face_id == VARIABLE_GROUP:
+            count = max(1, math.ceil(len(editor.variables) / VARIABLES))
+            self.variable_group = (self.variable_group + 1) % count
+            return True
+        if face_id in VARIABLE_IDS:
+            entry = self.variable_at(VARIABLE_IDS.index(face_id))
+            return entry is not None and editor.key(f"var:{entry[0]}")
         if face_id not in KEYS:
             return False
         changed = editor.key(KEYS[face_id][1])
         self._pending_message = editor.message or self._pending_message
+        self.variable_group = min(self.variable_group, max(0, math.ceil(len(editor.variables) / VARIABLES) - 1))
         return changed
 
     # the stick
@@ -283,6 +321,13 @@ class ValueModule:
             self.editor, self.key = None, None
             return result
         self._focus_age += frame.dt
+        self._variable_age += frame.dt
+        if self._variable_age >= VARIABLE_REFRESH:
+            self._variable_age = 0.0
+            try:
+                editor.refresh_variables()
+            except Exception:                   # the document is going away
+                pass
         if blocked:
             editor.commit()
         self._stick(frame, frame.hands[self.hand], result, self.engaged and not blocked)

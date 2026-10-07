@@ -5,7 +5,7 @@ from freecad.BlocksCAD.backends.sim import SimInput
 from freecad.BlocksCAD.core import values as v
 from freecad.BlocksCAD.ui import layout as lay
 from freecad.BlocksCAD.ui import value_module as vm
-from test_values import Target
+from test_values import Target, VarTarget
 
 
 class Wide(Target):
@@ -21,10 +21,11 @@ class Wide(Target):
 
 
 class PagesTest(unittest.TestCase):
-    def test_the_three_panels_stand_on_one_side_in_rows_from_the_bottom(self):
+    def test_the_four_panels_stand_on_one_side_in_rows_from_the_bottom(self):
         pages = vm.pages(4)
-        self.assertEqual([(p.name, p.side, p.row) for p in pages], [("Values", 4, 0), ("Number pad", 4, 1), ("Keys", 4, 2)])
-        self.assertEqual(lay.Layout(pages).sides()[-1], [[0], [1], [2]])
+        self.assertEqual([(p.name, p.side, p.row) for p in pages],
+                         [("Values", 4, 0), ("Number pad", 4, 1), ("Keys", 4, 2), ("Variables", 4, 3)])
+        self.assertEqual(lay.Layout(pages).sides()[-1], [[0], [1], [2], [3]])
 
     def test_every_face_of_the_panels_is_known_and_each_is_on_a_panel_once(self):
         known = vm.faces()
@@ -42,7 +43,12 @@ class PagesTest(unittest.TestCase):
 
     def test_every_key_of_the_editor_can_be_pressed_from_a_face(self):
         keys = {vm.KEYS[f][1] for page in vm.pages(0)[1:] for f in page.slots if f in vm.KEYS}
-        self.assertEqual(keys, set("0123456789.+-*/()") | {"back", "unit", "enter", "clear", "step"})
+        self.assertEqual(keys, set("0123456789.+-*/()") | {"back", "unit", "enter", "clear", "step", "makevar", "unbind"})
+
+    def test_the_variables_panel_has_eight_variables_a_group_key_and_the_keys_that_make_and_free(self):
+        slots = vm.pages(0)[3].slots
+        self.assertEqual(slots[:8], list(vm.VARIABLE_IDS))
+        self.assertEqual(slots[8:], ["key.makevar", "key.unbind", vm.VARIABLE_GROUP, None])
 
     def test_nice_ceiling(self):
         for value, expected in ((1, 1), (1.1, 2), (2, 2), (3, 5), (5, 5), (5.1, 10), (100, 100), (101, 200), (0.04, 0.05), (999, 1000)):
@@ -266,3 +272,49 @@ class ModuleTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VariablePanelTest(unittest.TestCase):
+    def setUp(self):
+        self.target = VarTarget()
+        self.module = vm.ValueModule(tool_hand=1)
+        self.module.open(v.ValueEditor(self.target, step=10.0), key="box")
+
+    def test_the_faces_show_the_variables_and_a_dash_where_there_is_none(self):
+        labels = self.module.labels()
+        self.assertEqual(labels["var.0"], "width 80 mm")
+        self.assertEqual(labels["var.1"], "-")
+        self.assertEqual(labels["var.7"], "-")
+
+    def test_pressing_a_variable_types_its_name_and_an_empty_face_does_nothing(self):
+        self.assertTrue(self.module.activate("var.0"))
+        self.assertEqual(self.module.editor.entry, "width")
+        self.assertFalse(self.module.activate("var.1"))
+        self.assertEqual(self.module.editor.entry, "width")
+
+    def test_make_variable_and_unbind_are_faces_of_the_panel(self):
+        self.module.activate("key.makevar")
+        self.assertEqual(self.target.bound["a"], "Variables.position_a")      # the fake labels are one letter, like X, Y and Z
+        self.assertIn("Variable position_a", self.module._pending_message)
+        self.assertEqual(self.module.slider_states()["val.0"][1], "A 23 mm = position_a")
+        self.module.activate("key.unbind")
+        self.assertEqual(self.module.slider_states()["val.0"][1], "A 23 mm")
+
+    def test_more_variables_shows_the_next_eight(self):
+        for i in range(10):
+            self.target.vars[f"v{i}"] = float(i)
+        self.module.editor.refresh_variables()
+        self.assertEqual(len(self.module.editor.variables), 11)
+        self.assertEqual(self.module.variable_at(0)[0], "width")
+        self.module.activate(vm.VARIABLE_GROUP)
+        self.assertEqual(self.module.variable_at(0)[0], "v7")
+        self.assertEqual(self.module.labels()["var.3"], "-")
+        self.module.activate(vm.VARIABLE_GROUP)
+        self.assertEqual(self.module.variable_at(0)[0], "width")           # back to the first group
+
+    def test_the_variables_are_read_again_every_half_second(self):
+        sim = SimInput()
+        self.target.vars["depth"] = 5.0
+        for _ in range(30):
+            self.module.update(sim.frame(0.02))
+        self.assertEqual([n for n, _ in self.module.editor.variables], ["width", "depth"])
