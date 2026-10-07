@@ -15,8 +15,9 @@
 # ***************************************************************************
 """The colour of the selected objects (docs/ux-design.md, Modify panel).
 
-Each press of the Colour face gives the selected objects the next colour of a fixed palette. A colour is a property of the view of
-an object (`ShapeColor`), not of its shape, so it is not part of the undo history of the document. `next_colour` is pure Python."""
+Each press of the Colour face gives the selected objects the next colour of a fixed palette, in one undo step. The colour lives in the
+property `BlocksCADColour` of each object, which the undo history of the document keeps, and the view of the object (`ShapeColor`)
+follows it: `cycle` sets both, and `sync` brings every view to its property after an undo or a redo. `next_colour` is pure Python."""
 
 PALETTE = (
     ("Grey", (0.80, 0.80, 0.80)),
@@ -39,20 +40,50 @@ def next_colour(current):
     return PALETTE[0]
 
 
-def cycle(doc, items):
-    """Give the selected objects (whole or by an element of them) the next colour; each object goes on from its own colour. Returns
-    the text for a toast."""
+PROPERTY = "BlocksCADColour"
+
+
+def _views(doc, items):
     names = []
     for name, _ in items:
         if name not in names and doc.getObject(name) is not None:
             names.append(name)
-    views = [(doc.getObject(n).Label, doc.getObject(n).ViewObject) for n in names if getattr(doc.getObject(n), "ViewObject", None) is not None]
-    if not views:
+    return [doc.getObject(n) for n in names if getattr(doc.getObject(n), "ViewObject", None) is not None]
+
+
+def _close(a, b):
+    return all(abs(x - y) <= 1e-4 for x, y in zip(tuple(a)[:3], tuple(b)[:3]))
+
+
+def cycle(doc, items):
+    """Give the selected objects (whole or by an element of them) the next colour; each object goes on from its own colour. One undo
+    step. Returns the text for a toast."""
+    objects = _views(doc, items)
+    if not objects:
         return "Nothing selected" if not items else "Nothing to colour"
+    for obj in objects:                    # the property starts with the colour the object has, outside the undo step
+        if PROPERTY not in obj.PropertiesList:
+            obj.addProperty("App::PropertyColor", PROPERTY, "BlocksCAD", "Colour given in the VR viewer")
+            setattr(obj, PROPERTY, tuple(obj.ViewObject.ShapeColor)[:3])
     colours = set()
-    for _, view in views:
-        name, rgb = next_colour(tuple(view.ShapeColor)[:3])
-        view.ShapeColor = rgb
-        colours.add(name)
-    label = views[0][0] if len(views) == 1 else f"{len(views)} objects"
+    doc.openTransaction("Colour")
+    try:
+        for obj in objects:
+            name, rgb = next_colour(tuple(getattr(obj, PROPERTY))[:3])
+            setattr(obj, PROPERTY, rgb)
+            obj.ViewObject.ShapeColor = rgb
+            colours.add(name)
+    except Exception:
+        doc.abortTransaction()
+        raise
+    doc.commitTransaction()
+    label = objects[0].Label if len(objects) == 1 else f"{len(objects)} objects"
     return f"{label}: {colours.pop() if len(colours) == 1 else 'colours'}"
+
+
+def sync(doc):
+    """Bring the view of every object that has been coloured to the colour of its property (after an undo or a redo)."""
+    for obj in doc.Objects:
+        view = getattr(obj, "ViewObject", None)
+        if view is not None and PROPERTY in obj.PropertiesList and not _close(view.ShapeColor, getattr(obj, PROPERTY)):
+            view.ShapeColor = tuple(getattr(obj, PROPERTY))[:3]

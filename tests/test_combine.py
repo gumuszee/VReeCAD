@@ -41,6 +41,19 @@ class FakeDocument:
     def getObject(self, name):
         return self.objects.get(name)
 
+    @property
+    def Objects(self):
+        return list(self.objects.values())
+
+    def openTransaction(self, text):
+        self.log.append(("open", text))
+
+    def commitTransaction(self):
+        self.log.append(("commit",))
+
+    def abortTransaction(self):
+        self.log.append(("abort",))
+
 
 class CombineGuardsTest(unittest.TestCase):
     def test_a_boolean_of_one_object_changes_nothing(self):
@@ -76,6 +89,10 @@ class FakeView:
 class FakeColourObject:
     def __init__(self, name, rgb):
         self.Name, self.Label, self.ViewObject = name, name.upper(), FakeView(rgb)
+        self.PropertiesList = []
+
+    def addProperty(self, kind, name, group, text):
+        self.PropertiesList.append(name)
 
 
 class ColourTest(unittest.TestCase):
@@ -91,6 +108,22 @@ class ColourTest(unittest.TestCase):
         self.assertEqual(doc.objects["a"].ViewObject.ShapeColor, colour.PALETTE[2][1])
         self.assertEqual(doc.objects["b"].ViewObject.ShapeColor, colour.PALETTE[0][1])
         self.assertEqual(text, "2 objects: colours")
+        self.assertEqual(doc.log, [("open", "Colour"), ("commit",)])                      # one undo step for all of them
+
+    def test_the_colour_is_a_property_that_undo_can_restore_and_sync_brings_the_view_to_it(self):
+        doc = FakeDocument()
+        obj = FakeColourObject("a", colour.PALETTE[1][1])
+        doc.objects = {"a": obj}
+        colour.cycle(doc, [("a", "")])
+        self.assertEqual(getattr(obj, colour.PROPERTY), colour.PALETTE[2][1])
+        setattr(obj, colour.PROPERTY, colour.PALETTE[1][1])                              # what an undo does to the property
+        self.assertEqual(obj.ViewObject.ShapeColor, colour.PALETTE[2][1])
+        colour.sync(doc)
+        self.assertEqual(obj.ViewObject.ShapeColor, colour.PALETTE[1][1])
+        other = FakeColourObject("b", (0.1, 0.2, 0.3))                                   # an object that was never coloured is left alone
+        doc.objects["b"] = other
+        colour.sync(doc)
+        self.assertEqual(other.ViewObject.ShapeColor, (0.1, 0.2, 0.3))
 
     def test_nothing_selected_says_so(self):
         self.assertEqual(colour.cycle(FakeDocument(), []), "Nothing selected")

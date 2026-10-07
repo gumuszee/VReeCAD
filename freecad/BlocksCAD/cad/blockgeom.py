@@ -21,6 +21,8 @@ seen from outside. A face may have any number of corners and need not be flat: a
 shared by exactly two faces that run along it in opposite directions) with a positive volume. The functions return new lists and
 never change their arguments."""
 
+import functools
+
 from freecad.BlocksCAD.core import mathutil as mu
 
 FLAT = 1e-6                 # millimetres: a face whose corners are no further than this from their plane is flat
@@ -76,16 +78,125 @@ def _inside(p, a, b, c):
     return _area2(a, b, p) >= -1e-12 and _area2(b, c, p) >= -1e-12 and _area2(c, a, p) >= -1e-12
 
 
+MAX_SEARCH = 7              # a polygon with at most this many corners is cut by looking at every way of cutting it
+
+
+def _diagonal_inside(flat, i, j):
+    """Whether the diagonal from corner i to corner j of the projected polygon `flat` lies inside it (neighbours always do)."""
+    n = len(flat)
+    if abs(i - j) in (1, n - 1):
+        return True
+    a, b = flat[i], flat[j]
+    for k in range(n):
+        l = (k + 1) % n
+        if len({i, j, k, l}) < 4:
+            continue
+        c, d = flat[k], flat[l]
+        if _area2(c, d, a) * _area2(c, d, b) < -1e-12 and _area2(a, b, c) * _area2(a, b, d) < -1e-12:
+            return False
+    middle = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+    inside = False
+    for k in range(n):
+        c, d = flat[k], flat[(k + 1) % n]
+        if (c[1] > middle[1]) != (d[1] > middle[1]) and middle[0] < (d[0] - c[0]) * (middle[1] - c[1]) / (d[1] - c[1]) + c[0]:
+            inside = not inside
+    return inside
+
+
+def _cuts(count, valid):
+    """Every way of cutting the polygon with corners 0 to count - 1 into triangles (i, k, j) with i < k < j by diagonals that `valid` allows."""
+    memo = {}
+
+    def cut(i, j):
+        if j - i < 2:
+            return [()]
+        if (i, j) not in memo:
+            result = []
+            for k in range(i + 1, j):
+                if (k - i >= 2 and not valid(i, k)) or (j - k >= 2 and not valid(k, j)):
+                    continue
+                for left in cut(i, k):
+                    for right in cut(k, j):
+                        result.append(left + right + ((i, k, j),))
+            memo[(i, j)] = result
+        return memo[(i, j)]
+
+    return cut(0, count - 1)
+
+
+def _unit_normal(a, b, c):
+    normal = mu.cross(mu.sub(b, a), mu.sub(c, a))
+    length = mu.length(normal)
+    return mu.mul(normal, 1.0 / length) if length > 0.0 else (0.0, 0.0, 0.0)
+
+
+def _bending(points, triangles):
+    """How much a cut bends the surface: for every diagonal, the angle between its two triangles (1 - cos) times its length."""
+    shared = {}
+    for t in triangles:
+        for a, b in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
+            shared.setdefault((min(a, b), max(a, b)), []).append(t)
+    total = 0.0
+    for (a, b), pair in shared.items():
+        if len(pair) == 2:
+            n1, n2 = (_unit_normal(*(points[i] for i in t)) for t in pair)
+            total += (1.0 - mu.dot(n1, n2)) * mu.length(mu.sub(points[a], points[b]))
+    return total
+
+
+def _smoothest_cut(points, flat):
+    """The cut of a small polygon into triangles that bends the surface least, or None when no cut tiles it. A corner that sticks out of
+    a bent polygon gets its edge to the corner below it, whichever way the corners are numbered."""
+    area = sum(_area2(flat[0], flat[i], flat[i + 1]) for i in range(1, len(flat) - 1))
+    best = None
+    for triangles in _cuts(len(points), lambda i, j: _diagonal_inside(flat, i, j)):
+        areas = [_area2(flat[a], flat[b], flat[c]) for a, b, c in triangles]
+        if min(areas) <= 1e-12 or abs(sum(areas) - area) > 1e-9 * max(1.0, abs(area)):
+            continue                                           # a triangle without area, or a cut that does not tile the polygon
+        score = (round(_bending(points, triangles), 9), sum(mu.length(mu.sub(points[a], points[c])) for a, _, c in triangles))
+        if best is None or score < best[0]:
+            best = (score, triangles)
+    return None if best is None else best[1]
+
+
+def _folded_cut(points):
+    """The cut of a small polygon that bends the surface least when no cut tiles its projection (the polygon is so bent that its outline
+    crosses itself seen along its normal): every way of cutting it counts, whatever the diagonals do in the projection, as long as no
+    triangle is flat or turned against the polygon. None when there is none."""
+    normal, _ = newell(points)
+    best = None
+    for triangles in _cuts(len(points), lambda i, j: True):
+        normals = [_unit_normal(*(points[i] for i in t)) for t in triangles]
+        if any(mu.length(n) == 0.0 for n in normals):
+            continue
+        turned = sum(1 for n in normals if mu.dot(n, normal) < 0.0)
+        score = (turned, round(_bending(points, triangles), 9))
+        if best is None or score < best[0]:
+            best = (score, triangles)
+    return None if best is None else best[1]
+
+
 def triangulate(points):
-    """Triangles (index triples into `points`, counter-clockwise like the polygon) that tile a polygon with three or more corners, by
-    ear clipping in the best-fit plane of the corners. A flat or a slightly bent polygon of any shape works; a polygon without area
-    gives no triangles."""
+    """The triangles of `_triangulate` for the corners `points` (kept for the last polygons: a frame asks again and again)."""
+    return list(_triangulate(tuple(tuple(p) for p in points)))
+
+
+@functools.lru_cache(maxsize=1024)
+def _triangulate(points):
+    """Triangles (index triples into `points`, counter-clockwise like the polygon) that tile a polygon with three or more corners. A
+    polygon of up to `MAX_SEARCH` corners is cut the way that bends the surface least (`_smoothest_cut`); a larger one, or one that
+    cut cannot tile, by ear clipping in the best-fit plane of the corners. A flat or a slightly bent polygon of any shape works; a
+    polygon without area gives no triangles."""
     count = len(points)
     if count < 3:
         return []
     if count == 3:
         return [(0, 1, 2)]
     flat = _project(points)
+    if count <= MAX_SEARCH:
+        cut = _smoothest_cut(points, flat) or _folded_cut(points)
+        if cut is not None:
+            return list(cut)
     order = list(range(count))
     triangles = []
     guard = count * count
@@ -122,6 +233,43 @@ def signed_volume(vertices, faces):
     return total / 6.0
 
 
+def _segment_hits_triangle(p, q, a, b, c, eps=1e-9):
+    """Whether the segment from p to q passes through the inside of the triangle abc (Moeller and Trumbore, ends and edges excluded)."""
+    direction = mu.sub(q, p)
+    edge1, edge2 = mu.sub(b, a), mu.sub(c, a)
+    h = mu.cross(direction, edge2)
+    det = mu.dot(edge1, h)
+    if abs(det) < eps:
+        return False
+    f = 1.0 / det
+    s = mu.sub(p, a)
+    u = f * mu.dot(s, h)
+    if u <= eps or u >= 1.0 - eps:
+        return False
+    cross = mu.cross(s, edge1)
+    v = f * mu.dot(direction, cross)
+    if v <= eps or u + v >= 1.0 - eps:
+        return False
+    t = f * mu.dot(edge2, cross)
+    return eps < t < 1.0 - eps
+
+
+def faces_cross(vertices, faces):
+    """Whether two triangles of the faces pass through each other (triangles that share a point are left alone): such a block is no
+    solid, whatever the faces say."""
+    triangles = [t for face in faces for t in face_triangles(vertices, face)]
+    for i, t in enumerate(triangles):
+        for u in triangles[i + 1:]:
+            if set(t) & set(u):
+                continue
+            a, b, c = (vertices[k] for k in t)
+            d, e, f = (vertices[k] for k in u)
+            if (any(_segment_hits_triangle(p, q, a, b, c) for p, q in ((d, e), (e, f), (f, d)))
+                    or any(_segment_hits_triangle(p, q, d, e, f) for p, q in ((a, b), (b, c), (c, a)))):
+                return True
+    return False
+
+
 def validate(vertices, faces):
     """None when the faces close into a solid with a positive volume, else a short text that says what is wrong."""
     if len(vertices) < 4:
@@ -142,11 +290,16 @@ def validate(vertices, faces):
             return "The faces do not close into a solid"
     for face in faces:
         pts = [vertices[i] for i in face]
-        if mu.length(newell(pts)[0]) == 0.0 or not face_triangles(vertices, face):
+        triangles = face_triangles(vertices, face)
+        if mu.length(newell(pts)[0]) == 0.0 or not triangles:
             return "A face has no area"
+        if len(triangles) != len(face) - 2:
+            return "A face folds over itself"
     volume = signed_volume(vertices, faces)
     if volume <= DEGENERATE:
         return "The block has no volume" if abs(volume) <= DEGENERATE else "The block is inside out"
+    if faces_cross(vertices, faces):
+        return "The faces cross each other"
     return None
 
 
@@ -171,6 +324,26 @@ def nearest_on_segment(point, a, b):
     return t, nearest, mu.length(mu.sub(point, nearest))
 
 
+def inner_point_on_segment(point, a, b, margin=1.0):
+    """The point of the segment from `a` to `b` nearest to `point`, kept at least `margin` millimetres (a tenth of the segment at most)
+    from both ends, so a point that splits an edge never lies on a corner."""
+    ab = mu.sub(b, a)
+    length = mu.length(ab)
+    if length == 0.0:
+        return a
+    t, _, _ = nearest_on_segment(point, a, b)
+    keep = min(margin, length * 0.1) / length
+    return mu.add(a, mu.mul(ab, min(max(t, keep), 1.0 - keep)))
+
+
+def coincident(vertices, index, point, tolerance=1e-6):
+    """The index of another vertex that lies at `point` (within `tolerance` millimetres), or None: two points at one place make no solid."""
+    for i, v in enumerate(vertices):
+        if i != index and mu.length(mu.sub(v, point)) <= tolerance:
+            return i
+    return None
+
+
 def nearest_vertex(vertices, point):
     """(distance, index) of the vertex nearest to `point`, or (None, -1)."""
     best, index = None, -1
@@ -181,11 +354,40 @@ def nearest_vertex(vertices, point):
     return best, index
 
 
+def diagonals(vertices, faces):
+    """The sorted index pairs that cut the faces that are not flat into triangles, each once: they show as edges on the solid, though
+    they belong to no face's outline (`cut_face` makes one an edge of the block)."""
+    found = set()
+    for face in faces:
+        if len(face) <= 3 or is_flat([vertices[i] for i in face]):
+            continue
+        outline = {frozenset((face[k], face[(k + 1) % len(face)])) for k in range(len(face))}
+        for t in face_triangles(vertices, face):
+            for a, b in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
+                if frozenset((a, b)) not in outline:
+                    found.add((min(a, b), max(a, b)))
+    return sorted(found)
+
+
+def cut_face(faces, a, b):
+    """The faces with the face that has the corners `a` and `b` apart from each other cut in two along the line between them, so that
+    the line is an edge of both halves; ValueError when no face has them so."""
+    result = list(faces)
+    for n, face in enumerate(result):
+        if a in face and b in face:
+            i, j = sorted((face.index(a), face.index(b)))
+            if j - i < 2 or (i == 0 and j == len(face) - 1):
+                continue                                          # neighbours: the line is an edge already
+            result[n:n + 1] = [tuple(face[i:j + 1]), tuple(face[j:] + face[:i + 1])]
+            return result
+    raise ValueError("That is not an edge of the block")
+
+
 def nearest_edge(vertices, faces, point):
     """(distance, (a, b), t, nearest point) of the edge nearest to `point`, or None when the block has no edges. `t` runs from the
-    lower to the higher index of the pair."""
+    lower to the higher index of the pair. The lines that cut a bent face into triangles count as edges."""
     best = None
-    for a, b in edges(faces):
+    for a, b in edges(faces) + diagonals(vertices, faces):
         t, nearest, d = nearest_on_segment(point, vertices[a], vertices[b])
         if best is None or d < best[0]:
             best = (d, (a, b), t, nearest)

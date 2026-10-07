@@ -70,6 +70,12 @@ def mated_placement(placement, centre, normal, target_centre, target_normal):
             App.Placement(centre * -1.0, App.Rotation()) * placement)
 
 
+def make_attachable(obj):
+    """Give an object that cannot be attached yet (a block, a boolean, an extrusion) the attachment extension of FreeCAD."""
+    if "AttachmentSupport" not in obj.PropertiesList:
+        obj.addExtension("Part::AttachExtensionPython")
+
+
 def attach(doc, items):
     """Attach the object of the face selected first to the face selected second, in one transaction. Returns (text for a toast, name of
     the attached object or None)."""
@@ -89,6 +95,7 @@ def attach(doc, items):
     wanted = mated_placement(mover.Placement, own[0], own[1], other[0], other[1])
     doc.openTransaction(f"Attach {mover.Label}")
     try:
+        make_attachable(mover)
         mover.AttachmentSupport = [(target, target_sub)]
         mover.MapMode = "FlatFace"
         mover.AttachmentOffset = App.Placement()

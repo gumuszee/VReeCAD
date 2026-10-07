@@ -123,6 +123,9 @@ class PointsTool(TouchTool):
             highlight.selected.hide()
 
     # lifecycle
+    def activate(self):
+        self.values["mode"] = MODES[0]          # the tool always starts by moving points; the grid and the faces stay as they were
+
     def deactivate(self):
         if self._drag is not None:
             self._abort()
@@ -150,6 +153,8 @@ class PointsTool(TouchTool):
         self._show_hover(doc, pick)
         if free and pick is not None and "trigger" in hand.pressed:
             self._press(doc, pick, raw)
+        elif free and pick is None and "trigger" in hand.pressed and not self._blocks().blocks(doc):
+            self._toast("Nothing to edit: make a box or a block with the Create tool")
         self._show_selection(doc)
 
     # dragging a point
@@ -161,9 +166,20 @@ class PointsTool(TouchTool):
         vertices, faces = blocks.read(obj)
         kind, what = blocks.parse_sub(pick.sub)
         doc.openTransaction(f"{'Move point' if kind == 'point' else 'Split edge'} of {obj.Label}")
+        convert = getattr(blocks, "convert_box", None)
+        if convert is not None and obj.TypeId == "Part::Box":      # a box becomes a block as the press starts: one undo step with the move
+            try:
+                obj = convert(doc, obj)
+            except Exception as error:
+                doc.abortTransaction()
+                self._toast("Could not turn the box into a block")
+                print(f"BlocksCAD: cannot turn {obj.Label} into a block: {error}")
+                return
         if kind == "segment":
             a, b = what
             _, point, _ = self._edge_point(vertices, a, b, blocks.to_local(obj, raw))
+            if (min(a, b), max(a, b)) not in blockgeom.edges(faces):       # a line that cuts a bent face into triangles: it becomes an edge
+                faces = blockgeom.cut_face(faces, a, b)
             new_vertices, new_faces, index = blockgeom.split_edge(vertices, faces, a, b, point)
             error = blocks.apply(doc, obj, new_vertices, new_faces)
             if error is not None:
@@ -174,16 +190,16 @@ class PointsTool(TouchTool):
         else:
             label = "Moved"
         planes = blockgeom.face_planes(vertices, faces, what) if self.values["faces"] == "Flat" else []
-        self._drag = {"name": pick.name, "label": obj.Label, "index": what, "now": vertices[what], "changed": label == "Split",
+        self._drag = {"name": obj.Name, "label": obj.Label, "index": what, "now": vertices[what], "changed": label == "Split",
                       "verb": label, "planes": planes}
         self._forget_hover()
         blocks.set_picked(obj, what)                        # the value panels show this point
-        self._select(doc, [(pick.name, "")])
+        self._select(doc, [(obj.Name, "")])
         self._haptic(0.3, 0.02)
 
     @staticmethod
     def _edge_point(vertices, a, b, local):
-        return blockgeom.nearest_on_segment(local, vertices[a], vertices[b])
+        return None, blockgeom.inner_point_on_segment(local, vertices[a], vertices[b]), None
 
     def _follow(self, doc, hand, raw):
         blocks = self._blocks()
@@ -207,6 +223,9 @@ class PointsTool(TouchTool):
             local = blockgeom.constrain_to_planes(local, state["planes"])
         if local != state["now"]:
             vertices, _ = blocks.read(obj)
+            if blockgeom.coincident(vertices, state["index"], local) is not None:
+                self._readout("Two points cannot be at the same place")
+                return
             error = blocks.apply(doc, obj, blockgeom.move_vertex(vertices, state["index"], local))
             if error is None:
                 state["now"], state["changed"] = local, True

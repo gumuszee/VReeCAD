@@ -106,7 +106,10 @@ def point_properties(obj):
 
 
 def read(obj):
-    """(vertices as tuples, faces as tuples of indices) of a block, the points as they are built (a bound point is its property)."""
+    """(vertices as tuples, faces as tuples of indices) of a block, the points as they are built (a bound point is its property). A box
+    that the Points tool can turn into a block reads as the block it would become."""
+    if not is_block(obj):
+        return blockgeom.box((0.0, 0.0, 0.0), (obj.Length.Value, obj.Width.Value, obj.Height.Value))
     vertices = [(v.x, v.y, v.z) for v in obj.Vertices]
     for index, name in point_properties(obj).items():
         if index < len(vertices):
@@ -187,6 +190,32 @@ def create(doc, lo, size):
     return obj
 
 
+def editable_box(obj):
+    """Whether `obj` is a box that the Points tool can turn into a block: nothing else uses it and its sizes are no expressions."""
+    return (getattr(obj, "TypeId", "") == "Part::Box" and not obj.InList and not obj.ExpressionEngine
+            and getattr(obj, "Visibility", True))
+
+
+def convert_box(doc, obj):
+    """Replace the box `obj` by a block of the same size, label, colour and place (the caller owns the transaction, so the Points tool
+    makes it one undo step with the move that follows); returns the block. The points of the block are those of `blockgeom.box`."""
+    view = getattr(obj, "ViewObject", None)
+    colour = tuple(view.ShapeColor)[:3] if view is not None else None
+    vertices, faces = blockgeom.box((0.0, 0.0, 0.0), (obj.Length.Value, obj.Width.Value, obj.Height.Value))
+    label, placement = obj.Label, obj.Placement
+    selected = obj.Name
+    doc.removeObject(selected)
+    made = make(doc, vertices, faces)
+    made.Placement = placement
+    made.Label = label
+    if colour is not None and getattr(made, "ViewObject", None) is not None:
+        made.ViewObject.ShapeColor = colour
+    doc.recompute()
+    if not made.isValid() or made.Shape.isNull():
+        raise ValueError("FreeCAD could not make the block")
+    return made
+
+
 def apply(doc, obj, vertices, faces=None):
     """Change the points (and faces) of a block and recompute. Returns None, or a short text when the block cannot be built with them,
     in which case the block is as it was."""
@@ -236,11 +265,12 @@ _VISIBLE = None
 
 
 def blocks(doc):
-    """The visible block objects of a document (found again only for the objects that changed: `cad/changes.py`)."""
+    """The visible objects of a document that the Points tool edits, the blocks and the boxes it can turn into blocks (found again only
+    for the objects that changed: `cad/changes.py`)."""
     global _VISIBLE
     if _VISIBLE is None:
         from freecad.BlocksCAD.cad import changes
-        _VISIBLE = changes.ObjectCache(changes.shared(), lambda o: True if is_block(o) and getattr(o, "Visibility", True) else None)
+        _VISIBLE = changes.ObjectCache(changes.shared(), lambda o: True if (is_block(o) and getattr(o, "Visibility", True)) or editable_box(o) else None)
     return [o for o in (doc.getObject(name) for name in _VISIBLE.get(doc)) if o is not None]
 
 
@@ -289,4 +319,4 @@ def handles(doc):
 
 def signature(doc):
     """Changes whenever `handles` would."""
-    return tuple((o.Name, tuple((v.x, v.y, v.z) for v in o.Vertices), tuple(o.Placement.Base), tuple(o.Placement.Rotation.Q)) for o in blocks(doc))
+    return tuple((o.Name, tuple(read(o)[0]), tuple(o.Placement.Base), tuple(o.Placement.Rotation.Q)) for o in blocks(doc))

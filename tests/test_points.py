@@ -52,6 +52,9 @@ class FakeBlocks:
     def __init__(self, doc):
         self.doc = doc
 
+    def blocks(self, doc):
+        return list(doc.objects.values())
+
     def pick(self, doc, point, mm, kind):
         best = None
         for obj in doc.objects.values():
@@ -167,6 +170,27 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(self.block.vertices[1], (100.0, 0.0, 50.0))
         self.assertEqual(self.readouts[-1], "FreeCAD cannot build that block")
         self.assertTrue(self.tool.busy)
+
+    def test_the_tool_starts_in_the_move_mode_whatever_the_mode_was(self):
+        self.tool.values["mode"] = "Split"
+        self.tool.values["grid"] = "20 mm"
+        self.tool.activate()
+        self.assertEqual((self.tool.values["mode"], self.tool.values["grid"]), ("Move", "20 mm"))
+
+    def test_a_press_on_nothing_says_how_to_make_a_block_only_when_the_document_has_none(self):
+        self.cursor = [900.0, 900.0, 900.0]
+        self.sim.set_hand(1, trigger=0.0)
+        self.frames()
+        self.sim.set_hand(1, trigger=1.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.toasts, [])                                    # the document has a block: an empty press is just that
+        self.doc.objects.clear()
+        self.sim.set_hand(1, trigger=0.0)
+        self.frames()
+        self.sim.set_hand(1, trigger=1.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(len(self.toasts), 1)
+        self.assertIn("Nothing to edit", self.toasts[0])
 
     def test_a_tap_that_moves_nothing_changes_nothing_but_selects_the_block(self):
         self.drag((102.0, 1.0, 0.0))

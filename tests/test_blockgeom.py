@@ -69,6 +69,47 @@ class TriangulateTest(unittest.TestCase):
         self.assertEqual(bg.triangulate([(0, 0, 0), (1, 0, 0)]), [])
 
 
+class SmoothCutTest(unittest.TestCase):
+    """A corner that sticks out of a bent polygon is joined to the corner below it, however high it is."""
+    VERTICES = [(-302.5, -590.0, 1540.0), (-235.0, -590.0, 1540.0), (-235.0, -545.0, 1540.0), (-302.5, -545.0, 1540.0),
+                (-302.5, -590.0, 1606.5), (-235.0, -590.0, 1606.5), (-235.0, -545.0, 1606.5), (-302.5, -579.0, 1606.5),
+                (-303.5, -537.2, 1622.3), (-260.0, -540.0, 1540.0)]
+    BACK = (2, 9, 3, 7, 8, 6)
+
+    @staticmethod
+    def edges_of(triangles):
+        return {frozenset(pair) for t in triangles for pair in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0]))}
+
+    def test_the_tip_is_joined_to_the_corner_below_at_the_heights_that_were_tried(self):
+        for z in (1622.3, 1610.0, 1602.6, 1590.0):
+            vertices = list(self.VERTICES)
+            vertices[8] = (-303.5, -537.2, z)
+            triangles = bg.face_triangles(vertices, self.BACK)
+            self.assertEqual(len(triangles), 4, z)
+            self.assertIn(frozenset((8, 3)), self.edges_of(triangles), z)
+
+    def test_the_cut_keeps_the_winding_and_tiles_the_polygon(self):
+        triangles = bg.triangulate([self.VERTICES[i] for i in self.BACK])
+        self.assertEqual(sorted(set(i for t in triangles for i in t)), list(range(6)))
+        for a, b, c in triangles:
+            self.assertLess(a, b)
+            self.assertLess(b, c)                              # indices in the order of the polygon: counter-clockwise like it
+
+    def test_a_dented_polygon_is_cut_by_diagonals_inside_it(self):
+        dent = [(0, 0, 0), (4, 0, 0), (4, 4, 0), (2, 1, 0), (0, 4, 0)]
+        triangles = bg.triangulate(dent)
+        self.assertEqual(len(triangles), 3)
+        area = sum(0.5 * mu_length_cross(dent[a], dent[b], dent[c]) for a, b, c in triangles)
+        self.assertAlmostEqual(area, 10.0, places=6)
+
+
+def mu_length_cross(a, b, c):
+    ab = tuple(y - x for x, y in zip(a, b))
+    ac = tuple(y - x for x, y in zip(a, c))
+    cross = (ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0])
+    return sum(v * v for v in cross) ** 0.5
+
+
 class ValidateTest(unittest.TestCase):
     def test_inside_out_open_and_broken_blocks_say_what_is_wrong(self):
         vertices, faces = bg.box((0, 0, 0), (10, 10, 10))
@@ -89,6 +130,60 @@ class ValidateTest(unittest.TestCase):
         vertices = bg.move_vertex(vertices, 6, (10, 10, 14))            # a bent top: built from triangles, still a solid
         self.assertIsNone(bg.validate(vertices, faces))
         self.assertGreater(bg.signed_volume(vertices, faces), 1000.0)
+
+
+class DiagonalTest(unittest.TestCase):
+    """The lines that cut a bent face into triangles show on the solid, so they can be picked and split like edges."""
+    VERTICES = SmoothCutTest.VERTICES
+    FACES = [(0, 3, 9, 2, 1), (4, 5, 6, 8, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 9, 3, 7, 8, 6), (3, 0, 4, 7)]
+
+    def test_a_bent_face_has_diagonals_and_a_flat_face_has_none(self):
+        found = bg.diagonals(self.VERTICES, self.FACES)
+        self.assertIn((3, 8), found)
+        self.assertEqual(len(found), 1 + 1 + 3)                 # the bent top, the bent back (three), and the bent left face
+        vertices, faces = bg.box((0, 0, 0), (10, 10, 10))
+        self.assertEqual(bg.diagonals(vertices, faces), [])
+        self.assertEqual(bg.diagonals(self.VERTICES, [self.FACES[0]]), [])
+
+    def test_a_diagonal_is_found_as_the_nearest_edge_and_cutting_makes_it_an_edge_that_can_be_split(self):
+        vertices, faces = list(self.VERTICES), list(self.FACES)
+        a, b = bg.diagonals(vertices, faces)[0]
+        middle = tuple((x + y) / 2.0 for x, y in zip(vertices[a], vertices[b]))
+        self.assertEqual(bg.nearest_edge(vertices, faces, middle)[1], (a, b))
+        self.assertNotIn((a, b), bg.edges(faces))
+        cut = bg.cut_face(faces, a, b)
+        self.assertEqual(len(cut), len(faces) + 1)
+        self.assertIn((a, b), bg.edges(cut))
+        self.assertIsNone(bg.validate(vertices, cut))
+        new_vertices, new_faces, index = bg.split_edge(vertices, cut, a, b, middle)
+        self.assertEqual(index, len(vertices))
+        self.assertIsNone(bg.validate(new_vertices, new_faces))
+
+    def test_cutting_a_face_between_neighbours_is_refused(self):
+        with self.assertRaises(ValueError):
+            bg.cut_face(self.FACES, 0, 3)
+
+
+class CrossingTest(unittest.TestCase):
+    def test_a_corner_pushed_through_the_block_says_that_the_faces_cross(self):
+        vertices, faces = bg.box((0, 0, 0), (10, 10, 10))
+        for corner, point in ((6, (3, 3, -5)), (6, (-5, 5, 5)), (0, (12, 12, 5)), (4, (15, -3, 5))):
+            moved = list(vertices)
+            moved[corner] = point
+            self.assertEqual(bg.validate(moved, faces), "The faces cross each other", (corner, point))
+
+    def test_a_corner_pushed_into_the_block_or_far_out_is_a_valid_block(self):
+        vertices, faces = bg.box((0, 0, 0), (10, 10, 10))
+        for corner, point in ((6, (5, 5, 5)), (6, (14, 14, 14)), (4, (5, 5, 12))):
+            moved = list(vertices)
+            moved[corner] = point
+            self.assertIsNone(bg.validate(moved, faces), (corner, point))
+
+    def test_a_very_bent_face_is_cut_into_as_many_triangles_as_it_needs(self):
+        vertices = list(SmoothCutTest.VERTICES)
+        vertices[7] = (-292.5, -579.0, 1606.5)                    # the move that left a hole in the face before
+        triangles = bg.face_triangles(vertices, SmoothCutTest.BACK)
+        self.assertEqual(len(triangles), len(SmoothCutTest.BACK) - 2)
 
 
 class SplitTest(unittest.TestCase):
@@ -140,6 +235,21 @@ class NearestTest(unittest.TestCase):
         t, point, d = bg.nearest_on_segment((20, 0, 0), (0, 0, 0), (10, 0, 0))
         self.assertEqual((t, point, d), (1.0, (10.0, 0.0, 0.0), 10.0))
         self.assertEqual(bg.nearest_on_segment((1, 1, 1), (2, 2, 2), (2, 2, 2))[0], 0.0)
+
+
+class SplitPointTest(unittest.TestCase):
+    def test_a_split_point_keeps_a_margin_from_the_ends_of_its_edge(self):
+        a, b = (0.0, 0.0, 0.0), (100.0, 0.0, 0.0)
+        self.assertEqual(bg.inner_point_on_segment((50.0, 30.0, 0.0), a, b), (50.0, 0.0, 0.0))
+        self.assertEqual(bg.inner_point_on_segment((-20.0, 5.0, 0.0), a, b)[0], 1.0)
+        self.assertEqual(bg.inner_point_on_segment((300.0, 0.0, 0.0), a, b)[0], 99.0)
+        self.assertEqual(bg.inner_point_on_segment((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (5.0, 0.0, 0.0))[0], 0.5)   # a short edge: a tenth
+
+    def test_a_point_at_the_place_of_another_is_found(self):
+        vertices, _ = bg.box((0, 0, 0), (10, 10, 10))
+        self.assertEqual(bg.coincident(vertices, 0, (10.0, 0.0, 0.0)), 1)
+        self.assertIsNone(bg.coincident(vertices, 0, (0.0, 0.0, 0.0)))                  # a point is not its own neighbour
+        self.assertIsNone(bg.coincident(vertices, 0, (5.0, 0.0, 0.0)))
 
 
 class TextTest(unittest.TestCase):
