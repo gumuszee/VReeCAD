@@ -116,9 +116,42 @@ class ArcTest(unittest.TestCase):
 
     def test_the_ends_of_an_arc_are_tied_to_what_they_touch(self):
         existing = si.Existing(points=[(0, 2, (60.0, 0.0))])
-        self.assertEqual(si.infer_arc(1, (0.0, 0.0), (60.0, 0.0), existing),
+        self.assertEqual(si.infer_arc(1, (30.0, 0.0), (0.0, 0.0), (60.0, 0.0), existing),
                          [("Coincident", 1, 1, -1, 1), ("Coincident", 1, 2, 0, 2)])
-        self.assertEqual(si.infer_arc(1, (10.0, 10.0), (50.0, 10.0), existing), [])
+        self.assertEqual(si.infer_arc(1, (30.0, 0.0), (10.0, 10.0), (50.0, 10.0), existing), [])
+
+
+class RelationTest(unittest.TestCase):
+    ARC = si.Existing(points=[(0, 1, (60.0, 30.0)), (0, 2, (0.0, 30.0)), (0, 3, (30.0, 30.0))], arcs=[(0, (30.0, 30.0), 30.0, 0.0, math.pi)])
+
+    def test_a_line_that_leaves_the_end_of_an_arc_along_it_is_tangent_to_it(self):
+        self.assertEqual(si.infer_line(1, (0.0, 30.0), (0.0, 10.0), self.ARC), [("Vertical", 1), ("Tangent", 1, 1, 0, 2)])
+
+    def test_a_line_that_leaves_across_the_arc_is_only_joined_to_it(self):
+        self.assertEqual(si.infer_line(1, (0.0, 30.0), (20.0, 10.0), self.ARC), [("Coincident", 1, 1, 0, 2)])
+
+    def test_an_arc_that_starts_along_a_line_is_tangent_to_it(self):
+        line = si.Existing(points=[(0, 1, (0.0, 0.0)), (0, 2, (0.0, 30.0))], lines=[(0, (0.0, 0.0), (0.0, 30.0))])
+        self.assertEqual(si.infer_arc(1, (30.0, 30.0), (60.0, 30.0), (0.0, 30.0), line), [("Tangent", 1, 2, 0, 2)])
+
+    def test_two_lines_end_to_end_are_not_made_tangent(self):
+        line = si.Existing(points=[(0, 1, (10.0, 10.0)), (0, 2, (30.0, 30.0))], lines=[(0, (10.0, 10.0), (30.0, 30.0))])
+        self.assertEqual(si.infer_line(1, (30.0, 30.0), (50.0, 50.0), line), [("Coincident", 1, 1, 0, 2), ("Parallel", 1, 0)])
+
+    def test_a_line_along_or_across_a_slanted_line_is_parallel_or_perpendicular_to_it(self):
+        slanted = si.Existing(points=[(0, 1, (0.0, 5.0)), (0, 2, (40.0, 25.0))], lines=[(0, (0.0, 5.0), (40.0, 25.0))])
+        self.assertEqual(si.infer_line(1, (10.0, 50.0), (50.0, 70.0), slanted), [("Parallel", 1, 0)])
+        self.assertEqual(si.infer_line(1, (10.0, 50.0), (30.0, 10.0), slanted), [("Perpendicular", 1, 0)])
+        self.assertEqual(si.infer_line(1, (10.0, 50.0), (30.0, 25.0), slanted), [])
+
+    def test_a_line_that_is_tied_at_both_ends_gets_no_further_relation(self):
+        slanted = si.Existing(points=[(0, 1, (0.0, 5.0)), (0, 2, (40.0, 25.0)), (1, 1, (10.0, 50.0)), (1, 2, (50.0, 70.0))],
+                              lines=[(0, (0.0, 5.0), (40.0, 25.0))])
+        self.assertEqual(si.infer_line(2, (10.0, 50.0), (50.0, 70.0), slanted), [("Coincident", 2, 1, 1, 1), ("Coincident", 2, 2, 1, 2)])
+
+    def test_a_line_along_an_axis_is_related_to_a_slanted_line_by_nothing(self):
+        slanted = si.Existing(lines=[(0, (0.0, 5.0), (40.0, 25.0))])
+        self.assertEqual(si.infer_line(1, (10.0, 50.0), (50.0, 50.0), slanted), [("Horizontal", 1)])
 
 
 class NameTest(unittest.TestCase):

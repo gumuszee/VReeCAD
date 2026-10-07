@@ -1317,6 +1317,36 @@ class MoveLiveTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             sketching.add_arc(self.doc, sketch, (0.0, 0.0), (60.0, 0.0), (30.0, 0.0))
 
+    def kinds(self, sketch):
+        return [c.Type for c in sketch.Constraints]
+
+    def test_a_line_and_an_arc_that_run_along_each_other_are_tangent_and_the_solver_keeps_them_so(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        geo, kept = sketching.add_arc(self.doc, sketch, (0.0, 30.0), (60.0, 30.0), (30.0, 60.0))     # a half circle over the top
+        self.doc.recompute()
+        down, kept = sketching.add_line(self.doc, sketch, (0.0, 30.0), (0.0, 10.0))                   # leaves its left end straight down
+        self.doc.recompute()
+        self.assertIn("Tangent", self.kinds(sketch))
+        self.assertTrue(sketching.solved(sketch))
+        self.assertIsNone(sketching.move_point(self.doc, sketch, down, 2, (0.0, 0.0)))
+        self.assertTrue(sketching.solved(sketch))
+        tail, kept = sketching.add_arc(self.doc, sketch, (0.0, 10.0), (-20.0, 10.0), (-10.0, 20.0))  # across the end of the line: only joined
+        self.assertNotEqual(kept, 0)
+        self.assertTrue(sketching.solved(sketch))
+
+    def test_a_line_that_continues_an_arc_or_runs_beside_a_slanted_line_gets_the_relation_and_stays_solvable(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        sketching.add_line(self.doc, sketch, (0.0, 5.0), (40.0, 25.0))
+        sketching.add_line(self.doc, sketch, (10.0, 50.0), (50.0, 70.0))                              # parallel
+        sketching.add_line(self.doc, sketch, (10.0, 50.0), (30.0, 10.0))                              # across the slanted line
+        self.doc.recompute()
+        kinds = self.kinds(sketch)
+        self.assertIn("Parallel", kinds)
+        self.assertIn("Perpendicular", kinds)
+        self.assertTrue(sketching.solved(sketch))
+
     def test_the_own_points_of_a_sketch_leave_out_the_dragged_point_and_those_that_move_with_it(self):
         from freecad.BlocksCAD.cad import sketching
         sketch = self.sketch_on()

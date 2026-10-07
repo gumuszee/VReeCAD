@@ -237,7 +237,7 @@ def add_arc(doc, sketch, start, end, middle):
     found = existing(sketch)
     circle = Part.Circle(App.Vector(centre[0], centre[1], 0), App.Vector(0, 0, 1), radius)
     geo = sketch.addGeometry(Part.ArcOfCircle(circle, first, last), False)
-    return geo, _constrain(doc, sketch, [], sketchinfer.infer_arc(geo, p_first, p_last, found))
+    return geo, _constrain(doc, sketch, [], sketchinfer.infer_arc(geo, centre, p_first, p_last, found))
 
 
 def outline(kind, a, b, sketch=None, c=None):

@@ -30,7 +30,10 @@ from dataclasses import dataclass, field
 from typing import List, Tuple
 
 TOLERANCE = 1e-6          # millimetres: a point this close to an element lies on it
+ANGLE_TOLERANCE = 1e-6    # of the sine or cosine of the angle between two unit directions that are parallel or perpendicular
 H_AXIS, V_AXIS = -1, -2
+LINE_DOF, ARC_DOF = 4, 5  # what a line (two points) and an arc (centre, radius, two angles) leave free
+COST = {"Horizontal": 1, "Vertical": 1, "Coincident": 2, "PointOnObject": 1, "Tangent": 3, "Parallel": 1, "Perpendicular": 1}
 
 
 @dataclass
@@ -89,9 +92,53 @@ def direction(p0, p1):
     return None
 
 
+def _unit(v):
+    length = math.hypot(v[0], v[1])
+    return None if length == 0 else (v[0] / length, v[1] / length)
+
+
+def _cross(a, b):
+    return a[0] * b[1] - a[1] * b[0]
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1]
+
+
+def _direction_at(existing, geo, position):
+    """(unit direction, is an arc) of the line or arc `geo` at its end `position` (1 or 2), or None."""
+    for g, a, b in existing.lines:
+        if g == geo and position in (1, 2):
+            direction = _unit((b[0] - a[0], b[1] - a[1]))
+            return None if direction is None else (direction, False)
+    for g, centre, radius, first, last in existing.arcs:
+        if g == geo and position in (1, 2):
+            angle = first if position == 1 else last
+            return (-math.sin(angle), math.cos(angle)), True
+    return None
+
+
+def _make_tangent(new_id, constraints, directions, new_is_arc, existing, dof):
+    """The `constraints` of a new line or arc where a coincident end becomes a tangent one when the new geometry runs along the line
+    or arc it joins (`directions` is its unit direction at each end), at least one of the two being an arc, as long as the constraints
+    leave nothing redundant (`dof` is what the geometry has free)."""
+    result = list(constraints)
+    for index, c in enumerate(result):
+        if c[0] != "Coincident" or c[1] != new_id or c[3] < 0 or c[2] not in directions:
+            continue
+        other = _direction_at(existing, c[3], c[4])
+        if other is None or not (new_is_arc or other[1]) or abs(_cross(directions[c[2]], other[0])) > ANGLE_TOLERANCE:
+            continue
+        if sum(COST[x[0]] for x in result) - COST["Coincident"] + COST["Tangent"] <= dof:
+            result[index] = ("Tangent", new_id, c[2], c[3], c[4])
+    return result
+
+
 def infer_line(new_id, p0, p1, existing):
     """The constraints of a new line from `p0` to `p1`: horizontal or vertical when it runs along an axis, and its ends tied to what
-    they touch. An end on an axis is not tied to it when the line runs along that direction already (that would be redundant)."""
+    they touch. An end on an axis is not tied to it when the line runs along that direction already (that would be redundant). A line
+    that joins an arc at its end and runs along the arc there is **tangent** to it; a line that is neither horizontal nor vertical and
+    runs along or across a line of the sketch is **parallel** or **perpendicular** to it, if that leaves nothing redundant."""
     constraints = []
     along = direction(p0, p1)
     if along is not None:
@@ -102,6 +149,19 @@ def infer_line(new_id, p0, p1, existing):
     end = point_relation(new_id, 2, p1, existing, allow_axes=along is None)
     if end is not None and not (start is not None and start[0] == "Coincident" and end[0] == "Coincident" and start[3:] == end[3:]):
         constraints.append(end)
+    unit = _unit((p1[0] - p0[0], p1[1] - p0[1]))
+    if unit is None:
+        return constraints
+    constraints = _make_tangent(new_id, constraints, {1: unit, 2: unit}, False, existing, LINE_DOF)
+    if along is None and not any(c[0] == "Tangent" for c in constraints):
+        for geo, a, b in existing.lines:
+            other = _unit((b[0] - a[0], b[1] - a[1]))
+            if geo == new_id or other is None or direction(a, b) is not None:
+                continue                                                    # a line along an axis is related to this one by the axis already
+            relation = "Parallel" if abs(_cross(unit, other)) <= ANGLE_TOLERANCE else "Perpendicular" if abs(_dot(unit, other)) <= ANGLE_TOLERANCE else None
+            if relation is not None and sum(COST[c[0]] for c in constraints) + COST[relation] <= LINE_DOF:
+                constraints.append((relation, new_id, geo))
+                break
     return constraints
 
 
@@ -139,8 +199,9 @@ def arc_points(centre, radius, first, last, count=48):
             for i in range(count + 1)]
 
 
-def infer_arc(new_id, p_first, p_last, existing):
-    """The constraints of a new arc whose first and last point are `p_first` and `p_last`: each end tied to what it touches."""
+def infer_arc(new_id, centre, p_first, p_last, existing):
+    """The constraints of a new arc with the centre `centre` whose first and last point are `p_first` and `p_last`: each end tied to
+    what it touches, and **tangent** to the line or arc it joins where it runs along that."""
     constraints = []
     first = point_relation(new_id, 1, p_first, existing)
     if first is not None:
@@ -148,7 +209,12 @@ def infer_arc(new_id, p_first, p_last, existing):
     last = point_relation(new_id, 2, p_last, existing)
     if last is not None and not (first is not None and first[0] == "Coincident" and last[0] == "Coincident" and first[3:] == last[3:]):
         constraints.append(last)
-    return constraints
+    directions = {}
+    for position, point in ((1, p_first), (2, p_last)):
+        direction = _unit((-(point[1] - centre[1]), point[0] - centre[0]))
+        if direction is not None:
+            directions[position] = direction
+    return _make_tangent(new_id, constraints, directions, True, existing, ARC_DOF)
 
 
 def rectangle(c0, c2):
