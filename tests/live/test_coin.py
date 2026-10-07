@@ -1898,6 +1898,40 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.undo()
         self.assertEqual([o.TypeId for o in self.doc.Objects], ["Part::Box"])
 
+    def test_picking_and_the_anchors_follow_the_changes_of_the_document_through_the_change_log(self):
+        import FreeCAD as App
+        from freecad.BlocksCAD.cad import anchors, picking
+        probe = lambda p: picking.pick(self.doc, p, 1000.0, "object")
+        cache = anchors.Anchors()
+        top = (50.0, 50.0, 96.0)
+        self.assertEqual(probe(top).name, self.box.Name)
+        self.assertEqual(len(cache.get(self.doc)), 8 + 12)                              # eight corners and twelve edge middles
+        moved = self.box.Placement.copy()
+        moved.Base = App.Vector(500.0, 0.0, 0.0)
+        self.box.Placement = moved
+        self.assertIsNone(probe(top))                                                    # no recompute needed: the placement is the change
+        self.assertEqual(probe((550.0, 50.0, 96.0)).name, self.box.Name)
+        self.assertIn((500.0, 0.0, 0.0), [tuple(round(c, 6) for c in a) for a in cache.get(self.doc)])
+        self.box.Visibility = False
+        self.assertIsNone(probe((550.0, 50.0, 96.0)))
+        self.assertEqual(cache.get(self.doc), [])
+        self.box.Visibility = True
+        self.assertIsNotNone(probe((550.0, 50.0, 96.0)))
+        self.assertEqual(cache.get(self.doc, (self.box.Name,)), [])                     # the excluded object has no anchors
+        self.doc.openTransaction("delete")
+        self.doc.removeObject(self.box.Name)
+        self.doc.commitTransaction()
+        self.assertIsNone(probe((550.0, 50.0, 96.0)))
+        self.assertEqual(cache.get(self.doc), [])
+        self.doc.undo()
+        self.assertIsNotNone(probe((550.0, 50.0, 96.0)))                                 # the object is back, and so are its points
+        self.assertEqual(len(cache.get(self.doc)), 20)
+        other = App.newDocument("BlocksCADOther")                                       # a document of its own is read of its own
+        try:
+            self.assertIsNone(picking.pick(other, (550.0, 50.0, 96.0), 1000.0, "object"))
+        finally:
+            App.closeDocument(other.Name)
+
     def test_picking_one_sort_of_element_ignores_closer_elements_of_another_sort(self):
         from freecad.BlocksCAD.cad import picking
         probe = lambda p, kind: picking.pick(self.doc, p, 1000.0, kind)

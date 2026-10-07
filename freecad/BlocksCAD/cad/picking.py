@@ -63,6 +63,37 @@ def _nearest(items, distance):
     return best, index
 
 
+def _box_of(obj):
+    """The box (x, y, z lowest, then highest) around a visible object that has faces or edges, else None."""
+    shape = getattr(obj, "Shape", None)
+    if shape is None or shape.isNull() or not getattr(obj, "Visibility", True) or not (shape.Faces or shape.Edges):
+        return None
+    box = shape.BoundBox
+    if not box.isValid():
+        return None
+    return (box.XMin, box.YMin, box.ZMin, box.XMax, box.YMax, box.ZMax)
+
+
+_BOXES = None
+
+
+def _near(doc, point, reach):
+    """The visible objects of `doc` whose box, `reach` millimetres larger on all sides, holds `point`. The boxes are kept per object
+    and read again only for the objects that changed (`cad/changes.py`), so this costs a comparison per object."""
+    global _BOXES
+    if _BOXES is None:
+        from freecad.BlocksCAD.cad import changes
+        _BOXES = changes.ObjectCache(changes.shared(), _box_of)
+    x, y, z = point
+    found = []
+    for name, (x0, y0, z0, x1, y1, z1) in _BOXES.get(doc).items():
+        if x0 - reach <= x <= x1 + reach and y0 - reach <= y <= y1 + reach and z0 - reach <= z <= z1 + reach:
+            obj = doc.getObject(name)
+            if obj is not None:
+                found.append(obj)
+    return found
+
+
 def pick(doc, point, mm_per_metre, kind=None) -> Optional[Pick]:
     """The element of the visible objects of `doc` that `point` (document millimetres) touches, or None.
 
@@ -74,16 +105,8 @@ def pick(doc, point, mm_per_metre, kind=None) -> Optional[Pick]:
     marker = Part.Vertex(p)
     reach = grab.REACH["face"] * mm_per_metre
     best = None
-    for obj in doc.Objects:
-        shape = getattr(obj, "Shape", None)
-        if shape is None or shape.isNull() or not getattr(obj, "Visibility", True) or not (shape.Faces or shape.Edges):
-            continue
-        box = App.BoundBox(shape.BoundBox)
-        if not box.isValid():
-            continue
-        box.enlarge(reach)
-        if not box.isInside(p):
-            continue
+    for obj in _near(doc, point, reach):
+        shape = obj.Shape
         if kind in ("vertex", "edge", "face"):
             items, distance = {"vertex": (shape.Vertexes, lambda v: (v.Point - p).Length),
                                "edge": (shape.Edges, lambda e: e.distToShape(marker)[0]),
