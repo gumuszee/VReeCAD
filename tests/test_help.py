@@ -69,5 +69,13 @@ class OnboardedTest(unittest.TestCase):
         self.assertFalse(cfg.Settings.from_json(json.dumps({"onboarded": 0})).onboarded)
 
 
+class HandednessSettingTest(unittest.TestCase):
+    def test_the_tool_hand_is_right_unless_the_setting_says_left_and_a_bad_value_is_right(self):
+        self.assertEqual(cfg.Settings().tool_hand, "right")
+        self.assertEqual(cfg.Settings.from_json(cfg.Settings(tool_hand="left").to_json()).tool_hand, "left")
+        self.assertEqual(cfg.Settings.from_json(json.dumps({"tool_hand": "both"})).tool_hand, "right")
+        self.assertEqual(cfg.Settings.from_json(json.dumps({"tip_angle": 20})).tool_hand, "right")
+
+
 if __name__ == "__main__":
     unittest.main()

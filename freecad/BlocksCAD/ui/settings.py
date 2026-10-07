@@ -27,6 +27,7 @@ from typing import List
 from freecad.BlocksCAD.ui.layout import current_face
 
 MODES = ("laser", "tip")
+SIDES = ("left", "right")
 ANGLE_RANGE = (-90.0, 90.0)
 LENGTH_RANGE = (0.0, 0.4)
 
@@ -42,6 +43,7 @@ class Settings:
     tip_length: float = 0.04      # metres from the controller to the tip
     recent: List[str] = field(default_factory=list)   # ids of the faces used last, newest first
     onboarded: bool = False       # the controls card has been shown (and gone) once
+    tool_hand: str = "right"      # the hand that holds the tool; the palette is on the other
 
     def __post_init__(self):
         if self.pointer_mode not in MODES:
@@ -50,6 +52,8 @@ class Settings:
         self.tip_length = _clamp(float(self.tip_length), *LENGTH_RANGE)
         self.recent = [current_face(f) for f in self.recent if isinstance(f, str)] if isinstance(self.recent, list) else []
         self.onboarded = bool(self.onboarded)
+        if self.tool_hand not in SIDES:
+            self.tool_hand = "right"
 
     def toggle_mode(self):
         self.pointer_mode = "tip" if self.pointer_mode == "laser" else "laser"
@@ -60,7 +64,7 @@ class Settings:
     @classmethod
     def from_json(cls, text):
         data = json.loads(text)
-        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length", "recent", "onboarded") if k in data}
+        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length", "recent", "onboarded", "tool_hand") if k in data}
         return cls(**known)
 
 

@@ -21,7 +21,7 @@ The upstream interface (quick menu on the left trigger, stick locomotion) is not
 | Tool hand | right | the active tool (tip, ray, trigger = primary action), the navigation modifiers |
 | Palette hand | left | the palette carousel, undo and redo shortcuts |
 
-Handedness is a preference; the roles swap as a whole.
+Handedness is a preference; the roles swap as a whole. The **Tool hand** face of the Session panel swaps them (a toast says "Tool hand: left" or "Tool hand: right"): everything that belongs to a hand follows at once, the carousel and the pointer rules of the palette, the quick radial, the option disc, the undo button, the value panels, the navigation modifiers and the tools themselves (`UiController.set_tool_hand`), and the choice is saved in `settings.json` (`tool_hand`) and applied when the viewer starts. The D-pad shortcuts for undo and redo belong to the palette hand, so with the tool hand on the left they are not available (a Steam Frame has them on its left controller only); `button2` of the tool hand undoes on every controller.
 
 ## Navigation (grips)
 
@@ -67,7 +67,7 @@ The carousel is a prism around the long axis of the palette controller. It is at
 | Modify | Fuse, Cut, Common, Copy, Mirror X, Mirror Y, Mirror Z, Colour, Pattern X, Pattern Y, Pattern Z |
 | Shape | Extrude, Fillet, Chamfer, Attach, Detach, Fixed joint, Hinge, Slider, Ball joint, Unjoint |
 | View | Reset view, Reload scene, Reset layout, Show hidden, Controls |
-| Session | Pointer (laser or tip), Close VR, and the sliders Angle and Length (tip angle and tip length) |
+| Session | Pointer (laser or tip), Close VR, Tool hand, and the sliders Angle and Length (tip angle and tip length) |
 
 **Delete** removes the selected objects in one transaction, so one undo step brings them back; a face, an edge or a vertex that is selected is not an object and is left alone (a toast says so). The selection that remains is what was not deleted.
 
@@ -85,7 +85,7 @@ The carousel is a prism around the long axis of the palette controller. It is at
 - **Colour** gives every selected object (whole or by an element) the next colour of a palette of eight (grey, red, orange, yellow, green, blue, violet, white), each from its own current colour; the toast names the colour. A colour belongs to the view of the object, so it is not an undo step.
 - Every other action is one undo step.
 
-Planned: mirror about a chosen plane, a pattern with a typed count and interval, Settings (handedness, comfort, snapping).
+Planned: mirror about a chosen plane, a pattern with a typed count and interval, Settings (comfort, snapping).
 
 ### Guides
 

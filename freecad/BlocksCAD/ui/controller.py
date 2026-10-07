@@ -98,6 +98,7 @@ class UiController:
         self._front_before = 0             # the front side of the carousel before the panels of the module appeared
         self.options = tool_options.OptionControl(tool_hand)
         self.active_tool = None            # the active `tools.base.Tool`, set by the host before `update`
+        self.hands_changed = None          # callable(tool hand index), set by the host: the hands have swapped roles
         self.gesture_text = None           # readout of a running gesture (the size of a shape being dragged), set by the tool
         self.toasts = toast.Toasts()
         self.help = controls_help.HelpState()
@@ -301,6 +302,29 @@ class UiController:
             self._save_settings()
             self.toast("Pointer: " + ("Tip" if self.settings.pointer_mode == "tip" else "Laser"))
 
+    def set_tool_hand(self, hand):
+        """Hold the tools in the hand `hand` (0 left, 1 right) and the palette in the other: every part of the interface that belongs to
+        a hand follows. The host is told through `hands_changed`."""
+        palette = 1 - hand
+        self.tool_hand, self.palette_hand = hand, palette
+        self.navigator.modifier_hand = hand
+        self.ring.palette_hand, self.ring.tool_hand = palette, hand
+        for part in (self.radial, self.undo_button, self.module, self.options):
+            part.hand = hand
+        if self.hands_changed is not None:
+            self.hands_changed(hand)
+
+    def apply_handedness(self):
+        """Give the hands the roles that the setting `tool_hand` names (the host calls it once the interface is built)."""
+        self.set_tool_hand(0 if self.settings.tool_hand == "left" else 1)
+
+    def swap_hands(self):
+        """The tool hand and the palette hand change places; the choice is saved. Returns the text for a toast."""
+        self.settings.tool_hand = "left" if self.tool_hand == 1 else "right"
+        self._save_settings()
+        self.apply_handedness()
+        return f"Tool hand: {self.settings.tool_hand}"
+
     def show_first_help(self):
         """Show the controls cards once when the addon has not been used yet (the setting `onboarded`); they stay until the Controls face
         or the time takes them away, and then the setting is saved."""
@@ -316,7 +340,9 @@ class UiController:
             self._save_settings()
 
     def _run(self, action, out):
-        if action == "help:toggle":
+        if action == "hands:swap":
+            self.toast(self.swap_hands())
+        elif action == "help:toggle":
             shown = self.help.toggle()
             self.toast("Controls shown" if shown else "Controls hidden")
             if not shown:

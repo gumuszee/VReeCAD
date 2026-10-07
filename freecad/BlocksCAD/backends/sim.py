@@ -157,6 +157,7 @@ class SimSession:
             "format_length": lambda mm: units.format_length(mm, self.ui.system),
         })
         self.tool_manager = tools.ToolManager(context)
+        self.ui.hands_changed = lambda hand: setattr(context, "dominant", hand)
 
     @staticmethod
     def _document():

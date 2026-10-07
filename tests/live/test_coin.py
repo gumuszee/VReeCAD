@@ -419,6 +419,56 @@ class SimUiTest(unittest.TestCase):
             finally:
                 second.close()
 
+    def test_swapping_the_hands_gives_the_palette_to_the_other_hand_and_everything_of_a_hand_follows(self):
+        import types
+        ui = self.s.ui
+        self.assertEqual((ui.tool_hand, ui.palette_hand), (1, 0))
+        face = ui.faces["pointer.hands"]
+        self.assertEqual(face.action, "hands:swap")
+        ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        self.assertEqual(ui.toasts.items[-1].text, "Tool hand: left")
+        self.assertEqual((ui.tool_hand, ui.palette_hand), (0, 1))
+        self.assertEqual((ui.ring.tool_hand, ui.ring.palette_hand, ui.navigator.modifier_hand), (0, 1, 0))
+        self.assertEqual([part.hand for part in (ui.radial, ui.undo_button, ui.module, ui.options)], [0, 0, 0, 0])
+        self.assertEqual(self.s.tool_manager.ctx.dominant, 0)                              # the tools work with the new tool hand
+        self.s.input.set_hand(0, button2=True)                                              # B of the new tool hand undoes
+        self.settle(3)
+        self.s.input.set_hand(0, button2=False)
+        self.s.frame(0.02)
+        self.assertEqual(self.calls, ["undo"])
+        self.s.input.set_hand(1, aux1=True)                                                 # the D-pad shortcut belongs to the palette hand
+        self.s.frame(0.02)
+        self.s.input.set_hand(1, aux1=False)
+        self.s.frame(0.02)
+        self.assertEqual(self.calls, ["undo", "undo"])
+        ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        self.assertEqual((ui.toasts.items[-1].text, ui.tool_hand, self.s.tool_manager.ctx.dominant), ("Tool hand: right", 1, 1))
+
+    def test_the_tool_hand_is_saved_and_the_next_start_has_the_hands_the_way_they_were(self):
+        import os
+        import tempfile
+        from freecad.BlocksCAD.tools import registry
+        from freecad.BlocksCAD.ui import settings as cfg
+        from freecad.BlocksCAD.ui.controller import UiController
+        with tempfile.TemporaryDirectory() as folder:
+            paths = dict(layout_path=os.path.join(folder, "layout.json"), settings_path=os.path.join(folder, "settings.json"))
+            first = UiController(registry.names(), registry.label_of, {}, **paths)
+            told = []
+            first.hands_changed = told.append
+            try:
+                first.swap_hands()
+                self.assertEqual(cfg.load_settings(paths["settings_path"]).tool_hand, "left")
+                self.assertEqual(told, [0])
+            finally:
+                first.close()
+            second = UiController(registry.names(), registry.label_of, {}, **paths)
+            try:
+                self.assertEqual(second.tool_hand, 1)                                       # until the host applies the setting
+                second.apply_handedness()
+                self.assertEqual((second.tool_hand, second.palette_hand), (0, 1))
+            finally:
+                second.close()
+
     def test_layout_actions_toast(self):
         self.show_carousel()
         self.s.ui._run("layout:reset", self.s.ui_update)

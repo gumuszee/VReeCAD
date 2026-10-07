@@ -563,6 +563,8 @@ class XRwidget(QOpenGLWidget):
         self.ui = UiController(tool_registry.names(), tool_registry.label_of, actions, tool_hint=tool_registry.hint_of,
                                palette_hand=self.primary_con, tool_hand=self.secondary_con)
         self.navigator = self.ui.navigator
+        self.ui.hands_changed = lambda hand: setattr(self.tools.ctx, "dominant", hand)    # the tools work with the tool hand
+        self.ui.apply_handedness()
         self.ui.part_frame = lambda hand, names, lift: self.xr_con[hand].part_frame(names, lift)
         self.ui.values_source = lambda: object_values.source(App.ActiveDocument)
         self.setup_tool_services()
