@@ -22,6 +22,43 @@ class SnappedTest(unittest.TestCase):
         self.assertEqual(pushpull.describe(0.0, fmt), "Push or pull: 0")
 
 
+class PlanDirectTest(unittest.TestCase):
+    IDENTITY = (0.0, 0.0, 0.0, 1.0)
+    BOX = {"Length": 100.0, "Width": 80.0, "Height": 60.0}
+
+    def test_the_high_end_of_a_box_grows_without_moving_the_base(self):
+        self.assertEqual(pushpull.plan_direct("Part::Box", self.BOX, self.IDENTITY, (0.0, 0.0, 1.0), 20.0), ({"Height": 80.0}, None))
+        self.assertEqual(pushpull.plan_direct("Part::Box", self.BOX, self.IDENTITY, (1.0, 0.0, 0.0), -30.0), ({"Length": 70.0}, None))
+
+    def test_the_low_end_of_a_box_moves_the_base_the_way_it_grows(self):
+        self.assertEqual(pushpull.plan_direct("Part::Box", self.BOX, self.IDENTITY, (0.0, -1.0, 0.0), 10.0), ({"Width": 90.0}, (0.0, -10.0, 0.0)))
+        self.assertEqual(pushpull.plan_direct("Part::Box", self.BOX, self.IDENTITY, (0.0, -1.0, 0.0), -10.0), ({"Width": 70.0}, (0.0, 10.0, 0.0)))
+
+    def test_a_turned_box_is_read_along_its_own_axes(self):
+        quarter = (0.0, 0.0, 0.5 ** 0.5, 0.5 ** 0.5)                                    # 90 degrees about Z: Length runs along Y
+        self.assertEqual(pushpull.plan_direct("Part::Box", self.BOX, quarter, (0.0, 1.0, 0.0), 5.0), ({"Length": 105.0}, None))
+        self.assertIsNone(pushpull.plan_direct("Part::Box", self.BOX, (0.0, 0.0, 0.3826834, 0.9238795), (1.0, 0.0, 0.0), 5.0))   # 45 degrees
+
+    def test_only_the_caps_of_a_cylinder_are_pushed(self):
+        sizes = {"Height": 50.0}
+        self.assertEqual(pushpull.plan_direct("Part::Cylinder", sizes, self.IDENTITY, (0.0, 0.0, 1.0), 10.0), ({"Height": 60.0}, None))
+        self.assertIsNone(pushpull.plan_direct("Part::Cylinder", sizes, self.IDENTITY, (1.0, 0.0, 0.0), 10.0))
+        self.assertIsNone(pushpull.plan_direct("Part::Torus", sizes, self.IDENTITY, (0.0, 0.0, 1.0), 10.0))
+
+    def test_a_size_that_would_be_nothing_or_less_is_no_plan(self):
+        self.assertIsNone(pushpull.plan_direct("Part::Box", self.BOX, self.IDENTITY, (0.0, 0.0, 1.0), -60.0))
+        self.assertIsNone(pushpull.plan_direct("Part::Box", self.BOX, self.IDENTITY, (0.0, 0.0, 1.0), -70.0))
+
+    def test_the_ends_of_an_extrusion_change_its_two_lengths(self):
+        sizes = {"LengthFwd": 20.0, "LengthRev": 0.0}
+        up = (0.0, 0.0, 1.0)
+        self.assertEqual(pushpull.plan_direct("Part::Extrusion", sizes, self.IDENTITY, up, 5.0, up), ({"LengthFwd": 25.0}, None))
+        self.assertEqual(pushpull.plan_direct("Part::Extrusion", sizes, self.IDENTITY, (0.0, 0.0, -1.0), 5.0, up), ({"LengthRev": 5.0}, None))
+        self.assertIsNone(pushpull.plan_direct("Part::Extrusion", sizes, self.IDENTITY, (1.0, 0.0, 0.0), 5.0, up))
+        self.assertIsNone(pushpull.plan_direct("Part::Extrusion", sizes, self.IDENTITY, up, -20.0, up))
+        self.assertIsNone(pushpull.plan_direct("Part::Extrusion", sizes, self.IDENTITY, up, 5.0, None))
+
+
 class FakeShape:
     def isNull(self):
         return False

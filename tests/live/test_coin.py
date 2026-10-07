@@ -1767,6 +1767,8 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_a_push_fuses_an_extrusion_of_the_face_a_pull_cuts_it_and_the_length_stays_editable(self):
         from freecad.BlocksCAD.cad import pushpull
+        self.box.setExpression("Height", "100 mm")                                           # a bound size is not changed directly
+        self.doc.recompute()
         top = pushpull.face_info(self.box, "Face6")
         self.assertEqual((top[1], top[0][2]), ((0.0, 0.0, 1.0), 100.0))
         text, name = pushpull.apply(self.doc, self.box.Name, "Face6", 30.0)
@@ -1786,17 +1788,69 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(len(mesh.triangles), 12)
         self.assertEqual(sorted({round(p[2]) for p in mesh.points}), [100, 120])
 
+    def test_a_face_that_a_size_moves_is_pushed_by_changing_the_size_and_adds_nothing(self):
+        from freecad.BlocksCAD.cad import pushpull
+        count = len(self.doc.Objects)
+        text, name = pushpull.apply(self.doc, self.box.Name, "Face6", 30.0)                 # the top: Height
+        self.assertEqual((name, text), (self.box.Name, "Pushed Box by 30 mm"))
+        self.assertEqual((self.box.Height.Value, self.box.Placement.Base.z), (130.0, 0.0))
+        text, name = pushpull.apply(self.doc, self.box.Name, "Face5", 20.0)                 # the bottom: Height and the base go with it
+        self.assertEqual((self.box.Height.Value, self.box.Placement.Base.z), (150.0, -20.0))
+        pushpull.apply(self.doc, self.box.Name, "Face2", -40.0)                              # an end of Length pulled in
+        self.assertEqual((self.box.Length.Value, self.box.Placement.Base.x), (60.0, 0.0))
+        pushpull.apply(self.doc, self.box.Name, "Face1", -10.0)
+        self.assertEqual((self.box.Length.Value, self.box.Placement.Base.x), (50.0, 10.0))
+        self.assertEqual(len(self.doc.Objects), count)
+        self.assertAlmostEqual(self.box.Shape.Volume, 50.0 * 100.0 * 150.0)
+        self.doc.undo()
+        self.assertEqual((self.box.Length.Value, self.box.Placement.Base.x), (60.0, 0.0))     # one undo step each
+
+    def test_a_turned_box_and_a_cylinder_end_are_pushed_along_their_own_axes(self):
+        import FreeCAD as App
+        from freecad.BlocksCAD.cad import pushpull, primitives as prim
+        self.box.Placement = App.Placement(App.Vector(0, 0, 0), App.Rotation(App.Vector(0, 0, 1), 90))   # Length now runs along Y
+        self.doc.recompute()
+        sub = next(f"Face{i + 1}" for i, f in enumerate(self.box.Shape.Faces) if abs(f.normalAt(0, 0).y - 1.0) < 1e-6)
+        pushpull.apply(self.doc, self.box.Name, sub, 25.0)
+        self.assertEqual(self.box.Length.Value, 125.0)
+        cylinder = prim.create(self.doc, "Cylinder", (300.0, 0.0, 0.0), (50.0, 50.0, 80.0))
+        top = next(f"Face{i + 1}" for i, f in enumerate(cylinder.Shape.Faces) if abs(f.CenterOfMass.z - 80.0) < 1e-6)
+        pushpull.apply(self.doc, cylinder.Name, top, -30.0)
+        self.assertEqual(cylinder.Height.Value, 50.0)
+
+    def test_the_ends_of_the_extrusion_of_a_sketch_are_pushed_by_its_lengths(self):
+        from freecad.BlocksCAD.cad import pushpull, sketching
+        sketch = self.sketch_on()
+        sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))
+        text, names = sketching.extrude(self.doc, [(sketch.Name, "")], 20.0)
+        solid = self.doc.getObject(names[0])
+        faces = {round(f.CenterOfMass.z): f"Face{i + 1}" for i, f in enumerate(solid.Shape.Faces) if abs(f.normalAt(0, 0).z) > 0.99}
+        count = len(self.doc.Objects)
+        pushpull.apply(self.doc, solid.Name, faces[20], 15.0)                                # the far end
+        self.assertEqual((solid.LengthFwd, solid.LengthRev), (35.0, 0.0))
+        pushpull.apply(self.doc, solid.Name, faces[0], 10.0)                                 # the end on the sketch
+        self.assertEqual((solid.LengthFwd, solid.LengthRev), (35.0, 10.0))
+        self.assertAlmostEqual(solid.Shape.BoundBox.ZMin, -10.0)
+        self.assertAlmostEqual(solid.Shape.Volume, 60.0 * 40.0 * 45.0)
+        self.assertEqual(len(self.doc.Objects), count)
+        top = next(f"Face{i + 1}" for i, f in enumerate(solid.Shape.Faces) if abs(f.CenterOfMass.z - 35.0) < 1e-6)
+        text, name = pushpull.apply(self.doc, solid.Name, top, -80.0)                        # more than the length: no size change, a cut that fails
+        self.assertEqual((solid.LengthFwd, solid.LengthRev), (35.0, 10.0))
+        self.assertTrue(text.startswith("Pull failed"), text)
+
     def test_a_curved_face_cannot_be_pushed_and_a_failed_pull_leaves_the_document_alone(self):
         from freecad.BlocksCAD.cad import pushpull, primitives as prim
         cylinder = prim.create(self.doc, "Cylinder", (300.0, 0.0, 0.0), (50.0, 50.0, 80.0))
         self.assertEqual(pushpull.apply(self.doc, cylinder.Name, "Face1", 10.0), ("Only flat faces can be pushed or pulled", None))
         count = len(self.doc.Objects)
-        text, name = pushpull.apply(self.doc, self.box.Name, "Face6", -500.0)                # pulls through the whole box
+        text, name = pushpull.apply(self.doc, self.box.Name, "Face6", -500.0)                # pulls through the whole box (no size is that small)
         self.assertIsNone(name)
         self.assertTrue(text.startswith("Pull failed"), text)
         self.assertEqual(len(self.doc.Objects), count)
 
     def test_the_push_pull_tool_pushes_a_face_by_a_drag_along_its_normal_in_one_undo_step(self):
+        self.box.setExpression("Height", "100 mm")
+        self.doc.recompute()
         s = self.session()
         s.select_tool("pushpull")
         self.hand(1, (50.0, 50.0, 96.0))
