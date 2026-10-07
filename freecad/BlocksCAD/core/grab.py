@@ -33,20 +33,25 @@ REACH = {"vertex": 0.012, "edge": 0.02, "face": 0.03}   # metres on the stage: h
 
 
 def snap_rotation(q, step_degrees=ROTATION_STEP):
-    """The rotation `q` with its angle rounded to a multiple of `step_degrees` (its axis is kept); without a step it is unchanged."""
+    """The rotation `q` as turns about the X, Y and Z axes (applied in that order), each rounded to a multiple of `step_degrees`, so the
+    result is aligned to the axes in all three; without a step it is unchanged."""
     if not step_degrees:
         return mu.quat_normalize(q)
     x, y, z, w = mu.quat_normalize(q)
-    if w < 0:
-        x, y, z, w = -x, -y, -z, -w
-    angle = 2.0 * math.acos(min(1.0, w))
-    sine = math.sqrt(max(0.0, 1.0 - w * w))
-    if sine < 1e-9 or angle < 1e-9:
+    sine = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
+    pitch = math.asin(sine)
+    if abs(sine) > 1.0 - 1e-9:                          # looking straight up or down: only the sum of the turns about X and Z is defined
+        roll, yaw = 0.0, math.atan2(-2.0 * (x * y - w * z), 1.0 - 2.0 * (x * x + z * z))
+    else:
+        roll = math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
+        yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+    steps = [round(math.degrees(a) / step_degrees) * step_degrees for a in (roll, pitch, yaw)]
+    if not any(steps):
         return mu.IDENTITY_QUAT
-    snapped = round(math.degrees(angle) / step_degrees) * step_degrees
-    if snapped == 0:
-        return mu.IDENTITY_QUAT
-    return mu.quat_from_axis_angle((x / sine, y / sine, z / sine), math.radians(snapped))
+    turn = mu.IDENTITY_QUAT
+    for axis, degrees in zip(((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), steps):
+        turn = mu.quat_multiply(mu.quat_from_axis_angle(axis, math.radians(degrees)), turn)
+    return mu.quat_normalize(turn)
 
 
 @dataclass(frozen=True)

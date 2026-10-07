@@ -22,12 +22,32 @@ def about_z(degrees):
 
 
 class SnapRotationTest(unittest.TestCase):
-    def test_the_angle_is_rounded_to_the_step_and_the_axis_is_kept(self):
-        axis = mu.normalize((1.0, 2.0, 2.0))
-        for degrees, expected in ((0.0, 0.0), (6.0, 0.0), (8.0, 15.0), (22.0, 15.0), (23.0, 30.0), (100.0, 105.0), (179.0, 180.0)):
-            snapped = grab.snap_rotation(mu.quat_from_axis_angle(axis, math.radians(degrees)))
-            reference = mu.quat_from_axis_angle(axis, math.radians(expected))
-            self.assertAlmostEqual(abs(qdot(snapped, reference)), 1.0, places=6, msg=f"{degrees}")
+    def test_the_angle_about_each_axis_is_rounded_to_the_step(self):
+        for axis in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)):
+            for degrees, expected in ((0.0, 0.0), (6.0, 0.0), (8.0, 15.0), (22.0, 15.0), (23.0, 30.0), (80.0, 75.0), (100.0, 105.0), (179.0, 180.0)):
+                snapped = grab.snap_rotation(mu.quat_from_axis_angle(axis, math.radians(degrees)))
+                reference = mu.quat_from_axis_angle(axis, math.radians(expected))
+                self.assertAlmostEqual(abs(qdot(snapped, reference)), 1.0, places=6, msg=f"{axis} {degrees}")
+
+    def test_a_snapped_rotation_stays_as_it_is(self):
+        for axis in ((1.0, 2.0, 2.0), (-0.3, 0.8, 0.5), (0.0, 1.0, 1.0), (1.0, 1.0, 1.0)):
+            for degrees in (13.0, 47.0, 91.0, 133.0, 200.0, 301.0):
+                snapped = grab.snap_rotation(mu.quat_from_axis_angle(axis, math.radians(degrees)), 15.0)
+                self.assertAlmostEqual(abs(qdot(grab.snap_rotation(snapped, 15.0), snapped)), 1.0, places=6, msg=f"{axis} {degrees}")
+
+    def test_a_quarter_turn_steps_keep_the_axes_on_the_axes(self):
+        for axis in ((1.0, 2.0, 2.0), (-0.3, 0.8, 0.5), (1.0, 1.0, 1.0)):
+            for degrees in (30.0, 77.0, 120.0, 250.0):
+                snapped = grab.snap_rotation(mu.quat_from_axis_angle(axis, math.radians(degrees)), 90.0)
+                for basis in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)):
+                    self.assertTrue(close(sorted(abs(c) for c in mu.rotate(snapped, basis)), (0.0, 0.0, 1.0)), f"{axis} {degrees}")
+
+    def test_a_hand_looking_straight_up_or_down_is_snapped_too(self):
+        for pitch in (90.0, -90.0):
+            q = mu.quat_multiply(about_z(33.0), mu.quat_from_axis_angle((0.0, 1.0, 0.0), math.radians(pitch)))
+            snapped = grab.snap_rotation(q, 90.0)
+            self.assertTrue(close(sorted(abs(c) for c in mu.rotate(snapped, (1.0, 0.0, 0.0))), (0.0, 0.0, 1.0)), f"{pitch}")
+            self.assertTrue(close(sorted(abs(c) for c in mu.rotate(snapped, (0.0, 0.0, 1.0))), (0.0, 0.0, 1.0)), f"{pitch}")
 
     def test_a_turn_the_long_way_round_is_the_short_way(self):
         snapped = grab.snap_rotation(mu.quat_from_axis_angle((0.0, 0.0, 1.0), math.radians(350.0)))
