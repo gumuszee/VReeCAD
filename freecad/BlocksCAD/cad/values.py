@@ -21,7 +21,7 @@ A value may be bound to an expression of the variables of the document (`cad/var
 variable when the value is bound to one variable alone, and refuse when the expression is more than that.
 `field_specs` is pure Python; FreeCAD is only used by the object."""
 
-from freecad.BlocksCAD.cad import block, edit, picking, sketching, variables
+from freecad.BlocksCAD.cad import block, edges, edit, picking, sketching, variables
 from freecad.BlocksCAD.core.values import Field, ValueTarget, pretty_expression, single_variable
 
 LABELS = {"LengthFwd": "Length", "Radius1": "Radius 1", "Radius2": "Radius 2", "Circumradius": "Radius", "Xmax": "X size", "Ymax": "Y size", "Zmax": "Z size",
@@ -56,6 +56,8 @@ def source(doc, get_selection=None):
         if editable(obj):
             if sketching.is_sketch(obj):
                 return (doc.Name, name), (lambda d=doc, o=obj: SketchValues(d, o))
+            if edges.is_edge_feature(obj):
+                return (doc.Name, name), (lambda d=doc, o=obj: EdgeValues(d, o))
             index = block.picked(obj) if block.is_block(obj) else None
             if index is not None and index < len(obj.Vertices):
                 return (doc.Name, name, index), (lambda d=doc, o=obj, i=index: BlockValues(d, o, i))
@@ -248,3 +250,23 @@ class SketchValues(ObjectValues):
         error = sketching.set_dimension(self.obj, self._dimension(name)[0], value)
         if error is not None:
             raise ValueError(error)
+
+
+class EdgeValues(ObjectValues):
+    """The values of a fillet or a chamfer: the one size (radius or length) that all its edges share. The edges of a dressed object are
+    not placed on their own, so there is no position, and a row of the `Edges` property cannot carry an expression, so the size is not
+    bound to a variable."""
+
+    LABELS = {"Part::Fillet": "Radius", "Part::Chamfer": "Length"}
+
+    def fields(self):
+        return [Field("edge.size", self.LABELS[self.obj.TypeId], edges.size_of(self.obj), edit.MIN_SIZE)]
+
+    def _current(self, name):
+        return edges.size_of(self.obj)
+
+    def _write(self, name, value):
+        edges.set_size(self.obj, value)
+
+    def bind(self, name, expression, value):
+        raise ValueError("The size of an edge feature cannot be bound")

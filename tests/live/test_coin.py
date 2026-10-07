@@ -1475,6 +1475,33 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.undo()
         self.assertIsNone(self.doc.getObject(names[0]))
 
+    def test_a_fillet_and_a_chamfer_take_the_selected_edges_and_their_size_is_a_value(self):
+        import math
+        from freecad.BlocksCAD.cad import edges, values
+        text, names = edges.make(self.doc, [(self.box.Name, "Edge1"), (self.box.Name, "Edge3")], "fillet", 5.0)
+        rounded = self.doc.getObject(names[0])
+        self.assertEqual(rounded.TypeId, "Part::Fillet")
+        self.assertAlmostEqual(rounded.Shape.Volume, 1.0e6 - 2 * (1 - math.pi / 4) * 25.0 * 100.0, places=3)
+        key, factory = values.source(self.doc, lambda doc: [(rounded.Name, "")])
+        target = factory()
+        self.assertEqual([(f.label, f.value) for f in target.fields()], [("Radius", 5.0)])
+        target.set("edge.size", 10.0)
+        target.commit()
+        self.assertAlmostEqual(rounded.Shape.Volume, 1.0e6 - 2 * (1 - math.pi / 4) * 100.0 * 100.0, places=3)
+        with self.assertRaises(ValueError):                                       # a radius larger than the box is taken back
+            target.set("edge.size", 400.0)
+        self.assertAlmostEqual(edges.size_of(rounded), 10.0)
+        target.cancel()
+        self.doc.undo()                                                                       # the size edit
+        self.doc.undo()
+        self.assertIsNone(self.doc.getObject(names[0]))
+        text, names = edges.make(self.doc, [(self.box.Name, "Edge1")], "chamfer", 10.0)
+        self.assertEqual(self.doc.getObject(names[0]).TypeId, "Part::Chamfer")
+        self.assertAlmostEqual(self.doc.getObject(names[0]).Shape.Volume, 1.0e6 - 50.0 * 100.0, places=3)
+        text, names = edges.make(self.doc, [(self.box.Name, "Edge1")], "fillet", 400.0)
+        self.assertEqual(names, [])
+        self.assertIn("too large", text)
+
     def test_a_push_fuses_an_extrusion_of_the_face_a_pull_cuts_it_and_the_length_stays_editable(self):
         from freecad.BlocksCAD.cad import pushpull
         top = pushpull.face_info(self.box, "Face6")
