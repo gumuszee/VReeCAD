@@ -849,16 +849,61 @@ class GrabLiveTest(unittest.TestCase):
         self.assertTrue(s.ui.radial.is_open)
         self.hand(1, (60.0, 50.0, 96.0), button1=False)
 
-    def test_the_padlock_sits_over_the_a_button_of_the_model(self):
+    def test_the_padlock_lies_flat_over_the_a_button_of_the_model(self):
+        from pivy import coin
         from freecad.BlocksCAD.render.model_anchor import button_anchor
+        from freecad.BlocksCAD.ui import controller
         s = self.session()
-        self.hand(1, (50.0, 50.0, 96.0))
-        anchor = button_anchor(s.hand_models[1], lift=0.03)
-        position = s.ui.button_anchor(1)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        anchor = button_anchor(s.hand_models[1], lift=controller.LOCK_LIFT)
         aim = s.last_frame.hands[1].aim
         expected = self.mu.add(aim.position, self.mu.rotate(aim.orientation, anchor))
-        self.assertTrue(all(abs(a - b) < 1e-9 for a, b in zip(position, expected)))
-        self.assertGreater(anchor[1], 0.03)                                  # above the top of the button
+        icon = s.ui.feedback._lock
+        self.assertEqual(icon.root.whichChild.getValue(), coin.SO_SWITCH_ALL)   # shown
+        shown = icon._transform.translation.getValue().getValue()
+        self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip(shown, expected)))
+        self.assertGreater(anchor[1], controller.LOCK_LIFT)                  # above the top of the button
+        self.assertAlmostEqual(icon._transform.scaleFactor.getValue().getValue()[0], icon.SCALE)
+        up = self.mu.rotate(aim.orientation, (0.0, 1.0, 0.0))                # the plate faces the way the thumb is on
+        normal = self.mu.rotate(tuple(icon._transform.rotation.getValue().getValue()), (0.0, 0.0, 1.0))
+        self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip(normal, up)))
+
+    def test_the_option_disc_is_centred_over_the_thumbstick_in_the_plane_of_the_controller_top(self):
+        import math
+        from freecad.BlocksCAD.render.model_anchor import STICK_PARTS, button_anchor
+        from freecad.BlocksCAD.ui import controller
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        s.input.set_hand(1, stick=(0.0, 1.0))
+        s.frame(0.02)
+        aim = s.last_frame.hands[1].aim
+        anchor = button_anchor(s.hand_models[1], STICK_PARTS, controller.OPTION_DISC_LIFT)
+        expected = self.mu.add(aim.position, self.mu.rotate(aim.orientation, anchor))
+        found = s.ui.part_frame(1, STICK_PARTS, controller.OPTION_DISC_LIFT)
+        self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip(found[0], expected)))
+        up = self.mu.rotate(aim.orientation, (0.0, 1.0, 0.0))
+        self.assertAlmostEqual(sum(a * b for a, b in zip(found[3], up)), 1.0, places=6)
+        self.assertAlmostEqual(math.sqrt(sum(c * c for c in found[2])), 1.0, places=6)
+
+    def test_the_option_disc_falls_back_to_a_point_above_a_controller_without_a_thumbstick(self):
+        from freecad.BlocksCAD.render.model_anchor import STICK_PARTS
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        s.ui.part_frame = None
+        placed = s.ui._controller_frame(s.last_frame, 1, STICK_PARTS, 0.04)
+        aim = s.last_frame.hands[1].aim
+        up = self.mu.rotate(aim.orientation, (0.0, 1.0, 0.0))
+        offset = self.mu.sub(placed[0], aim.position)
+        self.assertGreater(sum(a * b for a, b in zip(offset, up)), 0.04)
+
+    def test_a_grab_selects_the_whole_object_as_it_starts(self):
+        from pivy import coin
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.assertEqual(self.selection(), [(self.box.Name, ())])
+        self.assertEqual(s.highlights.selected.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
 
     def test_the_stick_chooses_from_the_option_disc_of_the_grab_tool(self):
         import math

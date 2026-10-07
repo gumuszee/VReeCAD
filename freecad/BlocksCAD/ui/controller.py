@@ -35,6 +35,7 @@ from freecad.BlocksCAD.ui import pointing, settings as cfg
 from freecad.BlocksCAD.ui import options as tool_options
 from freecad.BlocksCAD.ui import radial, toast
 from freecad.BlocksCAD.ui.feedback_view import FeedbackView
+from freecad.BlocksCAD.render.model_anchor import BUTTON_PARTS, STICK_PARTS
 from freecad.BlocksCAD.ui.pointer import Pointer, TipMarker
 from freecad.BlocksCAD.ui.radial_view import RadialView
 from freecad.BlocksCAD.ui.ring import PaletteRing
@@ -52,9 +53,10 @@ class UiUpdate:
     activated: Optional[str] = None                      # action id executed this frame
 
 
-OPTION_DISC_OUTER = 0.085      # metres: radius of the option disc of a tool
-OPTION_DISC_INNER = 0.027
-OPTION_DISC_LIFT = 0.15        # metres above the tool hand: the disc must not cover the tip and what it works on
+OPTION_DISC_OUTER = 0.07       # metres: radius of the option disc of a tool
+OPTION_DISC_INNER = 0.022
+OPTION_DISC_LIFT = 0.04        # metres above the top of the thumbstick: the disc lies in the plane of the top of the controller
+LOCK_LIFT = 0.012              # metres above the top of the A button
 
 
 class UiController:
@@ -78,8 +80,8 @@ class UiController:
         self.ring.can_drop = lambda src, dst: self.layout.can_move_face(*src, *dst, self.wide)
         self.radial = radial.QuickRadial(tool_hand)
         self.radial_view = RadialView()
-        self.options_view = RadialView(OPTION_DISC_OUTER, OPTION_DISC_INNER, 0.85)       # the disc of the options of the active tool
-        self.button_anchor = None          # callable(hand) -> stage position of the A button of that hand, set by the host
+        self.options_view = RadialView(OPTION_DISC_OUTER, OPTION_DISC_INNER, 0.8)        # the disc of the options of the active tool
+        self.part_frame = None             # callable(hand, part names, lift) -> (position, right, forward, up) on the controller, set by the host
         self.undo_button = UndoButton(tool_hand)
         self.options = tool_options.OptionControl(tool_hand)
         self.active_tool = None            # the active `tools.base.Tool`, set by the host before `update`
@@ -314,7 +316,7 @@ class UiController:
         tooltip = self._tooltip(result, frame.dt, labels)
         text = readout or self.gesture_text
         shown = (text, self.pointer_poses[self.tool_hand].position) if text else None
-        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, shown, self._lock_hint())
+        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, shown, self._lock_hint(frame))
 
         if result.activated is not None:
             self._activate(self.layout.face_at(*result.activated), out)
@@ -367,26 +369,39 @@ class UiController:
         self._show_option_disc(frame, chosen.disc)
         return chosen.owns_stick, chosen.readout
 
+    def _controller_frame(self, frame, hand, names, lift):
+        """(position, right, forward, up) of a part of the controller of `hand`, or, when the model has no such part, of a point above
+        the controller; None when the hand is not tracked."""
+        aim = frame.hands[hand].aim
+        if not aim.tracked:
+            return None
+        found = self.part_frame(hand, names, lift) if self.part_frame is not None else None
+        if found is not None:
+            return found
+        q = aim.orientation
+        up = mu.rotate(q, (0.0, 1.0, 0.0))
+        return (mu.add(aim.position, mu.add(mu.mul(up, 0.04 + lift), mu.rotate(q, (0.0, 0.0, -0.03)))), mu.rotate(q, (1.0, 0.0, 0.0)),
+                mu.rotate(q, (0.0, 0.0, -1.0)), up)
+
     def _show_option_disc(self, frame, disc):
-        """Draw the option disc of the active tool above the tool hand, facing the head, or hide it."""
-        hand = frame.hands[self.tool_hand]
-        if disc is None or not hand.aim.tracked:
+        """Draw the option disc of the active tool on the controller of the tool hand: centred over the thumbstick, in the plane of the
+        top of the controller, turning with it like the carousel. The stick pushed forward points at the top section."""
+        placed = None if disc is None else self._controller_frame(frame, self.tool_hand, STICK_PARTS, OPTION_DISC_LIFT)
+        if placed is None:
             self.options_view.update(radial.RadialState(), [])
             return
-        q = frame.head.orientation
-        right, up, forward = mu.rotate(q, (1.0, 0.0, 0.0)), mu.rotate(q, (0.0, 1.0, 0.0)), mu.rotate(q, (0.0, 0.0, -1.0))
-        centre = mu.add(hand.aim.position, mu.add(mu.mul(up, OPTION_DISC_LIFT), mu.mul(forward, -radial.TOWARDS_HEAD)))
-        state = radial.RadialState(open=True, items=disc.labels, selected=disc.selected, centre=centre, right=right, up=up,
+        centre, right, forward, _ = placed
+        state = radial.RadialState(open=True, items=disc.labels, selected=disc.selected, centre=centre, right=right, up=forward,
                                    cursor=tuple(c * OPTION_DISC_OUTER * 0.8 for c in disc.stick))
         self.options_view.update(state, disc.labels, disc.active, disc.hub)
 
-    def _lock_hint(self):
-        """(position, locked) of the padlock over the A button while the active tool shows one, else None."""
+    def _lock_hint(self, frame):
+        """(position, right, forward, locked) of the padlock lying over the A button while the active tool shows one, else None."""
         locked = getattr(self.active_tool, "lock_state", None)
-        if locked is None or self.button_anchor is None:
+        if locked is None:
             return None
-        position = self.button_anchor(self.tool_hand)
-        return None if position is None else (position, bool(locked))
+        placed = self._controller_frame(frame, self.tool_hand, BUTTON_PARTS, LOCK_LIFT)
+        return None if placed is None else (placed[0], placed[1], placed[2], bool(locked))
 
     def _tooltip(self, result, dt, labels):
         """(text, centre, u, v) of the tooltip of the hovered face once it has been hovered for a moment, else None."""

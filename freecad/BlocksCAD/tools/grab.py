@@ -256,6 +256,7 @@ class GrabTool(Tool):
                       "scaling": False, "scaled": False, "size0": None}
         self._locked = False
         self._hover = None
+        self._select(doc, [(pick.name, "")])             # the object is selected as the grab starts, so it shows as selected at once
         self._show_hover(doc, None)
         self._haptic(0.3, 0.02)
 

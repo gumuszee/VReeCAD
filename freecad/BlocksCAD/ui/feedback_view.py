@@ -37,9 +37,11 @@ TOOLTIP_LIFT = 0.045    # metres above the centre of a face
 
 
 class LockIcon:
-    """A padlock on a small dark plate, open or closed, facing the head: the hint over the button that locks a grab to the grid
-    and the angles. Closed is orange (locked), open is dim."""
+    """A padlock on a small dark plate, open or closed: the hint over the button that locks a grab to the grid and the angles. It
+    lies in the plane of the top of the controller over the button and turns with the controller. Closed is orange (locked),
+    open is dim."""
     SIZE = 0.034
+    SCALE = 0.42             # the drawing is made 3.4 cm wide and shown at this fraction: about 14 mm
 
     def __init__(self):
         self.root = coin.SoSwitch()
@@ -85,6 +87,7 @@ class LockIcon:
     def place(self, centre, right, up, closed):
         self._transform.translation.setValue(*centre)
         self._transform.rotation.setValue(*mu.quat_from_basis(right, up, mu.cross(right, up)))
+        self._transform.scaleFactor.setValue(self.SCALE, self.SCALE, self.SCALE)
         self._states.whichChild = 1 if closed else 0
         self.root.whichChild = coin.SO_SWITCH_ALL
 
@@ -165,7 +168,7 @@ class FeedbackView:
 
     def update(self, head, toasts, tooltip=None, readout=None, lock=None):
         """`toasts`: the `toast.Toast`s to draw, oldest first. `tooltip`: (text, centre of the face, u, v of its panel) or None.
-        `readout`: (text, position of the tool hand's pointer) or None. `lock`: (position of the hint, locked) or None."""
+        `readout`: (text, position of the tool hand's pointer) or None. `lock`: (position, right, up, locked) of the padlock on the controller, or None."""
         right, up, forward = head_axes(head)
         base = mu.add(head.position, mu.add(mu.mul(forward, TOAST_DISTANCE), mu.mul(up, -TOAST_DROP)))
         shown = list(toasts)[-len(self._toasts):]
@@ -189,6 +192,6 @@ class FeedbackView:
         else:
             self._readout.hide()
         if lock is not None:
-            self._lock.place(lock[0], right, up, lock[1])
+            self._lock.place(lock[0], lock[1], lock[2], lock[3])
         else:
             self._lock.hide()

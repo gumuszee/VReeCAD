@@ -633,7 +633,7 @@ class XRwidget(QOpenGLWidget):
         self.ui = UiController(tool_registry.names(), tool_registry.label_of, actions, tool_hint=tool_registry.hint_of,
                                palette_hand=self.primary_con, tool_hand=self.secondary_con)
         self.navigator = self.ui.navigator
-        self.ui.button_anchor = lambda hand: self.xr_con[hand].button_position()
+        self.ui.part_frame = lambda hand, names, lift: self.xr_con[hand].part_frame(names, lift)
         self.setup_tool_services()
 
     def setup_tool_services(self):

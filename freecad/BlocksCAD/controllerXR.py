@@ -35,9 +35,8 @@ from pivy.coin import SoBaseColor, SbColor
 from pivy.coin import SoRayPickAction, SoPickStyle
 from pivy.coin import SoSwitch, SO_SWITCH_NONE, SO_SWITCH_ALL
 
-from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.render.controller_shape import build_fallback
-from freecad.BlocksCAD.render.model_anchor import button_anchor
+from freecad.BlocksCAD.render.model_anchor import button_anchor, stage_frame
 
 
 LOW_STATE = 0.3
@@ -125,17 +124,17 @@ class xrController:
             self.runtime_switch.whichChild = SO_SWITCH_ALL
             self.fallback_switch.whichChild = SO_SWITCH_NONE
 
-    def button_position(self, lift=0.03):
-        """Where the A (or X) button is in the stage frame, `lift` metres above its top, or None when it is not known."""
+    def part_frame(self, names, lift=0.0):
+        """(position, right, forward, up) in the stage of the top of the first of the named parts of the controller model, `lift`
+        metres above it, with the axes of the model; None when the model has none of the parts or its pose is not known."""
         model, pose = (self.runtime_model, self._model_pose) if self.runtime_model is not None else (self.fallback_model, self._aim_pose)
         if model is None or pose is None:
             return None
-        anchor = self._anchors.get(id(model))
+        key = (id(model), names, lift)
+        anchor = self._anchors.get(key)
         if anchor is None:                                   # a part that could not be found is looked for again next time
-            anchor = self._anchors[id(model)] = button_anchor(model, lift=lift)
-        if anchor is None:
-            return None
-        return mu.add(pose[0], mu.rotate(pose[1], anchor))
+            anchor = self._anchors[key] = button_anchor(model, names, lift)
+        return None if anchor is None else stage_frame(pose, anchor)
 
     def update_model_pose(self, position, orientation, world_transform):
         """Pose of the runtime model (stage frame, metres); combined with the artificial world movement like the aim pose."""
