@@ -64,7 +64,8 @@ The carousel is a prism around the long axis of the palette controller. It is at
 |---|---|
 | Tools | Create, Select, Move, Push/Pull, Points, Sketch |
 | Edit | Undo, Redo, Delete |
-| Modify | Fuse, Cut, Common, Copy, Mirror X, Mirror Y, Mirror Z, Colour, Pattern X, Pattern Y, Pattern Z, Extrude, Fillet, Chamfer |
+| Modify | Fuse, Cut, Common, Copy, Mirror X, Mirror Y, Mirror Z, Colour, Pattern X, Pattern Y, Pattern Z |
+| Shape | Extrude, Fillet, Chamfer |
 | View | Reset view, Reload scene, Reset layout, Show hidden |
 | Session | Pointer (laser or tip), Close VR, and the sliders Angle and Length (tip angle and tip length) |
 
@@ -77,7 +78,7 @@ The carousel is a prism around the long axis of the palette controller. It is at
 - **Mirror X, Y, Z** mirrors each selected object across a plane that stands 5 mm beyond its box along that axis, so the image lies 10 mm from the object; the image is a `Part::Mirroring` whose `Base` and `Normal` hold the plane (the plane does not move when the source changes size; the image follows the source). The mirror images become the selection.
 - **Pattern X, Y, Z** repeats each selected object three times along that axis, one box length plus 10 mm apart, as a Draft array (`NumberX` and `IntervalX` and the like are properties of the array; the original is the first of the three and is hidden as a source). The arrays become the selection.
 - **Extrude** extrudes every selected sketch by 20 mm along its normal into a solid (a `Part::Extrusion` of the sketch, so the solid follows the sketch and its length is a value of the new solid: the Values panel shows it as **Length**). The sketch is hidden and the solids become the selection. A sketch without a closed outline is refused with a toast and nothing is made.
-- **Fillet** and **Chamfer** work on selected edges, not on whole objects (select them with the Select tool, target Edge): each object that has edges selected gets one `Part::Fillet` or `Part::Chamfer` of those edges, 5 mm to begin with, and is hidden as a source. The size is the one value of the new feature, shown on the Values panel as **Radius** or **Length** (a slider, the stick and the keypad edit it; it cannot be bound to a variable, because a row of the `Edges` property takes no expression). A size the shape cannot take (larger than the edges allow) is refused with a toast and the document stays as it was. The new features become the selection.
+- **Fillet** and **Chamfer** (panel Shape, with Extrude) work on selected edges, not on whole objects (select them with the Select tool, target Edge): each object that has edges selected gets one `Part::Fillet` or `Part::Chamfer` of those edges, 5 mm to begin with, and is hidden as a source. The size is the one value of the new feature, shown on the Values panel as **Radius** or **Length** (a slider, the stick and the keypad edit it; it cannot be bound to a variable, because a row of the `Edges` property takes no expression). A size the shape cannot take (larger than the edges allow) is refused with a toast and the document stays as it was. The new features become the selection.
 - **Colour** gives every selected object (whole or by an element) the next colour of a palette of eight (grey, red, orange, yellow, green, blue, violet, white), each from its own current colour; the toast names the colour. A colour belongs to the view of the object, so it is not an undo step.
 - Every other action is one undo step.
 
@@ -193,7 +194,7 @@ The fifth tool of the palette edits the points of a **block**, a solid made of p
 
 ### Sketch tool
 
-The sixth tool of the palette draws sketches in space (`tools/sketch.py`, `cad/sketching.py`, `cad/sketchinfer.py`). A sketch is a real `Sketcher::SketchObject` with real constraints, so it can be opened and edited in FreeCAD, extruded (Modify panel) and used by any other feature.
+The sixth tool of the palette draws sketches in space (`tools/sketch.py`, `cad/sketching.py`, `cad/sketchinfer.py`). A sketch is a real `Sketcher::SketchObject` with real constraints, so it can be opened and edited in FreeCAD, extruded (Shape panel) and used by any other feature.
 
 - **Current sketch:** the sketch that is selected. The tool selects the sketch it draws in, so drawing goes on in it; selecting anything else or clicking the stick ends it. With no current sketch the first press makes a new one: **on the flat face** the tip touches (the face is highlighted; the sketch is attached to it with map mode FlatFace, so it follows the face when the solid changes), else **on a plane** of the document, XY, XZ or YZ, at the height of the cursor rounded to the grid. A square ten grid steps wide around the cursor shows the plane of a new sketch. In a sketch the cursor is the point of its plane that is nearest to the tip, rounded to the grid (the A button leaves it free), so the hand may be anywhere in front of the plane.
 - **Draw** (modes **Line**, **Rectangle** and **Circle**, default Rectangle): the trigger pressed at one point, dragged and released at another draws the shape; the preview outline and the readout ("Rectangle: 50 mm x 30 mm", "Circle: radius 20 mm", "Line: 40 mm") follow the hand. A tap, or a drag that leaves no length (a rectangle needs both sides), draws nothing and makes no empty sketch. One drawing is one undo step, a sketch made with its first shape included. A grip cancels.

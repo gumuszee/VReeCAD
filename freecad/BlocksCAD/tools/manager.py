@@ -44,5 +44,5 @@ class ToolManager:
 
     def update(self, frame):
         tool = self.active
-        if tool is not None:
+        if tool is not None and frame is not None:      # the first frames come before any input was read
             tool.update(frame)
