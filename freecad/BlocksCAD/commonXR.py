@@ -37,6 +37,7 @@ import freecad.BlocksCAD.tools.primitives  # noqa: F401  (registers the tools)
 import freecad.BlocksCAD.tools.select  # noqa: F401
 import freecad.BlocksCAD.tools.move  # noqa: F401
 import freecad.BlocksCAD.tools.pushpull  # noqa: F401
+import freecad.BlocksCAD.tools.points  # noqa: F401
 from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
 from freecad.BlocksCAD.backends.openxr_models import RuntimeModels
 from freecad.BlocksCAD.render.gltf_coin import load_glb

@@ -34,7 +34,7 @@ from freecad.BlocksCAD.tools.base import DiscSlot, Tool, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 
 GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
-SHAPE_PAGES = (("Box", "Cylinder", "Cone", "Sphere"), ("Torus", "Wedge", "Prism", ""))   # four shapes on the disc at a time
+SHAPE_PAGES = (("Box", "Cylinder", "Cone", "Sphere"), ("Torus", "Wedge", "Prism", primitives.BLOCK))   # four shapes on the disc at a time
 
 
 @register
@@ -43,7 +43,7 @@ class PrimitiveTool(Tool):
     label = "Create"
     hint = "Drag a box in space to make a shape, tap to place one"
     options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
-               ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES))
+               ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES + (primitives.BLOCK,)))
 
     def __init__(self, ctx):
         super().__init__(ctx)

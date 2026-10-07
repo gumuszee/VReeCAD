@@ -267,16 +267,15 @@ class ToolTest(unittest.TestCase):
         self.assertEqual([slots[i].label for i in (5, 1, 2, 4)], ["Box", "Cylinder", "Cone", "Sphere"])      # clockwise from the upper left
         self.assertTrue(all(slots[i].option == "shape" for i in (5, 1, 2, 4)))
         self.assertEqual(self.tool.disc_hub(), ["10 mm"])
-        self.assertEqual(self.tool.stick_click(), "Shapes: Torus, Wedge, Prism")
+        self.assertEqual(self.tool.stick_click(), "Shapes: Torus, Wedge, Prism, Block")
         slots = self.tool.disc_slots()
-        self.assertEqual([slots[i].label for i in (5, 1, 2, 4)], ["Torus", "Wedge", "Prism", ""])
-        self.assertEqual(slots[4].option, "")                                  # the fourth place of the second page is empty
+        self.assertEqual([slots[i].label for i in (5, 1, 2, 4)], ["Torus", "Wedge", "Prism", "Block"])
         self.assertEqual(self.tool.stick_click(), "Shapes: Box, Cylinder, Cone, Sphere")
         shown = set()
         for _ in range(2):                                                      # look at both pages
             shown |= {slot.value for slot in self.tool.disc_slots() if slot.option == "shape"}
             self.tool.stick_click()
-        self.assertEqual(shown, set(prim.SHAPES))                               # every shape is on a page
+        self.assertEqual(shown, set(prim.SHAPES) | {prim.BLOCK})                               # every shape is on a page
 
     def test_the_grid_stops_at_its_ends_and_the_radial_stays_closed_during_a_drag(self):
         self.assertFalse(self.tool.options[0].wrap)

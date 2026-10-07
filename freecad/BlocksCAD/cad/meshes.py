@@ -233,6 +233,8 @@ def _prism(spec):
 
 def build(shape, lo, size) -> Mesh:
     """The preview mesh of `shape` fitted into the box with lowest corner `lo` and edge lengths `size` (document millimetres)."""
+    if shape in ("Box", prim.BLOCK):
+        return _box(lo, size)
     spec = prim.parameters(shape, lo, size)
     if shape == "Box":
         return _box(lo, size)

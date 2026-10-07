@@ -366,6 +366,27 @@ try:
         _s.input.set_hand(1, grip=0.0, trigger=0.0)
         _s.frame(0.02)
         _pk.clear_selection()
+        # the Points tool: every point of a block is marked, the point under the tip is highlighted, a drag moves it (a grip cancels)
+        from freecad.BlocksCAD.cad import block as _blk
+        _b = _blk.create(_temp, (500.0, -60.0, 0.0), (100.0, 100.0, 80.0))
+        _bn = _node_of(_b)
+        _s.doc_scene.insertChild(_bn, 2)
+        _nodes.append(_bn)
+        _s.select_tool("points")
+        _cursor((600.0, 40.0, 76.0))
+        for _ in range(12):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_points_hover.png"))
+        _cursor((600.0, 40.0, 76.0), trigger=1.0)
+        _cursor((620.0, 40.0, 120.0), trigger=1.0)
+        for _ in range(3):
+            _s.frame(0.02)
+        print("points readout:", _s.ui.gesture_text, [tuple(round(c, 1) for c in v) for v in _blk.read(_b)[0][6:7]])
+        _s.input.set_hand(1, grip=1.0)
+        _s.frame(0.02)
+        _s.input.set_hand(1, grip=0.0, trigger=0.0)
+        _s.frame(0.02)
+        _pk.clear_selection()
         # the value panels: they follow the selection, so selecting the box adds a side with the panels Values, Number pad and Keys to the carousel
         from freecad.BlocksCAD.cad import picking as _pk
         _pk.set_selection(_temp, [(_temp.Objects[0].Name, "")])

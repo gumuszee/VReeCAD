@@ -84,6 +84,7 @@ class SimSession:
         import freecad.BlocksCAD.tools.select  # noqa: F401
         import freecad.BlocksCAD.tools.move  # noqa: F401
         import freecad.BlocksCAD.tools.pushpull  # noqa: F401
+        import freecad.BlocksCAD.tools.points  # noqa: F401
         from freecad.BlocksCAD.render.controller_shape import build_fallback
         from freecad.BlocksCAD.render.ghost import Ghost
         from freecad.BlocksCAD.render.highlight import Highlights

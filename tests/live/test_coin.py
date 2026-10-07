@@ -670,7 +670,7 @@ class PrimitiveLiveTest(unittest.TestCase):
             self.assertEqual(s.ui.options_view.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
             s.input.set_hand(1, stick_click=True)                            # the click turns to the other shapes
             s.frame(0.02)
-            self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Shapes: Torus, Wedge, Prism")
+            self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Shapes: Torus, Wedge, Prism, Block")
             s.input.set_hand(1, stick_click=False)
             s.frame(0.02)
             push(300)                                                        # upper left: the first shape of the page
@@ -1023,6 +1023,129 @@ class MoveLiveTest(unittest.TestCase):
         variables.set_value(self.doc, "position_x", 70.0)
         self.doc.recompute()
         self.assertAlmostEqual(self.box.Placement.Base.x, 70.0)
+
+    def test_a_block_is_a_solid_of_points_in_one_undo_step_and_moving_a_point_rebuilds_it(self):
+        from freecad.BlocksCAD.cad import block, blockgeom
+        made = block.create(self.doc, (200.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        self.assertTrue(block.is_block(made))
+        self.assertFalse(block.is_block(self.box))
+        self.assertEqual(len(made.Shape.Faces), 6)
+        self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
+        vertices, faces = block.read(made)
+        self.assertIsNone(block.apply(self.doc, made, blockgeom.move_vertex(vertices, 6, (300.0, 100.0, 150.0))))
+        self.assertAlmostEqual(made.Shape.BoundBox.ZMax, 150.0)
+        self.assertGreater(made.Shape.Volume, 1.0e6)
+        self.assertEqual(len(made.Shape.Faces), 7)                                           # the bent top is two triangles
+        self.assertTrue(made.Shape.isValid())
+        self.doc.undo()
+        self.doc.undo()
+        self.assertNotIn(made.Name, [o.Name for o in self.doc.Objects])
+
+    def test_a_block_that_cannot_be_built_is_refused_and_stays_as_it_was(self):
+        from freecad.BlocksCAD.cad import block, blockgeom
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        vertices, faces = block.read(made)
+        flat = [(x, y, 0.0) for x, y, _ in vertices]
+        self.assertIn(block.apply(self.doc, made, flat), ("The block has no volume", "A face has no area"))
+        self.assertEqual(block.read(made)[0], vertices)
+        self.assertTrue(made.isValid())
+        with self.assertRaises(ValueError):
+            block.make_shape(vertices, faces[:4])
+
+    def test_a_block_splits_an_edge_and_the_new_point_moves(self):
+        from freecad.BlocksCAD.cad import block, blockgeom
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        vertices, faces = block.read(made)
+        vertices, faces, index = blockgeom.split_edge(vertices, faces, 0, 1, (50.0, 0.0, 0.0))
+        self.assertIsNone(block.apply(self.doc, made, vertices, faces))
+        self.assertEqual(len(made.Vertices), 9)
+        self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
+        self.assertIsNone(block.apply(self.doc, made, blockgeom.move_vertex(vertices, index, (50.0, -20.0, 0.0))))
+        self.assertAlmostEqual(made.Shape.BoundBox.YMin, -20.0)
+        self.assertGreater(made.Shape.Volume, 1.0e6)
+        self.assertTrue(made.Shape.isValid())
+
+    def test_the_block_is_picked_by_its_points_and_edges(self):
+        from freecad.BlocksCAD.cad import block
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        found = block.pick(self.doc, (98.0, 1.0, 1.0), 1000.0, "vertex")
+        self.assertEqual((found.name, found.sub), (made.Name, "Point1"))
+        found = block.pick(self.doc, (50.0, 1.0, 1.0), 1000.0, "edge")
+        self.assertEqual(found.sub, "Segment0-1")
+        self.assertIsNone(block.pick(self.doc, (50.0, 50.0, 50.0), 1000.0, "vertex"))
+        self.assertEqual(block.display(made, "Point1").markers, [(100.0, 0.0, 0.0)])
+        self.assertEqual(len(block.handles(self.doc).markers), 8)
+
+    def test_a_block_comes_back_from_a_saved_document_and_recomputes(self):
+        import os
+        import tempfile
+        from freecad.BlocksCAD.cad import block
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        name = made.Name
+        path = os.path.join(tempfile.mkdtemp(), "block.FCStd")
+        self.doc.saveAs(path)
+        self.App.closeDocument(self.doc.Name)
+        self.doc = self.App.openDocument(path)
+        again = self.doc.getObject(name)
+        self.assertTrue(block.is_block(again))
+        self.assertAlmostEqual(again.Shape.Volume, 1.0e6)
+        again.Vertices = [self.App.Vector(v.x, v.y, v.z + (50.0 if v.z > 0 else 0.0)) for v in again.Vertices]
+        self.doc.recompute()
+        self.assertAlmostEqual(again.Shape.Volume, 1.5e6)
+
+    def test_a_point_pulled_through_the_block_makes_no_solid_and_is_refused(self):
+        from freecad.BlocksCAD.cad import block, blockgeom
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        vertices, faces = block.read(made)
+        error = block.apply(self.doc, made, blockgeom.move_vertex(vertices, 6, (-60.0, -60.0, -60.0)))
+        self.assertIsNotNone(error)
+        self.assertEqual(block.read(made)[0], vertices)
+        self.assertTrue(made.isValid())
+        self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
+
+    def test_the_create_tool_makes_a_block_from_a_drag_and_the_points_tool_moves_a_point_of_it(self):
+        s = self.session()
+        s.select_tool("primitive")
+        s.tool_manager.active.values["shape"] = "Block"
+        self.hand(1, (400.0, 0.0, 0.0))
+        self.hand(1, (400.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (500.0, 100.0, 100.0), trigger=1.0)
+        self.hand(1, (500.0, 100.0, 100.0), trigger=0.0)
+        from freecad.BlocksCAD.cad import block
+        made = [o for o in self.doc.Objects if block.is_block(o)]
+        self.assertEqual(len(made), 1)
+        made = made[0]
+        self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
+        s.select_tool("points")
+        self.hand(1, (500.0, 100.0, 100.0))
+        self.hand(1, (500.0, 100.0, 100.0), trigger=1.0)
+        self.hand(1, (520.0, 100.0, 140.0), trigger=1.0)
+        self.assertTrue(s.ui.gesture_text.startswith("Point 6: "), s.ui.gesture_text)
+        self.hand(1, (520.0, 100.0, 140.0), trigger=0.0)
+        self.assertEqual(tuple(round(c, 6) for c in block.read(made)[0][6]), (520.0, 100.0, 140.0))
+        self.assertGreater(made.Shape.Volume, 1.0e6)
+        self.assertEqual(self.selection(), [(made.Name, ())])
+        self.doc.undo()
+        self.assertEqual(tuple(round(c, 6) for c in block.read(made)[0][6]), (500.0, 100.0, 100.0))
+        self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
+
+    def test_the_points_tool_splits_an_edge_and_drags_the_new_point_in_one_undo_step(self):
+        from freecad.BlocksCAD.cad import block
+        made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        s = self.session()
+        s.select_tool("points")
+        s.tool_manager.active.values["mode"] = "Split"
+        self.hand(1, (450.0, 1.0, 1.0))
+        self.hand(1, (450.0, 1.0, 1.0), trigger=1.0)
+        self.hand(1, (450.0, -30.0, 0.0), trigger=1.0)
+        self.hand(1, (450.0, -30.0, 0.0), trigger=0.0)
+        vertices, faces = block.read(made)
+        self.assertEqual(len(vertices), 9)
+        self.assertEqual(tuple(round(c, 6) for c in vertices[8]), (450.0, -30.0, 0.0))
+        self.assertTrue(made.Shape.isValid())
+        self.doc.undo()
+        self.assertEqual(len(made.Vertices), 8)
+        self.assertEqual(len(made.Shape.Faces), 6)
 
     def test_a_mirror_is_a_parametric_image_one_gap_beyond_the_object(self):
         from freecad.BlocksCAD.cad import duplicate

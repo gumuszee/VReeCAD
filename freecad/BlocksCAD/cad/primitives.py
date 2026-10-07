@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Tuple
 
 SHAPES = ("Box", "Cylinder", "Cone", "Sphere", "Torus", "Wedge", "Prism")
+BLOCK = "Block"        # a box shaped solid made of points (`cad/block.py`); it is not a primitive of FreeCAD and is made by `create`
 PRISM_SIDES = 6
 TORUS_TUBE = 0.2       # tube radius of a torus as a fraction of the smaller side of its box
 
@@ -76,6 +77,9 @@ def _placement(spec):
 
 def create(doc, shape, lo, size):
     """Make the feature in `doc` inside one transaction (one undo step) and return it."""
+    if shape == BLOCK:
+        from freecad.BlocksCAD.cad import block
+        return block.create(doc, lo, size)
     spec = parameters(shape, lo, size)
     doc.openTransaction(f"Create {shape}")
     try:
