@@ -1548,6 +1548,64 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNone(name)
         self.assertIn("built from", text)
 
+    def _small_box(self):
+        import FreeCAD as App
+        other = self.doc.addObject("Part::Box", "Other")
+        other.Length, other.Width, other.Height = 50.0, 40.0, 30.0
+        other.Placement = App.Placement(App.Vector(300, 300, 300), App.Rotation(App.Vector(1, 1, 0), 33))
+        self.doc.recompute()
+        return other
+
+    def test_a_fixed_joint_lays_the_faces_together_inside_an_assembly_with_the_target_grounded(self):
+        from freecad.BlocksCAD.cad import joints
+        other = self._small_box()
+        text, name = joints.make(self.doc, [(other.Name, "Face5"), (self.box.Name, "Face6")], "Fixed")
+        self.assertEqual(name, other.Name, text)
+        assembly = joints.assembly_of(other)
+        self.assertEqual(assembly.TypeId, "Assembly::AssemblyObject")
+        self.assertIs(joints.assembly_of(self.box), assembly)
+        self.assertTrue(assembly.isPartGrounded(self.box))
+        face = other.Shape.getElement("Face5")
+        self.assertAlmostEqual(face.CenterOfMass.z, 100.0, places=3)
+        self.assertAlmostEqual(face.CenterOfMass.x, 50.0, places=3)
+        self.assertAlmostEqual(face.CenterOfMass.y, 50.0, places=3)
+        self.assertEqual(len(joints.joints_of(assembly, other)), 1)
+        text, name = joints.make(self.doc, [(self.box.Name, "Face1"), (other.Name, "Face1")], "Ball")      # a second joint reuses the assembly
+        self.assertEqual(len(self.doc.findObjects("Assembly::AssemblyObject")), 1)
+        self.doc.undo()
+        self.doc.undo()
+        self.assertIsNone(joints.assembly_of(other))
+        self.assertEqual(self.doc.findObjects("Assembly::AssemblyObject"), [])
+
+    def test_a_slider_keeps_the_object_on_its_axis_and_a_hinge_keeps_it_on_the_pin(self):
+        from freecad.BlocksCAD.cad import edit, joints
+        other = self._small_box()
+        joints.make(self.doc, [(other.Name, "Face5"), (self.box.Name, "Face6")], "Slider")
+        base, rotation = edit.placement(other)
+        edit.set_placement(other, (base[0] + 30.0, base[1] + 20.0, base[2] + 60.0), rotation)        # off the axis and up it
+        centre = other.Shape.getElement("Face5").CenterOfMass
+        self.assertAlmostEqual(centre.x, 50.0, places=2)                                             # the slide leaves only the axis
+        self.assertAlmostEqual(centre.y, 50.0, places=2)
+        self.assertGreater(centre.z, 120.0)
+        text, count = joints.remove(self.doc, [(other.Name, "")])
+        self.assertEqual(count, 1)
+        self.assertEqual(joints.joints_of(joints.assembly_of(other), other), [])
+        edit.set_placement(other, (base[0] + 30.0, base[1] + 20.0, base[2] + 60.0), rotation)        # free again
+        self.assertNotAlmostEqual(other.Shape.getElement("Face5").CenterOfMass.x, 50.0, places=2)
+        joints.make(self.doc, [(other.Name, "Face5"), (self.box.Name, "Face6")], "Revolute")
+        centre = other.Shape.getElement("Face5").CenterOfMass
+        self.assertAlmostEqual(centre.x, 50.0, places=2)
+        self.assertAlmostEqual(centre.z, 100.0, places=2)
+
+    def test_a_joint_of_an_attached_object_or_of_a_part_of_itself_is_refused(self):
+        from freecad.BlocksCAD.cad import attach, joints
+        other = self._small_box()
+        attach.attach(self.doc, [(other.Name, "Face5"), (self.box.Name, "Face6")])
+        text, name = joints.make(self.doc, [(other.Name, "Face1"), (self.box.Name, "Face2")], "Fixed")
+        self.assertIsNone(name)
+        self.assertIn("Detach", text)
+        self.assertEqual(self.doc.findObjects("Assembly::AssemblyObject"), [])
+
     def test_a_push_fuses_an_extrusion_of_the_face_a_pull_cuts_it_and_the_length_stays_editable(self):
         from freecad.BlocksCAD.cad import pushpull
         top = pushpull.face_info(self.box, "Face6")

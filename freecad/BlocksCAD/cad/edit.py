@@ -82,7 +82,8 @@ def attached(obj):
 
 def set_placement(obj, base, rotation):
     """Put the object at the position and rotation in document millimetres. The placement of an attached object is computed by the
-    attacher, so it is the offset from the frame of its support that changes (and the document recomputes at once)."""
+    attacher, so it is the offset from the frame of its support that changes (and the document recomputes at once). The part of an
+    assembly is brought back to a position its joints allow (`cad/joints.py`)."""
     import FreeCAD as App
     wanted = App.Placement(App.Vector(*base), App.Rotation(*rotation))
     if attached(obj):
@@ -91,6 +92,8 @@ def set_placement(obj, base, rotation):
         obj.Document.recompute()
     else:
         obj.Placement = wanted
+        from freecad.BlocksCAD.cad import joints
+        joints.solve(obj)
 
 
 def delete_objects(doc, items):
