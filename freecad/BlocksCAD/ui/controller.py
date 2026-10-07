@@ -210,13 +210,17 @@ class UiController:
         """Face ids offered by the quick radial: the faces used last, then the defaults."""
         return radial.choose_items(self.settings.recent, self.faces, self.layout.hidden)
 
+    def radial_hub(self):
+        """The face id of the item in the middle of the quick radial, or None."""
+        return radial.CENTRE if radial.CENTRE in self.faces else None
+
     def _activate(self, face_id, out):
-        """Run the action of a face and remember the face for the quick radial."""
+        """Run the action of a face and remember the face for the quick radial (the face of its hub is not a favourite)."""
         face = self.faces.get(face_id) if face_id else None
         if face is None:
             return
         self._run(face.action, out)
-        if face.kind == "button" and (not self.settings.recent or self.settings.recent[0] != face_id):
+        if face.kind == "button" and face_id != radial.CENTRE and (not self.settings.recent or self.settings.recent[0] != face_id):
             self.settings.recent = radial.remember(self.settings.recent, face_id)
             self._save_settings()
 
@@ -330,7 +334,8 @@ class UiController:
         # the quick radial takes the tool hand while it is open: the carousel does not see its pointer
         busy = (self.navigator.navigating or self.ring.lifted is not None or self.ring.lifted_face is not None
                 or self.ring.slider_drag is not None or self.ring.press is not None or getattr(self.active_tool, "busy", False))
-        quick = self.radial.update(frame, self.radial_items(), blocked=busy)
+        hub = self.radial_hub()
+        quick = self.radial.update(frame, self.radial_items(), blocked=busy, hub=hub)
         out.owns_stick, readout = self._tool_hand_buttons(frame, self.navigator.navigating or self.radial.is_open or self.module.engaged, out)
         carousel = self.shown_layout()
         self.ring.fixed_from = len(self.layout.pages) if self.module.is_open else None
@@ -342,7 +347,7 @@ class UiController:
         result = self.ring.update(frame, navigating=self.navigator.navigating, pointers=pointers)
         out.haptics += result.haptics + quick.haptics
         out.ray_end = result.ray_end
-        out.consume_trigger = result.consume_trigger or self.radial.is_open or quick.activated is not None
+        out.consume_trigger = result.consume_trigger or self.radial.is_open or quick.activated is not None or quick.activated_hub
         if result.focus is not None:
             focused = carousel.face_at(*result.focus)
             if focused in value_module.SLIDER_IDS:
@@ -390,7 +395,8 @@ class UiController:
         sliders = {**self.slider_states(), **self.module.slider_states()} if self.module.is_open else self.slider_states()
         self.view.update(self.ring, result, carousel, self.view_faces, frame.head.position, self.active_actions, labels, sliders,
                          self.module.titles())
-        self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items])
+        self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items],
+                                centre=labels.get(quick.hub, self.faces[quick.hub].label) if quick.hub else None)
         tooltip = self._tooltip(result, frame.dt, labels)
         text = readout or self.gesture_text
         shown = (text, self.pointer_poses[self.tool_hand].position) if text else None
@@ -406,6 +412,8 @@ class UiController:
                 self._activate(face_id, out)
         if quick.activated is not None:
             self._activate(quick.items[quick.activated], out)
+        elif quick.activated_hub:
+            self._activate(hub, out)
 
         palette = frame.hands[self.palette_hand]
         for name, action in (("aux1", "doc:undo"), ("aux2", "doc:redo")):

@@ -17,8 +17,8 @@
 
 Holding `button1` of the tool hand (outside navigation) opens a disc around the hand, cut into one segment per favourite face. The item is chosen by the
 direction the hand moves from the spot where the button went down, seen from the head: the first item is straight up, the others
-follow clockwise. Releasing the button activates the chosen item; releasing it before the hand has left the dead zone, or starting
-a grip, cancels. The plane of the radial and its axes are fixed when it opens, so turning the head does not move the choice."""
+follow clockwise. Releasing the button activates the chosen item; releasing it before the hand has left the dead zone activates the
+hub item (the face in the middle, `CENTRE`), and starting a grip cancels. The plane of the radial and its axes are fixed when it opens, so turning the head does not move the choice."""
 
 import math
 from dataclasses import dataclass, field
@@ -33,8 +33,9 @@ OUTER = 0.115          # outer radius of the segments
 GAP = 0.003            # metres of dark between neighbouring segments, measured at the outer radius
 TOWARDS_HEAD = 0.05    # the radial stands this far in front of the hand, so the controller does not hide it
 RECENT = 6             # number of favourites: the faces used last, padded from `DEFAULT_FAVOURITES`
-DEFAULT_FAVOURITES = ("doc.undo", "doc.redo", "view.reset", "doc.delete", "view.overlay", "pointer.mode")
+DEFAULT_FAVOURITES = ("doc.undo", "doc.redo", "view.reset", "doc.delete", "tool.move", "pointer.mode")
 NEVER_FAVOURITE = ("view.layout", "app.close")   # faces that must not sit one flick from the hand
+CENTRE = "tool.select"   # the face in the hub: a release without moving the hand activates it; it is never one of the segments
 
 
 @dataclass
@@ -43,6 +44,8 @@ class RadialState:
     items: List[str] = field(default_factory=list)              # face ids, first item straight up, then clockwise
     selected: Optional[int] = None
     activated: Optional[int] = None                             # item index chosen by releasing the button this frame
+    hub: Optional[str] = None                                   # face id of the hub item, or None for a hub without one
+    activated_hub: bool = False                                 # the button was released inside the dead zone: the hub item is chosen
     centre: Tuple[float, float, float] = (0.0, 0.0, 0.0)        # of the drawn radial
     right: Tuple[float, float, float] = (1.0, 0.0, 0.0)
     up: Tuple[float, float, float] = (0.0, 1.0, 0.0)
@@ -70,11 +73,11 @@ def segment_strip(index, count, r_in=INNER, r_out=OUTER, gap=GAP, steps=10):
 
 
 def choose_items(recent, known, hidden=(), count=RECENT):
-    """The favourites: the faces used last (newest first), then the defaults, without faces that are unknown, hidden or never a
-    favourite and without repeats. `recent` and the result hold face ids."""
+    """The favourites: the faces used last (newest first), then the defaults, without faces that are unknown, hidden, never a
+    favourite or the hub item, and without repeats. `recent` and the result hold face ids."""
     items = []
     for face_id in list(recent) + list(DEFAULT_FAVOURITES):
-        if face_id in known and face_id not in hidden and face_id not in NEVER_FAVOURITE and face_id not in items:
+        if face_id in known and face_id not in hidden and face_id not in NEVER_FAVOURITE and face_id != CENTRE and face_id not in items:
             items.append(face_id)
         if len(items) == count:
             break
@@ -101,9 +104,10 @@ class QuickRadial:
         self.is_open = False
         self._selected = None
 
-    def update(self, frame, items, blocked=False) -> RadialState:
+    def update(self, frame, items, blocked=False, hub=None) -> RadialState:
         """One frame. `items` are the face ids to offer when the radial opens; `blocked` stops it from opening and cancels an open
-        radial (the tool hand is busy: navigating, dragging a slider, lifting a panel)."""
+        radial (the tool hand is busy: navigating, dragging a slider, lifting a panel); `hub` is the face id of the item in the middle,
+        which a release inside the dead zone activates (without one such a release cancels)."""
         state = RadialState()
         hand = frame.hands[self.hand]
         pose = hand.grip_pose if hand.grip_pose.tracked else hand.aim
@@ -126,13 +130,14 @@ class QuickRadial:
             self._selected = selected
             if selected is not None:
                 state.haptics.append((self.hand, 0.2, 0.02))
-        state.open, state.items, state.selected, state.cursor = True, self._items, selected, (x, y)
+        state.open, state.items, state.selected, state.cursor, state.hub = True, self._items, selected, (x, y), hub
         state.right, state.up = self._right, self._up
         state.centre = mu.add(self._origin, mu.mul(self._forward, -TOWARDS_HEAD))
         if not hand.down("button1"):
             state.open = False
             state.activated = selected
-            if selected is not None:
+            state.activated_hub = selected is None and hub is not None
+            if selected is not None or state.activated_hub:
                 state.haptics.append((self.hand, 0.5, 0.04))
             self.close()
         return state

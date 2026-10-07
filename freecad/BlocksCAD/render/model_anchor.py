@@ -13,7 +13,7 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""Where a part of a controller model is, and which way the controller faces there (docs/ux-design.md, Grab tool and Tool
+"""Where a part of a controller model is, and which way the controller faces there (docs/ux-design.md, Move tool and Tool
 options). The padlock over the A button and the option disc round the thumbstick are attached to the controller: they need the
 position of the part in whichever model is shown, the model the runtime provides or the generated one, so it is taken from the
 geometry of the named part: the middle of the part, at its top, in the frame of the model. `stage_frame` turns that into a

@@ -679,14 +679,14 @@ class PrimitiveLiveTest(unittest.TestCase):
             s.close()
 
 
-class GrabLiveTest(unittest.TestCase):
-    """Picking and the Grab tool against real FreeCAD objects, driven through the Sim session."""
+class MoveLiveTest(unittest.TestCase):
+    """Picking, the Move tool and the Select tool against real FreeCAD objects, driven through the Sim session."""
 
     def setUp(self):
         import FreeCAD as App
         from freecad.BlocksCAD.cad import primitives as prim
         self.App = App
-        self.doc = App.newDocument("BlocksCADGrab")
+        self.doc = App.newDocument("BlocksCADMove")
         self.doc.UndoMode = 1
         self.box = prim.create(self.doc, "Box", (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         self.s = None
@@ -701,7 +701,7 @@ class GrabLiveTest(unittest.TestCase):
         s = self.s = sim.SimSession(None)
         s.ui.settings.pointer_mode = "tip"
         s.ui.settings.tip_angle = 0.0
-        s.select_tool("grab")
+        s.select_tool("move")
         s.input.set_head(position=(0.0, 1.6, 0.4), look_at_point=stage.to_stage(s.navigator.world, (50.0, 50.0, 50.0)))
         self.mu, self.stage = mu, stage
         self.tip = s.ui.settings.tip_length
@@ -887,6 +887,105 @@ class GrabLiveTest(unittest.TestCase):
         self.assertEqual(plain.Shape.BoundBox.XLength, before)
         self.hand(1, (350.0, 50.0, 96.0), trigger=0.0)
 
+    def test_deleting_removes_whole_objects_in_one_undo_step_and_leaves_selected_elements_alone(self):
+        from freecad.BlocksCAD.cad import edit
+        name, label = self.box.Name, self.box.Label
+        self.assertEqual(edit.delete_objects(self.doc, [(name, "Face1")]), "Select a whole object to delete")
+        self.assertIsNotNone(self.doc.getObject(name))
+        self.assertEqual(edit.delete_objects(self.doc, [(name, "")]), "Deleted " + label)
+        self.assertIsNone(self.doc.getObject(name))
+        self.doc.undo()
+        self.assertIsNotNone(self.doc.getObject(name))                                        # one undo step brings it back
+
+    def test_picking_one_sort_of_element_ignores_closer_elements_of_another_sort(self):
+        from freecad.BlocksCAD.cad import picking
+        probe = lambda p, kind: picking.pick(self.doc, p, 1000.0, kind)
+        corner = (3.0, 3.0, 3.0)                                                              # a corner is nearest, but a face may be asked for
+        self.assertEqual([probe(corner, k).kind for k in ("vertex", "edge", "face", "object")], ["vertex", "edge", "face", "object"])
+        self.assertEqual(probe(corner, "object").sub, "")
+        self.assertIsNone(probe((50.0, 50.0, 96.0), "vertex"))                                # a vertex is 50 mm away: out of its reach of 12 mm
+        self.assertIsNone(probe((50.0, 50.0, 96.0), "edge"))
+        self.assertEqual(probe((50.0, 50.0, 96.0), "face").kind, "face")
+        self.assertEqual(probe((50.0, 50.0, 96.0), "object").sub, "")                         # a touch of any element is a touch of the object
+        for kind in ("vertex", "edge", "face", "object"):
+            self.assertIsNone(probe((400.0, 400.0, 400.0), kind))
+
+    def settle(self, point, frames=6):
+        """Hold the cursor at a point until the hover has moved to what is there."""
+        for _ in range(frames):
+            self.hand(1, point)
+
+    def tap(self, point):
+        self.settle(point)
+        self.hand(1, point, trigger=1.0)
+        self.hand(1, point, trigger=0.0)
+
+    def test_the_select_tool_selects_many_faces_edges_vertices_and_objects(self):
+        from freecad.BlocksCAD.cad import picking, primitives as prim
+        cylinder = prim.create(self.doc, "Cylinder", (300.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        s = self.session()
+        s.select_tool("select")
+        tool = s.tool_manager.active
+        tool.values["operation"] = "Add"
+        undo_steps = self.doc.UndoCount
+        for target, points in (("Face", ((50.0, 50.0, 96.0), (50.0, 50.0, 4.0))), ("Edge", ((50.0, 4.0, 4.0), (50.0, 96.0, 96.0))),
+                               ("Vertex", ((3.0, 3.0, 3.0), (97.0, 97.0, 97.0)))):
+            picking.clear_selection()
+            tool.values["target"] = target
+            for point in points:
+                self.tap(point)
+            selected = picking.get_selection(self.doc)
+            self.assertEqual(len(selected), 2, target)
+            self.assertEqual({picking.kind_of(sub) for _, sub in selected}, {target.lower()}, target)
+            self.assertEqual({name for name, _ in selected}, {self.box.Name})
+        picking.clear_selection()
+        tool.values["target"] = "Object"
+        inside = cylinder.Shape.BoundBox.Center
+        self.tap((50.0, 50.0, 50.0))
+        self.tap((inside.x, inside.y, inside.z))
+        self.assertEqual(picking.get_selection(self.doc), [(self.box.Name, ""), (cylinder.Name, "")])
+        tool.values["operation"] = "Remove"
+        self.tap((50.0, 50.0, 96.0))                                                          # touching a face removes the whole object
+        self.assertEqual(picking.get_selection(self.doc), [(cylinder.Name, "")])
+        tool.values["operation"] = "Replace"
+        self.tap((50.0, 50.0, 50.0))
+        self.assertEqual(picking.get_selection(self.doc), [(self.box.Name, "")])
+        self.assertEqual(self.doc.UndoCount, undo_steps)                                      # selecting makes no undo step
+
+    def test_the_select_tool_highlights_the_element_of_its_target_and_the_selection_opens_the_value_panels(self):
+        from pivy import coin
+        from freecad.BlocksCAD.cad import picking
+        picking.clear_selection()
+        s = self.session()
+        s.select_tool("select")
+        tool = s.tool_manager.active
+        self.settle((50.0, 50.0, 96.0))
+        self.assertEqual((tool._hover.kind, tool._hover.sub), ("object", ""))                 # what a press would select is what is lit
+        self.assertEqual(s.highlights.hover.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        tool.values["target"] = "Face"
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.assertEqual(tool._hover.kind, "face")                                            # at once, without the wait of a trembling hand
+        self.assertFalse(s.ui.module.is_open)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=0.0)
+        for _ in range(3):
+            self.hand(1, (50.0, 50.0, 96.0))
+        self.assertTrue(s.ui.module.is_open)                                                  # the value editor opens as it does for the Move tool
+        self.assertEqual(s.highlights.selected.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+
+    def test_releasing_the_a_button_without_moving_the_hand_chooses_the_select_tool_and_the_hub_is_lit(self):
+        from freecad.BlocksCAD.ui import style
+        s = self.session()
+        self.assertEqual(s.tool_manager.active_name, "move")
+        self.hand(1, (60.0, 50.0, 96.0), button1=True)
+        self.assertTrue(s.ui.radial.is_open)
+        self.assertNotIn("tool.select", s.ui.radial._items)                  # never one of the segments
+        self.assertEqual(s.ui.radial_view._hub_rgb, style.HOVER)
+        self.assertEqual(s.ui.radial_view._hub_lines, ["Select"])
+        self.hand(1, (60.0, 50.0, 96.0), button1=False)
+        self.assertEqual(s.ui_update.activated, "tool:select")
+        self.assertNotIn("tool.select", s.ui.settings.recent)
+
     def test_the_quick_radial_stays_closed_during_a_grab_and_a_padlock_shows_over_the_a_button(self):
         from pivy import coin
         s = self.session()
@@ -999,7 +1098,7 @@ class GrabLiveTest(unittest.TestCase):
         self.assertEqual(self.selection(), [(self.box.Name, ())])
         self.assertEqual(s.highlights.selected.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
 
-    def test_the_stick_chooses_from_the_option_disc_of_the_grab_tool(self):
+    def test_the_stick_chooses_from_the_option_disc_of_the_move_tool(self):
         import math
         s = self.session()
         tool = s.tool_manager.active
@@ -1152,7 +1251,7 @@ class GrabLiveTest(unittest.TestCase):
         self.assertFalse(module.engaged)
         self.push(0.0, 1.0)
         self.assertEqual(self.box.Width.Value, 100.0)
-        self.assertEqual(tool.values["grid"], "20 mm")                                 # the option disc of the Grab tool took the stick
+        self.assertEqual(tool.values["grid"], "20 mm")                                 # the option disc of the Move tool took the stick
         self.assertFalse(s.ui_update.owns_stick and module.engaged)
 
     def test_a_slider_changes_its_value_only_when_its_bar_is_pressed_and_dragged(self):

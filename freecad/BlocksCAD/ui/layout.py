@@ -28,6 +28,12 @@ from typing import List, Optional
 
 COLS, ROWS = 4, 3
 SLOTS = COLS * ROWS
+RENAMED_FACES = {"tool.grab": "tool.move"}    # ids that saved layouts and settings may hold, and the faces they stand for
+
+
+def current_face(face_id):
+    """The id of the face that a saved id stands for."""
+    return RENAMED_FACES.get(face_id, face_id)
 
 
 @dataclass(frozen=True)
@@ -205,14 +211,14 @@ class Layout:
         data = json.loads(text)
         pages = []
         for page in data["pages"]:
-            slots = [s if (isinstance(s, str) and (known_faces is None or s in known_faces)) else None
+            slots = [current_face(s) if (isinstance(s, str) and (known_faces is None or current_face(s) in known_faces)) else None
                      for s in page.get("slots", [])]
             side, row = page.get("side"), page.get("row")
             pages.append(Page(str(page["name"]), slots, side if isinstance(side, int) else None,
                               row if isinstance(row, int) else None))
         if not pages:
             raise ValueError("layout without pages")
-        hidden = [f for f in data.get("hidden", []) if isinstance(f, str) and (known_faces is None or f in known_faces)]
+        hidden = [current_face(f) for f in data.get("hidden", []) if isinstance(f, str) and (known_faces is None or current_face(f) in known_faces)]
         return cls(pages, hidden)
 
 

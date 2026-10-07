@@ -70,6 +70,11 @@ class Grab:
         return base, mu.quat_normalize(mu.quat_multiply(turn, self.rotation))
 
 
+def within_reach(kind, distance, mm_per_metre) -> bool:
+    """Whether an element of `kind` ("vertex", "edge" or "face") at `distance` document millimetres is touched."""
+    return distance is not None and distance <= REACH[kind] * mm_per_metre
+
+
 def classify(d_vertex, d_edge, d_face, inside, mm_per_metre) -> Optional[str]:
     """What the cursor touches: "vertex", "edge" or "face" when it lies within the reach of one (distances in document millimetres,
     `mm_per_metre` the document length of one metre of the stage), otherwise "object" when it is inside a solid, else None."""

@@ -24,6 +24,8 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import List
 
+from freecad.BlocksCAD.ui.layout import current_face
+
 MODES = ("laser", "tip")
 ANGLE_RANGE = (-90.0, 90.0)
 LENGTH_RANGE = (0.0, 0.4)
@@ -45,7 +47,7 @@ class Settings:
             self.pointer_mode = "laser"
         self.tip_angle = _clamp(float(self.tip_angle), *ANGLE_RANGE)
         self.tip_length = _clamp(float(self.tip_length), *LENGTH_RANGE)
-        self.recent = [f for f in self.recent if isinstance(f, str)] if isinstance(self.recent, list) else []
+        self.recent = [current_face(f) for f in self.recent if isinstance(f, str)] if isinstance(self.recent, list) else []
 
     def toggle_mode(self):
         self.pointer_mode = "tip" if self.pointer_mode == "laser" else "laser"

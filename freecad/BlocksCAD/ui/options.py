@@ -22,7 +22,8 @@ stays for `READOUT_TIME` seconds. A tool without options leaves the stick alone 
 
 A tool with an option disc (`Tool.disc_slots`) uses the stick differently: the six sections of the disc lie round the stick like the
 hours of a clock (the first straight up, then clockwise), the direction of the stick chooses a section and pushing it out applies
-the section: a "set" section sets its option once, a "step" section steps its option and repeats while the stick is held out. The
+the section: a "set" section sets its option once, a "toggle" section sets it once or puts it back to its default when it is set
+already, a "step" section steps its option and repeats while the stick is held out. The
 disc is shown while the stick is out and for `READOUT_TIME` seconds after a change; the click of the stick goes to the tool."""
 
 import math
@@ -98,6 +99,8 @@ class OptionControl:
         value = tool.values[option.name]
         if slot.kind == "set":
             new = option.clamp(slot.value)
+        elif slot.kind == "toggle":
+            new = option.default if value == slot.value else option.clamp(slot.value)
         elif option.kind == "choice":
             index = option.choices.index(value) + slot.value
             new = option.choices[index % len(option.choices)] if option.wrap else option.choices[min(max(index, 0), len(option.choices) - 1)]
@@ -130,7 +133,7 @@ class OptionControl:
         self._readout_time += frame.dt
         if pointed is not None or self._readout_time < READOUT_TIME:
             state.disc = DiscState([s.label for s in slots],
-                                   [bool(s.option) and s.kind == "set" and tool.values.get(s.option) == s.value for s in slots],
+                                   [bool(s.option) and s.kind in ("set", "toggle") and tool.values.get(s.option) == s.value for s in slots],
                                    pointed, list(tool.disc_hub()), (x, y))
         return state
 

@@ -81,8 +81,8 @@ class SimSession:
         from pivy import coin
         from freecad.BlocksCAD import tools
         import freecad.BlocksCAD.tools.primitives  # noqa: F401  (registers the tools)
-        import freecad.BlocksCAD.tools.grab  # noqa: F401
-        import freecad.BlocksCAD.tools.legacy  # noqa: F401
+        import freecad.BlocksCAD.tools.select  # noqa: F401
+        import freecad.BlocksCAD.tools.move  # noqa: F401
         from freecad.BlocksCAD.render.controller_shape import build_fallback
         from freecad.BlocksCAD.render.ghost import Ghost
         from freecad.BlocksCAD.render.highlight import Highlights

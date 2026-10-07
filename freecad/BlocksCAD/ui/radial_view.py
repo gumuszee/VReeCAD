@@ -116,6 +116,8 @@ class RadialView:
         self._segments = []       # (colour node of the plate, colour node of the text or None)
         self._built_for = None
         self._hub_lines = None
+        self._hub_plate = None    # colour node of the plate of the hub
+        self._hub_rgb = None
 
     def _build(self, labels):
         """With the depth test off what is drawn later lies on top, so the order is: backdrop, hub, segments, labels."""
@@ -123,7 +125,8 @@ class RadialView:
         self._segments = []
         count = len(labels)
         _strip(self._items, _disc(self.outer + BACKDROP), style.PLATE, -DEPTH)
-        _strip(self._items, _disc(self.inner - rd.GAP), style.EMPTY, 0.0)
+        self._hub_plate = _strip(self._items, _disc(self.inner - rd.GAP), style.EMPTY, 0.0)
+        self._hub_rgb = style.EMPTY
         plates = [_strip(self._items, rd.segment_strip(i, count, self.inner, self.outer), style.FACE, 0.0) for i in range(count)]
         radius = (self.inner + self.outer) / 2 + 0.004
         for i, label in enumerate(labels):
@@ -140,9 +143,10 @@ class RadialView:
             self._hub.string.setNum(max(len(lines), 1))
             self._hub_shift.translation.setValue(0.0, (len(lines) - 1) * 0.5 * style.LINE_HEIGHT * 0.9 - 0.0035, DEPTH)
 
-    def update(self, state, labels, active=None, hub=None):
+    def update(self, state, labels, active=None, hub=None, centre=None):
         """Show the disc for a `radial.RadialState`; `labels` are the texts of its items (an empty text is an empty segment),
-        `active` flags the items that hold the current value of their option and `hub` the lines of text in the middle."""
+        `active` flags the items that hold the current value of their option and `hub` the lines of text in the middle. `centre` is
+        the label of an item in the hub: it is drawn as a segment of its own, lit while no segment is chosen."""
         if not state.open:
             self.root.whichChild = coin.SO_SWITCH_NONE
             return
@@ -155,7 +159,11 @@ class RadialView:
         reach = math.hypot(*state.cursor)
         scale = min(reach, self.outer) / reach if reach > 1e-9 else 0.0
         self._cursor_move.translation.setValue(state.cursor[0] * scale, state.cursor[1] * scale, DEPTH)
-        self._write_hub(list(hub or []))
+        self._write_hub(list(hub or lay.wrap_label(centre or "")))
+        rgb = style.EMPTY if not centre else style.HOVER if state.selected is None else style.FACE
+        if rgb != self._hub_rgb:
+            self._hub_rgb = rgb
+            self._hub_plate.rgb = coin.SbColor(*rgb)
         for i, (plate, text) in enumerate(self._segments):
             if text is None:
                 plate.rgb = coin.SbColor(*style.EMPTY)

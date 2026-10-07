@@ -13,7 +13,7 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""What the hand touches in a document, how to draw it, and the selection (docs/ux-design.md, Grab tool).
+"""What the hand touches in a document, how to draw it, and the selection (docs/ux-design.md, Move tool).
 
 `pick` finds the vertex, edge, face or solid that a point in document millimetres touches: it is the nearest element within the
 reach of `core.grab.classify`, so a corner wins over the edge it lies on and an edge over its face. `display` builds the geometry
@@ -63,8 +63,11 @@ def _nearest(items, distance):
     return best, index
 
 
-def pick(doc, point, mm_per_metre) -> Optional[Pick]:
-    """The element of the visible objects of `doc` that `point` (document millimetres) touches, or None."""
+def pick(doc, point, mm_per_metre, kind=None) -> Optional[Pick]:
+    """The element of the visible objects of `doc` that `point` (document millimetres) touches, or None.
+
+    Without `kind` it is the nearest of any sort. With `kind` "vertex", "edge" or "face" it is the nearest element of that sort within
+    its reach, however close another sort is; with "object" it is the object that any element of it touches (a `Pick` of kind "object")."""
     import FreeCAD as App
     import Part
     p = App.Vector(*point)
@@ -81,6 +84,14 @@ def pick(doc, point, mm_per_metre) -> Optional[Pick]:
         box.enlarge(reach)
         if not box.isInside(p):
             continue
+        if kind in ("vertex", "edge", "face"):
+            items, distance = {"vertex": (shape.Vertexes, lambda v: (v.Point - p).Length),
+                               "edge": (shape.Edges, lambda e: e.distToShape(marker)[0]),
+                               "face": (shape.Faces, lambda f: f.distToShape(marker)[0])}[kind]
+            d, index = _nearest(items, distance)
+            if grab.within_reach(kind, d, mm_per_metre) and (best is None or d < best.distance):
+                best = Pick(obj.Name, kind, f"{kind.capitalize()}{index + 1}", d)
+            continue
         d_vertex, vertex = _nearest(shape.Vertexes, lambda v: (v.Point - p).Length)
         d_edge, edge = _nearest(shape.Edges, lambda e: e.distToShape(marker)[0])
         d_face, face = _nearest(shape.Faces, lambda f: f.distToShape(marker)[0])
@@ -88,14 +99,16 @@ def pick(doc, point, mm_per_metre) -> Optional[Pick]:
             inside = bool(shape.Solids) and shape.isInside(p, 1e-6, True)
         except Exception:
             inside = False
-        kind = grab.classify(d_vertex, d_edge, d_face, inside, mm_per_metre)
-        if kind is None:
+        found = grab.classify(d_vertex, d_edge, d_face, inside, mm_per_metre)
+        if found is None:
             continue
         sub, distance = {"vertex": (f"Vertex{vertex + 1}", d_vertex), "edge": (f"Edge{edge + 1}", d_edge),
-                         "face": (f"Face{face + 1}", d_face), "object": ("", 0.0)}[kind]
-        candidate = Pick(obj.Name, kind, sub, distance)
-        if best is None or (PRIORITY[kind], distance) < (PRIORITY[best.kind], best.distance):
+                         "face": (f"Face{face + 1}", d_face), "object": ("", 0.0)}[found]
+        candidate = Pick(obj.Name, found, sub, distance)
+        if best is None or (PRIORITY[found], distance) < (PRIORITY[best.kind], best.distance):
             best = candidate
+    if best is not None and kind == "object":
+        return Pick(best.name, "object", "", best.distance)
     return best
 
 

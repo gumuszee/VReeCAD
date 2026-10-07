@@ -1,6 +1,6 @@
 # BlocksCAD design
 
-Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction. The interface foundation is implemented: grip navigation (U1), the palette carousel with panels, sliders and arrangement (U2) and the laser and tip pointer are verified in the headset; the quick radial, the moving and hiding of single faces (U3), tool options, undo and redo on `button2`, toasts and tooltips (U4) the Create tool (M1), the Grab tool (M2) and the value panels (sliders, number pad and stick steps for the values of the selected object, part of M3) are tested in the Sim and wait for the headset. The variables of M3 are not built. Open checks are listed in `verification.md`.
+Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction. The interface foundation is implemented: grip navigation (U1), the palette carousel with panels, sliders and arrangement (U2) and the laser and tip pointer are verified in the headset; the quick radial, the moving and hiding of single faces (U3), tool options, undo and redo on `button2`, toasts and tooltips (U4) the Create tool (M1), the Select and the Move tool (M2) and the value panels (sliders, number pad and stick steps for the values of the selected object, part of M3) are tested in the Sim and wait for the headset. The variables of M3 are not built. Open checks are listed in `verification.md`.
 Inspiration: Open Blocks' simple direct manipulation; substance: real parametric CAD in FreeCAD.
 
 ## Decisions (from the project owner, 2026-10-06)
@@ -13,7 +13,8 @@ Inspiration: Open Blocks' simple direct manipulation; substance: real parametric
 | D4 | The addon is reworked freely; upstream is the starting point and is not merged from. (Licence check: `licensing.md`.) |
 | D5 | **No MCP / AI inside the addon, ever.** Any AI integration is a separate addon so VR works without AI. Dev tooling that talks to FreeCAD (`tools/`, MCP RPC addon) is development-only and the addon must not import it. |
 | D6 | Desktop mirror ("Enable mirror") is useful for testing/screenshots. Autonomous testing without a person moving in VR is a goal: see *Test strategy*. |
-| D7 | The UI is driven by the Open Brush control scheme (`ux-design.md`). The inherited interface is replaced: no upstream compatibility is kept, and the inherited tools remain only as faces until new tools replace them. |
+| D7 | The UI is driven by the Open Brush control scheme (`ux-design.md`). The upstream interface is not part of the addon and no upstream compatibility is kept. |
+| D8 | Only the VR integration of the upstream module remains: the OpenXR session and render loop, input, controller models, the desktop mirror, the spectator camera, and the lighting and anti-aliasing preferences. Its tools, in-world menus, overlays and document code are not part of the addon; every tool is written for this architecture (`tools/`) and sees only the `InputFrame` and its services. |
 
 ## Architecture
 
@@ -26,12 +27,12 @@ backends/   openxr_input.py   action set, bindings per profile, polling into Inp
 input.py    InputFrame: head pose, per hand {aim/grip pose, trigger, grip, stick xy+click, button1, button2, menu, aux1, aux2}; edge events
 profiles.py abstract input -> OpenXR path per interaction profile (data, see input-profiles.md)
 gltf.py     GLB reader;  render/  gltf_coin.py (glTF -> Coin3D), controller_shape.py (generated), offscreen.py (image render)
-commonXR.py XRwidget: OpenXR session, swapchains, Coin scene, render loop, inherited interact_* handlers (to be split: rig*)
-core/       mathutil.py (vector/quaternion math), navigation.py (grip navigation, home pose), units.py (measurement systems, ruler ticks), stage.py (stage to document coordinates), snapping.py (grid, drag box), grab.py (rigid grab, rotation snap, what the cursor touches), values.py (expressions of the keypad, the state of the value editor); transactions*
+commonXR.py XRwidget: OpenXR session, swapchains, Coin scene, render loop, the tool manager and the services of the tools (to be split: rig*);  controllerXR.py (the scene node of a controller)
+core/       mathutil.py (vector/quaternion math), navigation.py (grip navigation, home pose), units.py (measurement systems, ruler ticks), stage.py (stage to document coordinates), snapping.py (grid, drag box), grab.py (rigid grab, rotation snap, what the cursor touches), selecting.py (combining a touched element with the selection), values.py (expressions of the keypad, the state of the value editor); transactions*
 ui/         controller.py (navigation + carousel + ruler + actions), ring.py (carousel logic and geometry), ring_view.py, radial.py (quick radial logic and favourites), radial_view.py (the quick radial and the option discs of the tools), ruler.py, pointer.py (laser and tip), pointing.py (pointer pose), settings.py (user settings), style.py (colours, font), layout.py (faces, panels, sides, hidden faces, JSON), defaults.py; options.py (tool options on the stick), undo_button.py, toast.py (toasts, tooltip timing), feedback_view.py (toasts, tooltip, readout), value_module.py (the value panels of the carousel: faces, pages, sliders, keys, stick)
-tools/      base.py (Tool, ToolOption, hint), registry.py, manager.py, legacy.py (the six inherited modes as tools), primitives.py (the Create tool), grab.py (the Grab tool); new tools: one module each
+tools/      base.py (Tool, ToolOption, hint), registry.py, manager.py, touch.py (the base of the tools that touch), primitives.py (the Create tool), select.py (the Select tool), move.py (the Move tool); new tools: one module each
 core/*      picking/highlight, transactions (undo), parameter binding (further modules); render/ghost.py (the preview of a shape being made), render/highlight.py (hover and selection), render/model_anchor.py (where a button of a controller model is: the padlock hint)
-cad/*       thin wrappers creating/editing FreeCAD features: primitives.py (Part primitives, implemented), meshes.py (preview meshes of the primitives, pure Python), picking.py (what the hand touches, the selection), edit.py (placement and size properties), values.py (the values of an object for the value panel); Sketcher, PartDesign, booleans, Attacher (planned)
+cad/*       thin wrappers creating/editing FreeCAD features: primitives.py (Part primitives, implemented), meshes.py (preview meshes of the primitives, pure Python), picking.py (what the hand touches, the selection), edit.py (placement, size properties and deleting objects), values.py (the values of an object for the value panel); Sketcher, PartDesign, booleans, Attacher (planned)
 ```
 
 Rules:
@@ -68,9 +69,9 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 | U1, U2, pointer | **UX foundation, implemented**: world navigation, palette carousel with faces, panels and sliders, laser and tip pointer. See `ux-design.md` |
 | U3 | **UX foundation, implemented**: quick radial on `button1` of the tool hand, moving single faces between slots and panels, hiding faces and showing them again, faces activate on trigger release. See `ux-design.md` |
 | U4 | **UX foundation, implemented**: tool options on the stick with a readout, undo and redo on `button2`, toasts, tooltips. See `ux-design.md` |
-| M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry wrapping the inherited tools |
+| M0 | **Platform** (implemented, except the `rig.py` split of `commonXR.py`): backends/input/render split; complete action set (trigger, grip, stick+click, two buttons, menu, haptics) bound for Frame/Touch/Index/Vive/WMR/Pico per `input-profiles.md`; `InputFrame`; runtime-provided controller models with a generated fallback (`controller-models.md`); **Sim backend + offscreen render + test harness**; tool registry and manager |
 | M1 | **Implemented**: primitives (box, cylinder, cone, sphere, torus, wedge, prism) with snap grid, ghost preview, live dimension, undo/redo: the Create tool (`tools/primitives.py`, `cad/primitives.py`). See `ux-design.md`, Create tool |
-| M2 | **Implemented**: hover highlight and selection (vertex/edge/face/object), the Grab tool (move and rotate on a grid, two-hand scale through the size parameters of the primitives; `tools/grab.py`, `cad/picking.py`, `cad/edit.py`, `core/grab.py`, `render/highlight.py`), world navigation (U1). See `ux-design.md`, Grab tool |
+| M2 | **Implemented**: hover highlight and selection (vertex/edge/face/object), the Select tool (objects, faces, edges and vertices, many at once) and the Move tool (move and rotate on a grid, two-hand scale through the size parameters of the primitives; `tools/select.py`, `tools/move.py`, `tools/touch.py`, `cad/picking.py`, `cad/edit.py`, `core/grab.py`, `core/selecting.py`, `render/highlight.py`), world navigation (U1). See `ux-design.md`, Select tool and Move tool |
 | M3 | **Value panels**: sliders, number pad, expressions and stick steps for the size and position of the selected object are implemented (`ui/value_module.py`, `core/values.py`, `cad/values.py`); the variables spreadsheet and values bound by expressions are not built |
 | M4 | Push/pull (Pad/Pocket/offset face), booleans (fuse/cut/common), copy/mirror/pattern, delete, colour |
 | M5 | **Block**: point-based parametric solid, vertex move/add/split, planarity & distance constraints |
@@ -85,16 +86,14 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 4. Real-device facts that sims cannot prove (comfort, tracking, button feel) stay explicitly marked *unverified* until the owner confirms.
 
 ## Risks / open items
-- The addon binds the physical controls listed in `input-profiles.md`; the inherited code binds only stick, trigger and pose.
+- The addon binds the physical controls listed in `input-profiles.md`.
 - Python per-frame cost: keep gesture math light; do OCCT work on release only.
 - FeaturePython `Block` objects need the addon to be installed to recompute on reopen (shape is cached; document remains viewable without it).
 - Controller models come from the runtime and are not bundled (`controller-models.md`); the repository contains no controller meshes.
 - Naming: see `licensing.md` (trademark and an existing product called "BlocksCAD").
 
 ## Known limitations
-- `commonXR.py` still hosts the OpenXR session, the render loop and the inherited tool handlers in one module; the extraction into `rig.py` is open.
-- The preferences page (`Resources/Gui/Resources/preferences/XRPreferences.ui`, compiled into `XRWorkbench_rc.py`) still lists the locomotion options (movement mode, speeds, lock to floor); they have no effect, because the world is navigated with the grips.
-- The inherited tools (teleport, line and cube builders, select, drag, working plane), the Qt panel overlay and the edit menu shown after a selection are upstream code; they pick along a ray from the pointer pose (a ray of 3 cm from the tip in tip mode) and are replaced milestone by milestone.
-- The inherited status text on the right controller (tool hints, selection label) is not drawn; the objects and their `set_text` calls remain in `commonXR.py` and the tool hints are shown as toasts and tooltips.
+- `commonXR.py` hosts the OpenXR session, the render loop and the services of the tools in one module; the extraction into `rig.py` is open.
+- The model tree and the task panel of FreeCAD are not shown in the headset; the desktop window shows them.
 - Handedness is fixed: the left controller carries the carousel, the right controller is the tool hand.
 - Only the Steam Frame controllers are tested; the other profiles are bound but unverified (`verification.md`).

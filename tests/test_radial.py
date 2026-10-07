@@ -47,7 +47,7 @@ class SegmentTest(unittest.TestCase):
 
 
 class ItemsTest(unittest.TestCase):
-    KNOWN = {"doc.undo", "doc.redo", "view.reset", "doc.delete", "view.overlay", "pointer.mode", "tool.line", "tool.cube", "app.close",
+    KNOWN = {"doc.undo", "doc.redo", "view.reset", "doc.delete", "tool.move", "pointer.mode", "tool.line", "tool.cube", "app.close",
              "view.layout"}
 
     def test_recent_faces_come_first_then_the_defaults(self):
@@ -59,7 +59,7 @@ class ItemsTest(unittest.TestCase):
     def test_unknown_hidden_repeated_and_dangerous_faces_are_left_out(self):
         items = rd.choose_items(["gone", "tool.cube", "doc.undo", "tool.cube", "app.close", "view.layout", "view.reset"], self.KNOWN,
                                 hidden=["view.reset"])
-        self.assertEqual(items, ["tool.cube", "doc.undo", "doc.redo", "doc.delete", "view.overlay", "pointer.mode"])
+        self.assertEqual(items, ["tool.cube", "doc.undo", "doc.redo", "doc.delete", "tool.move", "pointer.mode"])
 
     def test_remember_moves_a_face_to_the_front_and_keeps_the_newest(self):
         recent = []

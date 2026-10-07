@@ -25,22 +25,17 @@
 
 import freecad.BlocksCAD.preferences as pref
 import freecad.BlocksCAD.controllerXR as conXR
-import freecad.BlocksCAD.menuCoin as menuCoin
-import freecad.BlocksCAD.previewCoin as prCoin
-import freecad.BlocksCAD.documentInteraction as docInter
-import freecad.BlocksCAD.qtWidgetRender as qWRen
 from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.core import stage, units
-from freecad.BlocksCAD.cad import values as object_values
+from freecad.BlocksCAD.cad import edit, picking, values as object_values
 from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.render.highlight import Highlights
 from freecad.BlocksCAD.ui.controller import UiController
-from freecad.BlocksCAD.core.navigation import WorldPose
 import freecad.BlocksCAD.tools.primitives  # noqa: F401  (registers the tools)
-import freecad.BlocksCAD.tools.grab  # noqa: F401
-import freecad.BlocksCAD.tools.legacy  # noqa: F401
+import freecad.BlocksCAD.tools.select  # noqa: F401
+import freecad.BlocksCAD.tools.move  # noqa: F401
 from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
 from freecad.BlocksCAD.backends.openxr_models import RuntimeModels
 from freecad.BlocksCAD.render.gltf_coin import load_glb
@@ -55,9 +50,7 @@ from pivy.coin import SoEnvironment
 from pivy.coin import SoDirectionalLight
 from pivy.coin import SoCamera
 from pivy.coin import SbVec3f
-from pivy.coin import SbMatrix
 from pivy.coin import SoFrustumCamera
-from pivy.coin import SoOrthographicCamera
 from pivy.coin import SoPerspectiveCamera
 from pivy.coin import SbViewportRegion
 from pivy.coin import SoSceneManager
@@ -127,7 +120,6 @@ except ImportError:
     raise ImportError("pyopenxr is required!")
 
 
-TIP_REACH = 0.03  # metres in front of the tip that count as touching a model in tip mode
 MODEL_CHECK_FRAMES = 60  # frames between checks for controller models that appeared after the first enumeration
 
 ALL_SEVERITIES = (
@@ -377,7 +369,7 @@ class XRwidget(QOpenGLWidget):
         # 0 is the left one - defined in hand_paths
         self.secondary_con = 1
         self.tools = ToolManager(ToolContext(host=self, dominant=self.secondary_con))
-        self.tools.activate("teleport")
+        self.tools.activate("select")
         self.frame_duration = 0
         self.render_duration = 0
 
@@ -391,8 +383,6 @@ class XRwidget(QOpenGLWidget):
         self.prepare_xr_controls()
         self.setup_cameras()
         self.setup_controllers()
-        self.setup_menus()
-        self.setup_qt_widgets()  # Qt Widgets rendered in 3D space
         self.setup_scene()  # have to be last, after cameras and controllers setup
         self.read_preferences()  # done after scene and menu init
         self.initialize_offsGL()
@@ -406,9 +396,6 @@ class XRwidget(QOpenGLWidget):
         QObject.connect(self.timer_gui, SIGNAL("timeout()"), self.update_gui)
         self.timer_gui.start(100)
         print("XR session has started")
-
-        self.double_click_timer = QElapsedTimer()
-        self.double_click_timer.start()
 
     def debug_callback_py(
             self,
@@ -427,27 +414,12 @@ class XRwidget(QOpenGLWidget):
         self.near_plane = 0.01
         self.far_plane = 10000.0
         self.camera = [SoFrustumCamera(), SoFrustumCamera()]
-        # TODO remove redundancy between hmdrot/hmdpos and hmd_transform
         self.hmdrot = SbRotation()
         self.hmdpos = SbVec3f()
-        self.hmd_transform = SoTransform()
         # 0 - left eye, 1 - right eye
         for eye_index in range(2):
             self.camera[eye_index].viewportMapping.setValue(
                 SoCamera.LEAVE_ALONE)
-            self.camera[eye_index].near_plane = self.near_plane
-            self.camera[eye_index].arr_plane = self.far_plane
-        # Since Coin3D SoRayPickAction setRay cannot use a radius, picking points
-        # and lines is almost impossible - user cannot aim so precisely.
-        # As as workaround, additional camera is used, with its placement
-        # resembling placement of the ray. And then viewport space setPoint() is used.
-        # setPoint() can use value set by setRadius()
-        self.pick_camera = SoOrthographicCamera()
-        self.pick_camera.near_plane = self.near_plane
-        self.pick_camera.far_plane = self.far_plane
-        self.pick_camera.height = 0.02
-        # default picking radius, it is proportional to camera.height divided by vp region size
-        self.pick_vp_reg = SbViewportRegion(5, 5)
 
     def setup_tpp_camera(self):
         self.tpp_camera = SoPerspectiveCamera()
@@ -485,9 +457,6 @@ class XRwidget(QOpenGLWidget):
         self.doc_xr_transform.rotation.setValue(
             SbRotation(SbVec3f(1, 0, 0), -pi / 2))
         self.sg = SoSeparator()  # placeholder for scenegraph
-        self.geo_prev = prCoin.coinPreview()  # geometry preview
-        # store complete transformation of world, including artificial movement
-        self.world_transform = SoTransform()
         self.world_separator = SoSeparator()
         self.nav_transform = SoTransform()  # world navigation (grips), see core/navigation.py
         self.setup_ui()
@@ -499,24 +468,6 @@ class XRwidget(QOpenGLWidget):
         self.cgrp = [SoGroup(), SoGroup()]  # group for camera
         self.sgrp = [SoGroup(), SoGroup()]  # group for scenegraph
         self.root_scene = [SoSeparator(), SoSeparator()]
-        self.cam_picking_root = SoSeparator()
-        self.qt_widgets_separator = SoSeparator()
-        # add 2D Qt widgets
-        # widgets will be glued to the left controller
-        self.qt_widgets_separator.addChild(
-            self.xr_con[self.primary_con].get_global_transf())
-        for w in self.qt_widget_renders:
-            self.qt_widgets_separator.addChild(
-                w.get_scenegraph())
-        # labels glued to the right controller
-        self.labels_separator = SoSeparator()
-        self.labels_separator.addChild(
-            self.xr_con[self.secondary_con].get_global_transf())
-        self.status_label = menuCoin.labelWidget(
-            "label", "Pick teleport destination", 0.2)
-        self.status_label.set_location(
-            SbVec3f(-0.1, 0.0, 0.0), SbRotation(0, 0, 0, 0))
-        self.labels_separator.addChild(self.status_label.get_scenegraph())
         for con in self.xr_con:
             # the controllers hide the laser and the tips, see UiController.add_occluder
             self.ui.add_occluder(con.get_controller_scenegraph())
@@ -530,29 +481,11 @@ class XRwidget(QOpenGLWidget):
             for hand in range(len(self.xr_con)):
                 self.sgrp[eye_index].addChild(
                     self.xr_con[hand].get_controller_scenegraph())
-                if self.xr_con[hand].get_ray_scenegraph():
-                    self.sgrp[eye_index].addChild(
-                        # ray for controller
-                        self.xr_con[hand].get_ray_scenegraph())
-            # edit menu (shown after selecting an object)
-            self.sgrp[eye_index].addChild(
-                self.edit_menu.get_menu_scenegraph())
-            # the inherited status label ("Pick teleport destination") stays out of the scene: the palette shows the active tool
             self.sgrp[eye_index].addChild(self.ui.root)
             # add world (scene without controllers and gui elements)
             self.sgrp[eye_index].addChild(self.world_separator)
-            # add geometry preview objects
-            self.sgrp[eye_index].addChild(
-                self.geo_prev.get_scenegraph())
-            # add 2D Qt widgets to each eye scenegraph
-            self.sgrp[eye_index].addChild(self.qt_widgets_separator)
             # the scale ruler is drawn last, over everything
             self.sgrp[eye_index].addChild(self.ui.overlay)
-        self.cam_picking_root.ref()
-        self.cam_picking_root.addChild(self.pick_camera)
-        self.cam_picking_root.addChild(self.world_separator)
-        self.cam_picking_root.addChild(
-            self.geo_prev.get_scenegraph())
 
         # populate only when a tracker with a camera role is detected
         self.tpp_cam_root = None
@@ -571,13 +504,7 @@ class XRwidget(QOpenGLWidget):
         for hand in range(len(self.xr_con)):
             self.tpp_sgrp.addChild(
                 self.xr_con[hand].get_controller_scenegraph())
-            if self.xr_con[hand].get_ray_scenegraph():
-                self.tpp_sgrp.addChild(
-                    self.xr_con[hand].get_ray_scenegraph())
         self.tpp_sgrp.addChild(self.world_separator)
-        self.tpp_sgrp.addChild(
-            self.geo_prev.get_scenegraph())
-        self.tpp_sgrp.addChild(self.qt_widgets_separator)
         self.tpp_sgrp.addChild(self.ui.root)
         self.tpp_sgrp.addChild(self.ui.overlay)
         # setup additional framebuffer for the TPP camera
@@ -601,31 +528,14 @@ class XRwidget(QOpenGLWidget):
 
     def setup_controllers(self):
         # initialise scenegraphs for controllers
-        self.xr_con = [
-            conXR.xrController(
-                self.primary_con,
-                ray=True,
-                log_level=self.log_level),
-            conXR.xrController(
-                self.secondary_con,
-                ray=True,
-                log_level=self.log_level)]
-
-    def setup_menus(self):
-        # the edit menu floats in the 3D view after an object is selected
-        self.edit_menu = menuCoin.editCoinMenu()
-        # this function may by unavailable in older FreeCAD versions
-        self.view = Gui.ActiveDocument.ActiveView
-        self.picking_available = "getObjectInfoRay" in dir(self.view)
+        self.xr_con = [conXR.xrController(self.primary_con), conXR.xrController(self.secondary_con)]
 
     def setup_ui(self):
         """The palette ring, grip navigation and their actions (docs/ux-design.md)."""
         actions = {f"tool:{name}": (lambda n=name: self.select_tool(n)) for name in tool_registry.names()}
         actions.update({
             "view:reset": lambda: self.ui.navigator.request_reset(),
-            "overlay:toggle": self.toggle_overlays,
             "scene:reload": self.reload_scenegraph,
-            "plane:toggle": lambda: self.geo_prev.toggle_working_plane(),
             "doc:undo": self.undo,
             "doc:redo": self.redo,
             "doc:delete": self.delete_selection,
@@ -661,10 +571,6 @@ class XRwidget(QOpenGLWidget):
             "format_length": lambda mm: units.format_length(mm, self.ui.system),
         })
 
-    def toggle_overlays(self):
-        for w in self.qt_widget_renders:
-            w.toggle_widget()
-
     def undo(self):
         """Undo the last change; returns the text of the toast."""
         doc = App.ActiveDocument
@@ -684,23 +590,17 @@ class XRwidget(QOpenGLWidget):
         return "Nothing to redo"
 
     def delete_selection(self):
-        docInter.delete_sel_obj()
-        docInter.clear_selection()
-
-    def setup_qt_widgets(self):
-        # initialize 2D Qt widgets rendering in the 3D space
-        self.qt_widget_renders = tuple(
-            w for w in (
-                qWRen.qtWidgetRender(name="Tree view", pos=SbVec3f(0.1, 0.2, -0.5)),
-                qWRen.qtWidgetRender(name="Tasks", pos=SbVec3f(0.1, -0.2, -0.5))
-            ) if w.widget is not None
-        )
-        self.qt_widget_renders[0].change_z_offset(
-            0.02)  # move 1 widget closer to the user
+        """Delete the selected objects in one undo step; returns the text of the toast."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return "No document"
+        items = picking.get_selection(doc)
+        text = edit.delete_objects(doc, items)
+        picking.set_selection(doc, [i for i in items if doc.getObject(i[0]) is not None])     # what is left of the selection
+        return text
 
     def read_preferences(self):
         # read from user preferences
-        self.pick_camera.height = pref.preferences().GetInt("PickingRadius", 20) / 1000
         sf = 0.001
         self.doc_xr_transform.scaleFactor.setValue(sf, sf, sf)
         self.ambient_light_intensity = pref.preferences().GetInt(
@@ -1118,19 +1018,7 @@ class XRwidget(QOpenGLWidget):
             con = self.xr_con[hand]
             if h.aim.tracked:
                 con.show_controller()
-                pointer = self.ui.pointer_poses[hand]
-                con.update_pose(h.aim.position, h.aim.orientation, self.world_transform, pointer.position, pointer.orientation)
-                tip_mode = self.ui.settings.pointer_mode == "tip"
-                con.ray_enabled = not tip_mode
-                con.reach = TIP_REACH if tip_mode else None
-                if tip_mode:
-                    con.hide_ray()
-                # the stick adjusts the options of the active tool when it has any
-                lever_owned = ui_update.owns_stick and hand == self.secondary_con
-                con.update_lever(0.0 if lever_owned else h.stick[0], 0.0 if lever_owned else h.stick[1])
-                # a trigger pressed on a face of the palette belongs to the palette, not to the active tool
-                owned = ui_update.consume_trigger and hand == self.secondary_con
-                con.update_grab(0.0 if owned else h.trigger)
+                con.update_pose(h.aim.position, h.aim.orientation)
             else:
                 con.hide_controller()
 
@@ -1171,7 +1059,7 @@ class XRwidget(QOpenGLWidget):
                 if pose is None:
                     con.hide_controller()
                     continue
-                con.update_model_pose(pose[0], pose[1], self.world_transform)
+                con.update_model_pose(pose[0], pose[1])
                 states = self.runtime_models.node_states(side, time)
                 if states:
                     con.apply_node_states(states)
@@ -1213,18 +1101,15 @@ class XRwidget(QOpenGLWidget):
                 space_location.pose.position.y,
                 space_location.pose.position.z)
             # print ("Tracker:", tracker_pos.getValue(), tracker_rot.getValue())
-            cam_transform = SoTransform()
-            cam_transform.copyFieldValues(self.world_transform)
             tracker_transform = SoTransform()
             tracker_transform.translation.setValue(
                 self.cam_tracker_transl + tracker_pos)
             tracker_transform.rotation.setValue(
                 self.cam_tracker_rot * tracker_rot)
-            cam_transform.combineLeft(tracker_transform)
             self.tpp_camera.position.setValue(
-                cam_transform.translation.getValue())
+                tracker_transform.translation.getValue())
             self.tpp_camera.orientation.setValue(
-                cam_transform.rotation.getValue())
+                tracker_transform.rotation.getValue())
 
     def poll_xr_events(self):
         while True:
@@ -1287,359 +1172,11 @@ class XRwidget(QOpenGLWidget):
         xr.end_frame(self.session, frame_end_info)
         self.ctx.doneCurrent()
 
-    def check_teleport_jump(self):
-        # teleport implementation
-        hand = self.secondary_con
-        con = self.xr_con[hand]
-        con.make_ray_red()
-        if con.get_ray_scenegraph():
-            if (con.get_buttons_states().grab_ev ==
-                    conXR.AnInpEv.JUST_PRESSED):
-                # just pressed
-                con.show_ray()
-            elif (con.get_buttons_states().grab_ev ==
-                  conXR.AnInpEv.PRESSED):
-                # traverse just to update the ray view
-                con.find_picked_coin_object(
-                    self.world_separator,
-                    self.vp_reg,
-                    self.near_plane,
-                    self.far_plane)
-                con.show_ray()
-            elif (con.get_buttons_states().grab_ev ==
-                  conXR.AnInpEv.JUST_RELEASED):
-                # just released
-                # do traversal only if trigger is pressed or just released,
-                # because it is expensive
-                # traverse only the world, avoid picking controller
-                # gizmos or other non-world objects
-                coin_picked_point, coin_picked_p_coords = con.find_picked_coin_object(
-                    self.world_separator, self.vp_reg, self.near_plane, self.far_plane)
-                if (coin_picked_point):
-                    # bring the picked surface point under the user's feet (stage floor is y = 0)
-                    picked = coin_picked_p_coords
-                    head = self.head_pose.position
-                    world = self.navigator.world
-                    self.navigator.world = WorldPose(
-                        (world.position[0] + head[0] - picked[0], world.position[1] - picked[1],
-                         world.position[2] + head[2] - picked[2]), world.rotation, world.scale)
-                    self.apply_navigation()
-                con.hide_ray()
-            elif (con.get_buttons_states().grab_ev ==
-                  conXR.AnInpEv.RELEASED):
-                con.hide_ray()
-
-    def doc_xr_matrices(self):
-        """Matrices (document to stage, stage to document) of the full world chain: document transform, then navigation."""
-        m_doc, i_doc = SbMatrix(), SbMatrix()
-        m_nav, i_nav = SbMatrix(), SbMatrix()
-        self.doc_xr_transform.getTranslationSpaceMatrix(m_doc, i_doc)
-        self.nav_transform.getTranslationSpaceMatrix(m_nav, i_nav)
-        to_xr = SbMatrix(m_doc)
-        to_xr.multRight(m_nav)
-        to_doc = SbMatrix(i_nav)
-        to_doc.multRight(i_doc)
-        return to_xr, to_doc
-
-    def get_doc_transf(self, con_transf):
-        # XR to FreeCAD coordinate system transformation
-        transform = SoTransform()
-        transform.copyFieldValues(con_transf)
-        transform.combineRight(self.world_transform)
-        to_xr, to_doc = self.doc_xr_matrices()
-        transform.multRight(to_doc)
-        return transform
-
-    def get_xr_sbvec(self, vec):
-        # FreeCAD to XR point location transformation
-        vec_xr = None
-        if (vec):
-            to_xr, to_doc = self.doc_xr_matrices()
-            vec_xr = to_xr.multVecMatrix(vec)
-        return vec_xr
-
-    def get_doc_sbvec(self, vec):
-        # XR to FreeCAD point location transformation
-        vec_doc = None
-        if (vec):
-            to_xr, to_doc = self.doc_xr_matrices()
-            vec_doc = to_doc.multVecMatrix(vec)
-        return vec_doc
-
-    def get_picked_doc_sbvec(self, controller):
-        # finds picked point with camera pick_camera
-        # that can be used for feeding getObjectInfoRay - useful for lines and points
-        coin_picked_point, p_coords = controller.find_picked_coin_object(
-            self.cam_picking_root, self.pick_vp_reg, self.near_plane, self.far_plane,
-            self.pick_camera)
-        point_coords = None
-        if coin_picked_point:
-            point_coords = self.get_doc_sbvec(SbVec3f(p_coords))
-        return point_coords
-
-    # the function creates a polyline with controller trigger
-    # press trigger to set point
-    # press another controller (the menu one) trigger to finish editing
-    def interact_line_builder(self):
-        hand = self.secondary_con
-        con = self.xr_con[hand]
-        self.geo_prev.update_hmd(
-            self.hmd_transform, self.world_transform)  # labels facing user
-        start_vtx, end_vtx = self.geo_prev.get_vertex_pair_pos()
-        if start_vtx:
-            start_doc_vtx = self.get_doc_sbvec(start_vtx)
-            end_doc_vtx = self.get_doc_sbvec(end_vtx)
-            diff_doc_vec = end_doc_vtx - start_doc_vtx
-            self.geo_prev.update_coord_label(end_doc_vtx)
-            self.geo_prev.update_length_label(diff_doc_vec.length())
-        far_plane = 1.0  # how far picking should happen - prevent background objects picking
-        coin_picked_point, p_coords = con.find_picked_coin_object(
-            self.cam_picking_root, self.pick_vp_reg, self.near_plane, far_plane,
-            self.pick_camera)
-        if coin_picked_point:
-            point_coords = SbVec3f(p_coords)
-            con.show_ray_ext(point_coords)
-        else:
-            point_coords = con.show_ray_ext()
-        if (con.get_buttons_states().grab_ev ==
-                conXR.AnInpEv.JUST_PRESSED):
-            self.geo_prev.add_polyline_node(point_coords)
-            docInter.add_polyline_point(self.get_doc_sbvec(point_coords))
-        else:
-            self.geo_prev.move_last_polyline_node(point_coords)
-
-    # this function creates a cube with controller trigger
-    # press trigger to create a cube
-    # move controller with trigger pressed to change the cube size
-    # release trigger to finish drawing
-    def interact_cube_builder(self):
-        hand = self.secondary_con
-        con = self.xr_con[hand]
-        con.hide_ray()
-        if (con.get_buttons_states().grab_ev ==
-                conXR.AnInpEv.JUST_PRESSED):
-            transform = self.get_doc_transf(con.get_local_transf())
-            docInter.add_cube(transform)
-        elif (con.get_buttons_states().grab_ev ==
-                conXR.AnInpEv.PRESSED):
-            transform = self.get_doc_transf(con.get_local_transf())
-            docInter.resize_cube(transform)
-        elif (con.get_buttons_states().grab_ev ==
-                conXR.AnInpEv.JUST_RELEASED):
-            docInter.recompute()
-
-    # this function selects a FreeCAD model (document object)
-    # also opens a menu with available actions
-    def interact_select_mode(self):
-        hand = self.secondary_con
-        con = self.xr_con[hand]
-        transform = self.get_doc_transf(con.get_local_transf())
-        con.show_ray()
-        # traverse menu scenegraph
-        menu_picked_point, menu_picked_p_coords = con.find_picked_coin_object(
-            self.edit_menu.get_menu_scenegraph(), self.vp_reg, self.near_plane, self.far_plane)
-        if (self.edit_menu.is_hidden()
-                or not docInter.has_obj()):
-            # if menu is invisible assume that user finished the last job
-            # and wants to select the new object for editing
-            if (con.get_buttons_states().grab_ev ==
-                    conXR.AnInpEv.JUST_PRESSED):
-                docInter.clear_selection()
-                docInter.select_object(
-                    transform, self.view, self.get_picked_doc_sbvec(con))
-                # point location has to be transformed from Base::Vector to SbVec3f
-                # then transformed from XR coordinates to doc coordinates
-                i_sec = docInter.get_sel_sbvec()
-                i_sec_xr = self.get_xr_sbvec(i_sec)
-                if i_sec_xr:
-                    con.make_ray_green()
-                    con.show_ray_ext(i_sec_xr)
-                    # the newly showed menu is aligned to the controller which selected object
-                    pos = con.get_global_transf().translation
-                    rot = con.get_global_transf().rotation
-                    self.show_selection_label()
-                    self.edit_menu.update_location(pos, rot)
-                    self.edit_menu.show_menu()
-        else:
-            if (con.get_buttons_states().grab_ev ==
-                    conXR.AnInpEv.JUST_PRESSED):
-                if not menu_picked_point:
-                    # start editing only if the menu wasn't accidentally hit
-                    docInter.set_start_edit(transform, self.view)
-            elif (con.get_buttons_states().grab_ev ==
-                  conXR.AnInpEv.PRESSED):
-                if not menu_picked_point:
-                    i_sec = docInter.doc_to_coin_pnt(
-                        docInter.update_edit_transf(transform))
-                    # shows the ray with length set during selection
-                    if i_sec:
-                        i_sec_xr = self.get_xr_sbvec(i_sec)
-                        con.show_ray_ext(i_sec_xr)
-                        self.geo_prev.update_hmd(
-                            self.hmd_transform, self.world_transform)
-                        edit_mode, length = docInter.get_edit_info()
-                        if edit_mode is not docInter.EditMode.NONE:
-                            self.geo_prev.set_feature_label(
-                                edit_mode, length, i_sec_xr)
-        if (con.get_buttons_states().grab_ev ==
-                conXR.AnInpEv.JUST_RELEASED):
-            self.geo_prev.clean_feature_preview()  # hide the label
-            if menu_picked_point:
-                tail = con.get_picked_tail()
-                coords = con.get_picked_tex_coords()
-                widget = self.edit_menu.find_picked_widget(tail, coords)
-                self.process_edit_selection(widget)
-            else:
-                # after finishing the editing, the user has to select an object again
-                # and select the edit mode again - this should reduce confusion about active mode
-                docInter.set_finish_edit()
-                self.edit_menu.deselect_all_buttons()
-                self.edit_menu.hide_menu()
-        elif (con.get_buttons_states().grab_ev ==
-              conXR.AnInpEv.RELEASED):
-            con.make_ray_red()
-            # if there is no intersection with menu, check the scene scenegraph
-            if not menu_picked_point:
-                con.find_picked_coin_object(
-                    self.cam_picking_root, self.pick_vp_reg, self.near_plane, self.far_plane,
-                    self.pick_camera)
-
-    # this function selects, then drags a FreeCAD model
-    # press trigger to select object
-    # move controller with trigger pressed to move the object
-
-    def interact_drag_mode(self):
-        hand = self.secondary_con
-        con = self.xr_con[hand]
-        if (con.get_buttons_states().grab_ev ==
-                conXR.AnInpEv.JUST_PRESSED):
-            transform = self.get_doc_transf(con.get_local_transf())
-            docInter.clear_selection()
-            docInter.select_object(transform, self.view,
-                                   self.get_picked_doc_sbvec(con))
-            i_sec_xr = self.get_xr_sbvec(docInter.get_sel_sbvec())
-            if (i_sec_xr):
-                con.make_ray_green()
-                con.show_ray_ext(i_sec_xr)
-        elif (con.get_buttons_states().grab_ev ==
-                conXR.AnInpEv.PRESSED):
-            transform = self.get_doc_transf(con.get_local_transf())
-            # function returns where ray-object  intersection point should be
-            i_sec = docInter.doc_to_coin_pnt(
-                docInter.drag_object(transform))
-            # transform to XR coordinates
-            i_sec_xr = self.get_xr_sbvec(i_sec)
-            con.show_ray_ext(i_sec_xr)
-        elif (con.get_buttons_states().grab_ev ==
-              conXR.AnInpEv.RELEASED):
-            con.make_ray_red()
-            con.show_ray()
-            con.find_picked_coin_object(
-                self.cam_picking_root, self.pick_vp_reg, self.near_plane, self.far_plane,
-                self.pick_camera)
-
-    def interact_working_plane(self):
-        # working plane implementation
-        # puts a plane tangent (normal) to surface at selected point
-        hand = self.secondary_con
-        con = self.xr_con[hand]
-        con.make_ray_red()
-        if con.get_ray_scenegraph():
-            if (con.get_buttons_states().grab_ev ==
-                    conXR.AnInpEv.PRESSED):
-                con.show_ray()
-                # we do not want to pick the old plane while setting the new one location
-                self.geo_prev.make_plane_pickable(False)
-                far_plane = 1.0  # overwrite how far picking should happen
-                coin_picked_point, p_coords = con.find_picked_coin_object(
-                    self.world_separator, self.vp_reg, self.near_plane, far_plane)
-                if coin_picked_point:
-                    point_coords = SbVec3f(p_coords)
-                    rot = SbRotation(con.get_rotation_from_picked_normal())
-                else:
-                    point_coords = con.show_ray_ext()
-                    rot = con.get_global_transf().rotation
-                self.geo_prev.update_working_plane(point_coords, rot)
-            elif (con.get_buttons_states().grab_ev ==
-                  conXR.AnInpEv.RELEASED):
-                con.hide_ray()
-                self.geo_prev.make_plane_pickable(True)
-
-    def show_selection_label(self):
-        """The inherited selection text, as a toast."""
-        label = docInter.get_selection_label()
-        self.status_label.set_text(label)
-        self.ui.toast(label)
-
     def select_tool(self, name):
-        """Activate a registered tool and apply the side effects the inherited modes need (status text, builder mode)."""
+        """Activate a registered tool; the toast names it with its hint."""
         self.tools.activate(name)
         hint = tool_registry.hint_of(name)
-        status = f"{tool_registry.label_of(name)}: {hint}" if hint else tool_registry.label_of(name)
-        self.status_label.set_text(status)
-        self.ui.toast(status)
-        if name == "working_plane":
-            self.geo_prev.show_working_plane()
-        elif name == "line_builder":
-            docInter.set_mode(docInter.BuilderMode.LINE_BUILDER)
-        elif name == "cube_builder":
-            docInter.set_mode(docInter.BuilderMode.CUBE_BUILDER)
-
-    def process_edit_selection(self, widget):
-        if widget == None:
-            return
-        name = widget.name
-        if (name == "close_button"):
-            self.edit_menu.hide_menu()
-            self.edit_menu.close_button.select(False)
-        elif (name == "del_obj_button"):
-            docInter.delete_sel_obj()
-            docInter.clear_selection()
-            self.edit_menu.del_obj_button.select(
-                False)  # button not toggleable
-        elif (name == "new_body_button"):
-            docInter.create_body(add_obj=True)
-            self.edit_menu.new_body_button.select(False)
-        elif (name == "pad_button"):
-            docInter.create_pad()
-        elif (name == "pocket_button"):
-            docInter.create_pocket()
-        elif (name == "toggle_body_vis_button"):
-            docInter.toggle_active_body_visibility()
-            self.edit_menu.toggle_body_vis_button.select(False)
-        elif (name == "deselect_body_button"):
-            docInter.deselect_body()
-            self.edit_menu.deselect_body_button.select(False)
-        self.show_selection_label()
-
-    def update_qt_widgets(self):
-        # Qt widgets rendering and click simulation
-        hand = self.secondary_con
-        con = self.xr_con[hand]
-        double_click = False
-        trigger_state = con.get_buttons_states().grab_ev
-        if (trigger_state == conXR.AnInpEv.JUST_PRESSED):
-            if not self.double_click_timer.hasExpired(800):  # 0.8s
-                double_click = True
-            self.double_click_timer.restart()
-        widget_picked_point, widget_picked_p_coords = con.find_picked_coin_object(
-            self.qt_widgets_separator, self.vp_reg, self.near_plane, self.far_plane)
-        for w in self.qt_widget_renders:
-            w.swap_texture()  # update 2D widgets render
-            if widget_picked_point:
-                con.show_ray()
-                # make sure the correct widget was hit
-                if con.get_picked_tail() == w.get_widget_tail():
-                    # move picked widget closer to the user
-                    w.change_z_offset(0.02)
-                    coords = con.get_picked_tex_coords()
-                    # project click using texture coordinates
-                    w.project_click(trigger_state, coords, double_click)
-                else:
-                    w.change_z_offset(0)
-            else:
-                con.hide_ray()
-        return widget_picked_point
+        self.ui.toast(f"{tool_registry.label_of(name)}: {hint}" if hint else tool_registry.label_of(name))
 
     def update_xr_movement(self):
         # frame timing only; the world is navigated with the grips (update_navigation)
@@ -1682,9 +1219,6 @@ class XRwidget(QOpenGLWidget):
         if pref.pref_updated:
             self.read_preferences()
             pref.reset_upd_flag()
-        if self.update_qt_widgets():  # Qt widgets renders, secondary controller
-            return
-        # interaction modes, secondary (right) controller
         self.tools.update(self.input_frame)
 
     def update_xr_views(self):
@@ -1706,21 +1240,12 @@ class XRwidget(QOpenGLWidget):
                 view_state.pose.position.x,
                 view_state.pose.position.y,
                 view_state.pose.position.z)  # get global position and orientation for both cameras
-            cam_transform = SoTransform()
-            cam_transform.copyFieldValues(  # transfer values only
-                self.world_transform)
-            self.hmd_transform.translation.setValue(self.hmdpos)
-            self.hmd_transform.rotation.setValue(self.hmdrot)
-            # combine real hmd and arificial (stick-driven) camera movement
-            cam_transform.combineLeft(self.hmd_transform)
             pfLeft = tan(view_state.fov.angle_left)
             pfRight = tan(view_state.fov.angle_right)
             pfTop = tan(view_state.fov.angle_up)
             pfBottom = tan(view_state.fov.angle_down)
-            self.camera[eye_index].orientation.setValue(
-                cam_transform.rotation.getValue())
-            self.camera[eye_index].position.setValue(
-                cam_transform.translation.getValue())
+            self.camera[eye_index].orientation.setValue(self.hmdrot)
+            self.camera[eye_index].position.setValue(self.hmdpos)
             self.camera[eye_index].aspectRatio.setValue(
                 (pfTop - pfBottom) / (pfRight - pfLeft))
             self.camera[eye_index].nearDistance.setValue(near_plane)
@@ -1932,7 +1457,6 @@ class XRwidget(QOpenGLWidget):
             self.root_scene[i].unref()
         if self.tpp_cam_root:
             self.tpp_cam_root.unref()
-        self.cam_picking_root.unref()
         self.ctx.doneCurrent()
         self.makeCurrent()
         if hasattr(self, 'gl_logger'):

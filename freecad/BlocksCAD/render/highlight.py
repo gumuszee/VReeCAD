@@ -13,7 +13,7 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""Coin3D drawing of what the hand touches and what is selected (docs/ux-design.md, Grab tool). The scene graph is in document
+"""Coin3D drawing of what the hand touches and what is selected (docs/ux-design.md, Move tool). The scene graph is in document
 millimetres, so a host puts `Highlights.root` where the document scene is.
 
 A highlight draws `cad.picking.Display` geometry: a face as a translucent fill, curves as lines that are bright where they lie in

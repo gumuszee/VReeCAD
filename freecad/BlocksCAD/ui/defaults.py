@@ -14,7 +14,7 @@
 # *                                                                         *
 # ***************************************************************************
 """The faces and the default layout. Tool faces are generated from the tool registry; the other faces are fixed.
-Action ids: "tool:<name>", "view:reset", "overlay:toggle", "plane:toggle", "scene:reload", "doc:undo", "doc:redo", "doc:delete",
+Action ids: "tool:<name>", "view:reset", "scene:reload", "doc:undo", "doc:redo", "doc:delete",
 "app:close", and, handled by the UI controller itself, "layout:reset", "layout:show_hidden" and "pointer:mode".
 A slider is a face of kind "slider" (action "slider:<setting>"): it takes a whole row of its panel, so it sits in the first slot of a
 row and the other slots of that row stay empty. `SLIDERS` holds the range and step of each slider by face id."""
@@ -52,14 +52,12 @@ def build_faces(tool_names, tool_label, tool_hint=None):
     faces = [Face(f"tool.{name}", tool_label(name), f"tool:{name}", tip=tool_hint(name) if tool_hint else "") for name in tool_names]
     faces += [
         Face("view.reset", "Reset view", "view:reset", tip="Back to the home view at 1 : 1"),
-        Face("view.overlay", "Overlays", "overlay:toggle", tip="Show or hide the model tree and the tasks"),
         Face("view.reload", "Reload scene", "scene:reload", tip="Rebuild the scene from the document"),
-        Face("view.plane", "Work plane", "plane:toggle", tip="Show or hide the working plane"),
         Face("view.layout", "Reset layout", "layout:reset", tip="Restore the default panels and faces"),
         Face("view.hidden", "Show hidden", "layout:show_hidden", tip="Put the hidden faces back on the panels"),
         Face("doc.undo", "Undo", "doc:undo", tip="Undo the last change"),
         Face("doc.redo", "Redo", "doc:redo", tip="Redo the last undone change"),
-        Face("doc.delete", "Delete", "doc:delete", tip="Delete the selection"),
+        Face("doc.delete", "Delete", "doc:delete", tip="Delete the selected objects"),
         Face("app.close", "Close VR", "app:close", tip="Close the VR viewer"),
         Face("pointer.mode", "Pointer", "pointer:mode", tip="Switch between laser and tip"),
         Face("pointer.angle", "Angle", "slider:tip_angle", "slider", "Hold the trigger and drag"),
@@ -72,7 +70,7 @@ def default_layout(tool_names):
     return Layout([
         Page("Tools", [f"tool.{name}" for name in tool_names]),
         Page("Edit", ["doc.undo", "doc.redo", "doc.delete"]),
-        Page("View", ["view.reset", "view.overlay", "view.plane", "view.reload", "view.layout", "view.hidden"]),
+        Page("View", ["view.reset", "view.reload", "view.layout", "view.hidden"]),
         Page("Session", ["pointer.mode", "app.close", None, None,
                          "pointer.angle", None, None, None,
                          "pointer.length"]),

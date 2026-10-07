@@ -58,7 +58,7 @@ else:
             print("session state:", _w.session_state.name, "flags:", int(_loc.location_flags))
             print(f"model {_id}: subaction paths={_sub} located={_ok} pos=({_pos.x:.3f},{_pos.y:.3f},{_pos.z:.3f})")
             for _h in (0, 1):
-                _c = _w.xr_con[_h].get_global_transf().translation.getValue()
+                _c = _w.xr_con[_h].aim_transform.translation.getValue()
                 print(f"   controller {_h} (0=left,1=right) at ({_c[0]:.3f},{_c[1]:.3f},{_c[2]:.3f})")
             for _i in range(_n):
                 _p = _states[_i].node_pose

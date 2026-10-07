@@ -47,9 +47,6 @@ class VRPreferencesPage:
 
     def saveSettings(self):
         pref = preferences()
-        pref.SetInt("LinearSpeed", self.form.linearSpeedSlider.value())
-        pref.SetInt("RotationalSpeed", self.form.rotSpeedSlider.value())
-        pref.SetInt("PickingRadius", self.form.pickRadiusSlider.value())
         pref.SetInt("AmbientLightIntesity", self.form.ambiLiSlider.value())
         pref.SetInt("DirectionalLightIntesity", self.form.dirLiSlider.value())
         msaa_vals = [0, 2, 4, 8]
@@ -58,11 +55,6 @@ class VRPreferencesPage:
         pref.SetBool("DebugEnable", self.form.debugEnblCheckBox.isChecked())
         pref.SetBool("UseHighestOpenXR",
                      self.form.highestOpenxrCheckBox.isChecked())
-        if self.form.movArchRadioButton.isChecked():
-            pref.SetString("Movement", "ARCH")
-        elif self.form.movFreeRadioButton.isChecked():
-            pref.SetString("Movement", "FREE")
-        pref.SetBool("LockToFloor", self.form.lockFloorCheckBox.isChecked())
         pref.SetFloat("TPPCamXTransl", self.form.xTransSpinBox.value())
         pref.SetFloat("TPPCamYTransl", self.form.yTransSpinBox.value())
         pref.SetFloat("TPPCamZTransl", self.form.zTransSpinBox.value())
@@ -79,9 +71,6 @@ class VRPreferencesPage:
 
     def loadSettings(self):
         pref = preferences()
-        self.form.linearSpeedSlider.setValue(pref.GetInt("LinearSpeed", 50))
-        self.form.rotSpeedSlider.setValue(pref.GetInt("RotationalSpeed", 50))
-        self.form.pickRadiusSlider.setValue(pref.GetInt("PickingRadius", 20))
         self.form.ambiLiSlider.setValue(
             pref.GetInt("AmbientLightIntesity", 40))
         self.form.dirLiSlider.setValue(
@@ -89,7 +78,6 @@ class VRPreferencesPage:
         msaa_val_to_index = {0: 0, 2: 1, 4: 2, 8: 3}
         self.form.msaaComboBox.setCurrentIndex(
             msaa_val_to_index.get(pref.GetInt("MSAA", 4), 0))
-        mov_str = pref.GetString("Movement", "ARCH")
         self.form.mirrEnblCheckBox.setChecked(
             pref.GetBool("MirrorEnable", False))
         self.form.debugEnblCheckBox.setChecked(
@@ -108,11 +96,5 @@ class VRPreferencesPage:
         self.form.aspectWSpinBox.setValue(pref.GetFloat("TPPCamAspectW", 6.29))
         self.form.aspectHSpinBox.setValue(pref.GetFloat("TPPCamAspectH", 4.71))
         self.form.vertFovSpinBox.setValue(pref.GetFloat("TPPCamVFov", 42.88))
-        if mov_str == "ARCH":
-            self.form.movArchRadioButton.setChecked(True)
-        elif mov_str == "FREE":
-            self.form.movFreeRadioButton.setChecked(True)
-        self.form.lockFloorCheckBox.setChecked(
-            pref.GetBool("LockToFloor", False))
         self.form.startARmodeCheckBox.setChecked(
             pref.GetBool("AR_Mode", False))

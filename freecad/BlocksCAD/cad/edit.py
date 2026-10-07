@@ -13,7 +13,7 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""Editing the features that the primitives make: their placement and their size parameters (docs/ux-design.md, Grab tool).
+"""Editing the features that the primitives make: their placement, their size parameters and their removal (docs/ux-design.md, Move tool).
 
 Scaling an object changes the size properties of its feature, never its geometry, so the model stays parametric: the properties
 that set the size of each primitive are listed in `SIZE_PROPERTIES`, and `scaled_values` is pure Python. The functions that touch
@@ -77,3 +77,23 @@ def placement(obj):
 def set_placement(obj, base, rotation):
     import FreeCAD as App
     obj.Placement = App.Placement(App.Vector(*base), App.Rotation(*rotation))
+
+
+def delete_objects(doc, items):
+    """Delete the objects among the selected `items` ((object name, sub-element name) pairs) in one transaction, so one undo step
+    brings them back. Only objects selected as a whole go: a selected face, edge or vertex is not an object and is left alone.
+    Returns the text for a toast."""
+    names = []
+    for name, sub in items:
+        if not sub and name not in names and doc.getObject(name) is not None:
+            names.append(name)
+    if not names:
+        return "Select a whole object to delete" if items else "Nothing selected"
+    labels = [doc.getObject(name).Label for name in names]
+    doc.openTransaction("Delete " + (labels[0] if len(labels) == 1 else f"{len(labels)} objects"))
+    for name in names:
+        if doc.getObject(name) is not None:                 # an object that went with another one is gone already
+            doc.removeObject(name)
+    doc.commitTransaction()
+    doc.recompute()
+    return f"Deleted {labels[0]}" if len(labels) == 1 else f"Deleted {len(labels)} objects"

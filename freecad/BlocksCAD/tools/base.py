@@ -77,7 +77,8 @@ class DiscSlot:
     """One of the six sections of the option disc that the stick of the tool hand chooses from (docs/ux-design.md, Tool options).
 
     kind "set": pushing the stick towards the section sets the option `option` to `value`. Kind "step": it steps the option by
-    `value` (+1 or -1) and repeats while the stick is held out. A slot without an option is an empty section."""
+    `value` (+1 or -1) and repeats while the stick is held out. Kind "toggle": it sets the option to `value`, or back to its default
+    when it already has that value. A slot without an option is an empty section."""
     label: str
     option: str = ""
     value: Any = None

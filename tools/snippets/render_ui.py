@@ -30,7 +30,7 @@ import freecad.BlocksCAD.cad.edit as _ed
 import freecad.BlocksCAD.cad.picking as _pk
 import freecad.BlocksCAD.cad.meshes as _ms
 import freecad.BlocksCAD.render.highlight as _hl
-import freecad.BlocksCAD.tools.grab as _tg
+import freecad.BlocksCAD.tools.move as _tg
 import freecad.BlocksCAD.render.model_anchor as _ma
 import freecad.BlocksCAD.ui.ruler as _ru
 import freecad.BlocksCAD.ui.settings as _cf
@@ -40,11 +40,10 @@ import freecad.BlocksCAD.ui.defaults as _df
 import freecad.BlocksCAD.tools.base as _tb
 import freecad.BlocksCAD.tools.registry as _tr
 import freecad.BlocksCAD.tools as _tools
-import freecad.BlocksCAD.tools.legacy as _tl
 import freecad.BlocksCAD.ui.controller as _ctl
 import freecad.BlocksCAD.backends.sim as _sim
 import freecad.BlocksCAD.render.offscreen as _off
-for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _sg, _sn, _gb, _ed, _pk, _ms, _pm, _gh, _hl, _ma, _tb, _tr, _tools, _tp, _tg, _tl, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
+for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _sg, _sn, _gb, _ed, _pk, _ms, _pm, _gh, _hl, _ma, _tb, _tr, _tools, _tp, _tg, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
     importlib.reload(_m)
 from pivy import coin as _coin
 
@@ -69,7 +68,7 @@ def _test_scene():
 
 
 _log = []
-_s = _sim.SimSession(_test_scene(), actions={"tool:cube_builder": lambda: _log.append("cube"), "doc:undo": lambda: _log.append("undo"),
+_s = _sim.SimSession(_test_scene(), actions={"doc:undo": lambda: _log.append("undo"),
                                               "doc:redo": lambda: _log.append("redo")})
 _s.ui.set_unit_system(_system)
 try:
@@ -106,6 +105,15 @@ try:
     _s.input.set_hand(1, button1=False)
     _s.frame(0.02)
     print("radial activated:", _s.ui_update.activated, "favourites now:", _s.ui.radial_items())
+    # the hub of the radial: the hand stays where it is, the hub item (Select) is lit and a release chooses it
+    _s.input.set_hand(1, position=_hand, point_at=(0.0, 1.3, -1.0))
+    _s.frame(0.02)
+    _s.input.set_hand(1, button1=True)
+    _s.frame(0.02)
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_radial_hub.png"))
+    _s.input.set_hand(1, button1=False)
+    _s.frame(0.02)
+    print("radial hub activated:", _s.ui_update.activated)
     _s.input.set_head(position=_head, look_at_point=_ctrl)
 
     # lifting a single face: hold the trigger on it, carry it to a free slot, then over the empty side that hides it
@@ -238,7 +246,7 @@ try:
     for _ in range(40):
         _s.frame(0.02)
 
-    # the Grab tool: what the tip touches is highlighted (face, edge, vertex), a tap selects it; shown on objects of a temporary document
+    # the Move tool: what the tip touches is highlighted (face, edge, vertex), a tap selects it; shown on objects of a temporary document
     import FreeCAD as _App
     _previous = _App.ActiveDocument.Name if _App.ActiveDocument is not None else None
     _temp = _App.newDocument("BlocksCADRender")
@@ -275,16 +283,16 @@ try:
         _s.input.set_hand(1, position=_to_stage((260.0, 0.0, 72.0)), point_at=_to_stage((260.0, 0.0, -1000.0)))
         _s.frame(0.02)
         _shift = tuple(c - p for c, p in zip(_s.ui.cursor(_s.last_frame.hands[1]), _s.last_frame.hands[1].aim.position))
-        _s.select_tool("grab")
+        _s.select_tool("move")
         _s.input.set_head(position=_mu.add(_to_stage((330.0, 0.0, 40.0)), (0.1, 0.3, 0.5)), look_at_point=_to_stage((330.0, 0.0, 40.0)))
-        _shot = lambda name: _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_grab_" + name + ".png"))
+        _shot = lambda name: _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_move_" + name + ".png"))
         for _name, _point in (("face", (260.0, 0.0, 72.0)), ("edge", (260.0, -57.0, 77.0)), ("vertex", (203.0, -57.0, 77.0))):
             _cursor(_point)
             for _ in range(8):                               # long enough for the hover to move to the new element
                 _s.frame(0.02)
             _shot(_name)
             _got = _sg.to_document(_s.navigator.world, _s.ui.cursor(_s.last_frame.hands[1]))
-            print("grab hover:", _name, "target", _point, "cursor", tuple(round(v, 1) for v in _got), "->", _s.tool_manager.active._hover)
+            print("move hover:", _name, "target", _point, "cursor", tuple(round(v, 1) for v in _got), "->", _s.tool_manager.active._hover)
         _cursor((260.0, 0.0, 72.0), trigger=1.0)
         _cursor((260.0, 0.0, 72.0), trigger=0.0)            # a tap selects the face
         _cursor((400.0, -60.0 + 3.0, 77.0))                    # the cylinder edge under the tip
@@ -299,8 +307,8 @@ try:
         for _ in range(12):
             _s.frame(0.02)
         _shot("object")
-        print("grab object hover:", _s.tool_manager.active._hover)
-        _s.input.set_hand(1, stick=(-0.5, 0.8))              # the stick towards the upper left: the option disc of the Grab tool
+        print("move object hover:", _s.tool_manager.active._hover)
+        _s.input.set_hand(1, stick=(-0.5, 0.8))              # the stick towards the upper left: the option disc of the Move tool
         for _ in range(4):
             _s.frame(0.02)
         _shot("disc")
@@ -313,13 +321,34 @@ try:
         for _ in range(3):
             _s.frame(0.02)
         _shot("free")
-        print("grab free readout:", _s.ui.gesture_text)
+        print("move free readout:", _s.ui.gesture_text)
         _cursor((283.3, 17.7, 90.0), trigger=1.0, button1=True)      # A held: locked to the grid, the closed padlock
         for _ in range(3):
             _s.frame(0.02)
         _shot("locked")
-        print("grab locked readout:", _s.ui.gesture_text)
+        print("move locked readout:", _s.ui.gesture_text)
         _cursor((283.3, 17.7, 90.0), trigger=0.0, button1=False)
+        # the Select tool: faces added to the selection one by one, with the option disc of targets and operations
+        _s.select_tool("select")
+        _s.tool_manager.active.values.update(target="Face", operation="Add")
+        _pk.clear_selection()
+        for _point in ((260.0, 0.0, 72.0), (400.0, 0.0, 72.0)):
+            _cursor(_point)
+            for _ in range(8):
+                _s.frame(0.02)
+            _cursor(_point, trigger=1.0)
+            _cursor(_point, trigger=0.0)
+        _cursor((260.0, -57.0, 40.0))
+        for _ in range(8):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_select_faces.png"))
+        print("select selection:", _pk.get_selection(_temp))
+        _s.input.set_hand(1, stick=(0.9, 0.5))               # the stick towards the upper right: the disc of the Select tool
+        for _ in range(4):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_select_disc.png"))
+        _s.input.set_hand(1, stick=(0.0, 0.0))
+        _pk.clear_selection()
         # the value panels: they follow the selection, so selecting the box adds a side with the panels Values, Number pad and Keys to the carousel
         from freecad.BlocksCAD.cad import picking as _pk
         _pk.set_selection(_temp, [(_temp.Objects[0].Name, "")])

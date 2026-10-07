@@ -1,57 +1,37 @@
-# Analysis: freecad-xr-workbench (the base of this repo)
+# The VR integration layer (from freecad-xr-workbench)
 
-Upstream: https://github.com/kwahoo2/freecad-xr-workbench (LGPL-3.0+, base version 1.0.3.1).
+Upstream: https://github.com/kwahoo2/freecad-xr-workbench (LGPL-3.0+, base version 1.0.3.1). The addon keeps the VR integration of that module and nothing else (`design.md`, D8): the OpenXR session and render loop, input, controller models, the desktop mirror, the spectator camera, and the lighting and anti-aliasing preferences. Its tools, in-world menus, Qt panel overlay and document code are not part of the addon.
 Pure Python addon in the `freecad.BlocksCAD` namespace package (`freecad/BlocksCAD/`). Targets FreeCAD 1.1 / Python 3.11+.
 Deps: `pyopenxr`, `PyOpenGL`. Needs a runtime with `XR_KHR_opengl_enable`.
 
 ## Compatibility
 
-Runs on FreeCAD 1.1.4 with SteamVR OpenXR 2.17.10 (see `verification.md`). The one FreeCAD 1.1 difference, the tree view dock name, is handled (setup.md gotcha 3).
-The controller tools (teleport, line, cube, select, drag, working plane), Qt overlay interaction and Pad/Pocket editing are unverified in-headset.
+Runs on FreeCAD 1.1.4 with SteamVR OpenXR 2.17.10 (see `verification.md`).
 
 ## Architecture (file by file)
 
 | File | Role |
 |---|---|
-| `init_gui.py` | `XRWorkbench` (Gui::PythonWorkbench); toolbar/menu with 6 commands; preferences page |
-| `startXR/stopXR/enableMirror/...py` | One-class command wrappers that call `commonXR` functions |
-| `commonXR.py` (about 1.9k lines) | `DockWidget` (Qt dock hosting) + `XRwidget(QOpenGLWidget)`: OpenXR instance/session/swapchains, Coin scene (`setup_scene`), render loop (`update_render`, `paintGL`), per-frame input handling (`update_xr_controls`), the inherited `interact_*` tool handlers (called through registered tools), palette and tool selection (`select_tool`) |
+| `init_gui.py` | `BlocksCADWorkbench` (Gui::PythonWorkbench); toolbar and menu with 6 commands; preferences page |
+| `startXR/stopXR/enableMirror/disableMirror/reloadScenegraph/toggleTPPCamera.py` | One-class command wrappers that call `commonXR` functions |
+| `commonXR.py` | `DockWidget` (Qt dock hosting) + `XRwidget(QOpenGLWidget)`: OpenXR instance, session and swapchains, the Coin scene (`setup_scene`), the render loop (`update_render`, `paintGL`), the per-frame input (`update_xr_controls`), the tool manager and the services the tools use (`setup_tool_services`), the actions of the interface (`setup_ui`) |
+| `controllerXR.py` | `xrController`: the Coin node of one controller (the generated shape or the runtime model, hidden while untracked) and where a part of it is (`part_frame`) |
 | `input.py`, `profiles.py` | `InputFrame` / `HandInput` / `InputTracker` (hardware independent input with edge events) and the per-profile mapping of the abstract inputs to OpenXR paths |
 | `backends/` | `openxr_input.py` (action set, bindings, polling, haptics), `openxr_models.py` (runtime controller models), `sim.py` (scripted head and controllers) |
-| `render/` | `gltf_coin.py` (glTF to Coin3D), `controller_shape.py` (generated controller), `offscreen.py` (headless render to an image) |
-| `tools/`, `ui/` | Tool base class, registry, manager and the inherited modes as tools; the interface: carousel logic and view, layout, sliders, ruler, laser and tip pointer, settings, the UI controller |
+| `render/` | `gltf_coin.py` (glTF to Coin3D), `controller_shape.py` (generated controller), `offscreen.py` (headless render to an image), `ghost.py`, `highlight.py`, `model_anchor.py` |
 | `gltf.py` | GLB reader (node tree, triangle meshes, materials, embedded images) |
-| `controllerXR.py` | `xrController`: Coin node for the controller (generated shape or runtime model) + picking ray; button state machine `AnInpEv` (JUST_PRESSED/PRESSED/JUST_RELEASED/RELEASED); `find_picked_coin_object` (ray pick on any Coin graph) |
-| `menuCoin.py` | Minimal in-world Coin widgets: `buttonWidget`, `sliderWidget`, `labelWidget`, `coinMenu`, `editCoinMenu` (shown near the right hand after selecting an object) |
-| `previewCoin.py` | Coin overlays: polyline preview, working plane, length/coordinate labels |
-| `qtWidgetRender.py` | Renders Qt dock widgets (Model tree, Tasks) to textures on quads in the scene; ray emulates mouse |
-| `documentInteraction.py` | **Bridge to the FreeCAD document**, module-global state: polyline -> face, add/resize `Part::Box`, select (view picking), drag (Placement), PartDesign Pad/Pocket by dragging, body management |
-| `preferences.py`, `XRWorkbench_rc.py`, `Resources/` | Preferences UI, compiled Qt resources, icons |
+| `tools/`, `ui/`, `core/`, `cad/` | The tools, the interface, the pure logic and the FreeCAD wrappers (`design.md`, Architecture) |
+| `preferences.py`, `XRWorkbench_rc.py`, `Resources/` | Preferences page (lighting, anti-aliasing, mirror, debug, OpenXR version, AR mode, spectator camera), compiled Qt resources, icons |
+
+`XRWorkbench_rc.py` is generated from `Resources/Gui/Resources/XRWorkbench.qrc` with Qt's `rcc` (`-g python --compress-algo zlib`), the import line changed to `from PySide import QtCore`.
 
 ### Control flow per frame
 `update_render` (timer) -> `poll_xr_events` -> `start_xr_frame` -> `update_xr_movement` (frame timing) -> `update_xr_views` (eye cameras, head pose) ->
 `update_xr_controls` (sync actions, `InputFrame`, controller models, `update_ui`: grip navigation, palette carousel, pointer poses, controller poses) ->
-`update_xr_interaction` (Qt widgets, `tools.update(frame)`) -> Coin render per eye -> `end_xr_frame`; `update_gui` (title bar) runs on its own timer.
+`update_xr_interaction` (`tools.update(frame)`) -> Coin render per eye -> `end_xr_frame`; `update_gui` (title bar) runs on its own timer.
 
-### Interaction model
-- `InteractMode` enum: TELEPORT, LINE_BUILDER, CUBE_BUILDER, SELECT_MODE, DRAG_MODE, WORKING_PLANE; each names a registered tool, and `XRwidget.interact_mode` reads and writes the active tool of the `ToolManager`.
-- The left controller carries the palette carousel (`ux-design.md`); the **secondary (right) controller is the tool hand**. The upstream trigger menu and stick locomotion do not exist in this repository.
-- `interact_*` methods are state machines over the right controller's trigger (`grab_ev`) event.
-- Coordinates: controller pose is in XR space; `get_doc_transf()` / `get_xr_sbvec()` convert between XR (Coin) and document coordinates (m vs mm scaling, `world_transform`).
-- Edit tools (Pad/Pocket): `set_start_edit` -> `update_edit_transf` (distance along face normal from controller movement) -> `set_finish_edit`.
-- The document is mutated **during** the gesture (cube resize rewrites `Length/Width/Height` each frame; recompute on release).
+### Coordinates
+The controller pose comes from the `InputFrame` in the stage frame (metres). The document is drawn through `doc_xr_transform` (millimetres to metres, Z up) and the navigation transform of the grips; `core/stage.py` converts between the stage and the document.
 
-## Strengths to keep
-Working end-to-end OpenXR in pure Python; bindings for many controller profiles; in-world menu widgets; ray picking against both the document scene and menus; Qt overlay; teleport/arch/free locomotion.
-
-## Weak points for the BlocksCAD goal (the rework in `design.md` addresses them)
-1. The inherited tools are state machines inside the widget and keep their state in module globals of `documentInteraction.py`; new tools are classes in `tools/` that see only the `InputFrame`.
-2. Menus are a fixed set of buttons/sliders/labels; no icons, no palette, no tool-options panel.
-3. No undo/redo integration (no `doc.openTransaction` around gestures); Blocks-style fearless editing needs it.
-4. No snapping/grid; no two-handed manipulation (scale/rotate); selection limited to whole objects/faces via view picking.
-5. Gestures mutate the document continuously (heavy for non-trivial recompute); want Coin-only preview, then commit.
-6. Handedness fixed by preferences (primary/secondary).
-
-## Reusable API surface we will build on
-`XRwidget.input_frame` (the current `InputFrame`), `xrController.get_buttons_states()`, `.get_local_transf()`, `.find_picked_coin_object(...)`, `.show_ray_ext()`;
-`coinMenu` and its widgets; `coinPreview`; `docInter.coin_to_doc_*` conversions; `XRwidget.hmd_transform / world_transform / xr_con[]`.
+## Reusable API surface
+`XRwidget.input_frame` (the current `InputFrame`), `XRwidget.xr_con[]` (the controller nodes), `XRwidget.tools` (the tool manager and its context with the services), `UiController` (`ui/controller.py`).
