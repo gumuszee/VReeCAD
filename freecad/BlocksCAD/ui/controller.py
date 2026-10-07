@@ -152,7 +152,7 @@ class UiController:
         return pointing.pointer_pose(hand.aim, "tip", s.tip_angle, s.tip_length).position
 
     def set_readout(self, text):
-        """The text of a running gesture, shown next to the tool hand's pointer; None removes it."""
+        """The text of a running gesture, shown on the wrist of the tool hand like a toast; None removes it."""
         self.gesture_text = text
 
     def toast(self, text):
@@ -399,8 +399,7 @@ class UiController:
                                 centre=labels.get(quick.hub, self.faces[quick.hub].label) if quick.hub else None)
         tooltip = self._tooltip(result, frame.dt, labels)
         text = readout or self.gesture_text
-        shown = (text, self.pointer_poses[self.tool_hand].position) if text else None
-        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, shown, self._lock_hint(frame),
+        self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, text or None, self._lock_hint(frame),
                              self._wrist_anchor(frame))
 
         if result.activated is not None:

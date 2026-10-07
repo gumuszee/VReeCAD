@@ -34,7 +34,6 @@ TOAST_SCALE = 1.5      # toasts are larger than the other labels: they are read 
 TOAST_PITCH = 0.06      # metres between stacked toasts
 WRIST_SCALE = 0.6       # toasts on the wrist are smaller: they are read at arm's length
 WRIST_PITCH = 0.028     # metres between stacked toasts on the wrist
-READOUT_LIFT = 0.07    # metres above the pointer of the tool hand
 TOOLTIP_LIFT = 0.045    # metres above the centre of a face
 
 
@@ -183,7 +182,8 @@ class FeedbackView:
 
     def update(self, head, toasts, tooltip=None, readout=None, lock=None, wrist=None):
         """`toasts`: the `toast.Toast`s to draw, oldest first. `tooltip`: (text, centre of the face, u, v of its panel) or None.
-        `readout`: (text, position of the tool hand's pointer) or None. `lock`: (position, right, up, locked) of the padlock on the controller, or None.
+        `readout`: the text of the readout of a gesture or a tool option, or None; it hangs on the wrist like the toasts, at the bottom of the
+        stack (the toasts stand above it), so it never covers what the hand works on. `lock`: (position, right, up, locked) of the padlock on the controller, or None.
         `wrist`: the point on the controller where the toasts are attached, or None to show them in front of the head."""
         right, up, forward = head_axes(head)
         if wrist is not None:
@@ -195,10 +195,11 @@ class FeedbackView:
             toast_scale, pitch = TOAST_SCALE, TOAST_PITCH
             toast_right, toast_up = right, up
         shown = list(toasts)[-len(self._toasts):]
+        first = pitch if readout is not None else 0.0      # the toasts stand one place higher while the readout is shown
         for i, plate in enumerate(self._toasts):
             if i < len(shown):
                 plate.set_text(shown[i].text)
-                height = (len(shown) - 1 - i) * pitch      # the newest at the bottom
+                height = first + (len(shown) - 1 - i) * pitch      # the newest at the bottom
                 plate.place(mu.add(base, mu.mul(toast_up, height)), toast_right, toast_up, max(shown[i].scale * toast_scale, 0.01))
             else:
                 plate.hide()
@@ -209,9 +210,8 @@ class FeedbackView:
         else:
             self._tooltip.hide()
         if readout is not None:
-            text, position = readout
-            self._readout.set_text(text)
-            self._readout.place(mu.add(position, mu.mul(up, READOUT_LIFT)), right, up)
+            self._readout.set_text(readout)
+            self._readout.place(base, toast_right, toast_up, toast_scale)
         else:
             self._readout.hide()
         if lock is not None:
