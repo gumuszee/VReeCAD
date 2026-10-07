@@ -50,7 +50,13 @@ class FakeHighlights(FakeLayer):
 
 class FakeGhost:
     def __init__(self):
-        self.shown, self.hidden = [], 0
+        self.shown, self.hidden, self.guide_calls = [], 0, []
+
+    def show_guides(self, guides, half):
+        self.guide_calls.append(list(guides))
+
+    def hide_guides(self):
+        self.guide_calls.append([])
 
     def show_shape(self, mesh):
         self.shown.append(mesh)
@@ -143,6 +149,41 @@ class PushPullToolTest(unittest.TestCase):
         self.assertFalse(self.applied)
         self.assertEqual(self.toasts[-1], "Only flat faces can be pushed or pulled")
         self.assertEqual(self.selection, [("box", "Face6")])
+
+    def with_anchors(self, anchors, reach=5.0):
+        self.asked = []
+        self.tool.ctx.services["guide_anchors"] = lambda exclude: (self.asked.append(exclude) or anchors, reach)
+
+    def test_a_face_lines_up_level_with_a_point_of_the_model_and_the_guide_is_drawn(self):
+        self.with_anchors([(80.0, 5.0, 37.0), (0.0, 0.0, 90.0)])
+        self.gesture((0.0, 0.0, 34.0), release=False)
+        self.assertEqual(self.readouts[-1], "Push: 37 mm")                       # the grid would say 30 mm
+        (guide,) = self.ghost.guide_calls[-1]
+        self.assertEqual((guide.kind, guide.axis, guide.anchor), ("axis", 2, (80.0, 5.0, 37.0)))
+        self.assertEqual(guide.point, (0.0, 0.0, 37.0))                         # the hand's place in the plane of the face
+        self.assertEqual(self.asked[-1], ("box",))                              # the object being pushed is no anchor
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.applied, [("box", "Face6", 37.0)])
+        self.assertEqual(self.ghost.guide_calls[-1], [])
+
+    def test_a_point_in_the_plane_of_the_face_and_points_out_of_reach_are_no_anchors(self):
+        self.with_anchors([(80.0, 5.0, 0.0), (0.0, 0.0, 90.0)])
+        self.gesture((0.0, 0.0, 22.0), release=False)
+        self.assertEqual(self.readouts[-1], "Push: 20 mm")
+        self.assertEqual(self.ghost.guide_calls[-1], [])
+
+    def test_a_pull_lines_up_too_and_the_normal_of_a_tilted_face_has_no_axis_colour(self):
+        self.with_anchors([(0.0, 0.0, -48.5)])
+        self.gesture((0.0, 0.0, -50.0), release=False)
+        self.assertEqual(self.readouts[-1], "Pull: 48.5 mm")
+        self.normal = (0.6, 0.0, 0.8)
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.cursor = [0.0, 0.0, 0.0]
+        self.with_anchors([(0.0, 0.0, 50.0)])                                   # 40 mm along the normal, the hand is at 39.2 mm
+        self.gesture((0.0, 0.0, 49.0), release=False)
+        self.assertEqual(self.ghost.guide_calls[-1][0].axis, 3)
 
     def test_the_tool_touches_faces_only(self):
         self.assertEqual(self.tool.pick_kind, "face")

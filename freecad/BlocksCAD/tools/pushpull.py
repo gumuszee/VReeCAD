@@ -25,6 +25,7 @@ Services besides those of `TouchTool`: ghost (`render.ghost.Ghost`), and `pushpu
 and `pushpull(doc, name, sub, distance)` that replace `cad.pushpull.face_info`, `preview_mesh` and `apply` (tests)."""
 
 from freecad.BlocksCAD.cad import pushpull
+from freecad.BlocksCAD.core import guides
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.tools.base import ToolOption
@@ -69,6 +70,7 @@ class PushPullTool(TouchTool):
 
     def _cancel(self):
         self._drag = self._built = None
+        self.hide_guides()
         ghost = self._ghost()
         if ghost is not None:
             ghost.hide_shape()
@@ -106,7 +108,7 @@ class PushPullTool(TouchTool):
         if info is None:
             self._toast("Only flat faces can be pushed or pulled")
             return
-        self._drag = {"pick": pick, "start": raw, "normal": info[1], "distance": 0.0}
+        self._drag = {"pick": pick, "start": raw, "centre": info[0], "normal": info[1], "distance": 0.0, "source": None, "candidates": []}
         self._forget_hover()
         self._haptic(0.3, 0.02)
 
@@ -117,7 +119,8 @@ class PushPullTool(TouchTool):
         if obj is None:
             self._cancel()
             return
-        distance = pushpull.snapped(mu.dot(mu.sub(raw, state["start"]), state["normal"]), self.grid)
+        distance, anchor = self._align(state, obj, mu.dot(mu.sub(raw, state["start"]), state["normal"]))
+        self._show_guide(state, raw, anchor)
         if distance != state["distance"]:
             state["distance"] = distance
             self._haptic(0.08, 0.008)
@@ -132,6 +135,30 @@ class PushPullTool(TouchTool):
         self._readout(pushpull.describe(distance, self._format))
         if not hand.down("trigger"):
             self._commit(doc, state)
+
+    def _align(self, state, obj, raw_distance):
+        """(distance, anchor): the distance rounded to the grid, or the one that puts the face level with a point of the model (the
+        service `guide_anchors`, without the object itself; a point already in the plane of the face is no anchor) and that point."""
+        grid = pushpull.snapped(raw_distance, self.grid)
+        service = self._service("guide_anchors")
+        if service is None:
+            return grid, None
+        anchors, tolerance = service((obj.Name,))
+        if state["source"] is not anchors:
+            state["source"] = anchors
+            offsets = ((mu.dot(mu.sub(a, state["centre"]), state["normal"]), a) for a in anchors)
+            state["candidates"] = [(d, a) for d, a in offsets if abs(d) > 1e-6]
+        return guides.align_along(raw_distance, grid, state["candidates"], tolerance)
+
+    def _show_guide(self, state, raw, anchor):
+        """The guide of the anchor the face lines up with: a cross on it and a line to the hand's place in the plane of the face."""
+        if anchor is None:
+            self.hide_guides()
+            return
+        normal = state["normal"]
+        axis = next((i for i in range(3) if abs(normal[i]) > 0.999), guides.OFF_AXIS)
+        point = mu.sub(raw, mu.mul(normal, mu.dot(mu.sub(raw, anchor), normal)))
+        self.show_guides([guides.Guide("axis", axis, tuple(anchor), tuple(point))], self.grid * 0.5)
 
     def _commit(self, doc, state):
         self._cancel()

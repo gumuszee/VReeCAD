@@ -48,6 +48,15 @@ class AlignTest(unittest.TestCase):
         self.assertEqual([g.kind for g in found], ["axis", "axis"])         # the z of the anchor does not make it a point guide on two axes of three...
 
 
+class AlongTest(unittest.TestCase):
+    def test_the_nearest_candidate_within_reach_wins(self):
+        self.assertEqual(guides.align_along(34.0, 30.0, [(37.0, "a"), (35.5, "b"), (90.0, "c")], 5.0), (35.5, "b"))
+
+    def test_without_a_candidate_in_reach_the_grid_value_stays(self):
+        self.assertEqual(guides.align_along(34.0, 30.0, [(90.0, "c")], 5.0), (30.0, None))
+        self.assertEqual(guides.align_along(34.0, 30.0, [], 5.0), (30.0, None))
+
+
 class PlaneTest(unittest.TestCase):
     """A plane that is the XZ plane of the document: x of the plane is X, y of the plane is Z, its z is -Y."""
     @staticmethod

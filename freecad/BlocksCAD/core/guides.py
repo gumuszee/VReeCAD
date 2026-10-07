@@ -66,7 +66,18 @@ def align(raw, grid_point, anchors, tolerance, axes=(0, 1, 2)):
     return point, guides
 
 
-OFF_AXIS = 3                          # the `axis` of a guide along a direction of a face that is no axis of the document
+def align_along(raw, grid_value, candidates, tolerance):
+    """(value, anchor) for a value `raw` along a line (a distance) that the grid rounds to `grid_value`: the nearest of the
+    `candidates` ((value, anchor) pairs) within `tolerance` of `raw`, or (`grid_value`, None) when none is."""
+    best = None
+    for value, anchor in candidates:
+        gap = abs(value - raw)
+        if gap < tolerance and (best is None or gap < best[0]):
+            best = (gap, value, anchor)
+    return (grid_value, None) if best is None else (best[1], best[2])
+
+
+OFF_AXIS = 3                         # the `axis` of a guide along a direction of a face that is no axis of the document
 
 
 def flatten(anchors, to_local):
