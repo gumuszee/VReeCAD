@@ -964,6 +964,76 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.undo()
         self.assertIsNone(self.doc.getObject(names[0]))
 
+    def test_a_mirror_is_a_parametric_image_one_gap_beyond_the_object(self):
+        from freecad.BlocksCAD.cad import duplicate
+        text, names = duplicate.mirror(self.doc, [(self.box.Name, "")], 0)
+        image = self.doc.getObject(names[0])
+        self.assertEqual(image.TypeId, "Part::Mirroring")
+        self.assertAlmostEqual(image.Shape.BoundBox.XMin, 110.0)
+        self.assertAlmostEqual(image.Shape.BoundBox.XMax, 210.0)
+        self.box.Length = 150.0                                                              # the plane stays: the image follows the source
+        self.doc.recompute()
+        self.assertAlmostEqual(image.Shape.BoundBox.XMin, 60.0)
+        self.doc.undo()
+        self.assertIsNone(self.doc.getObject(names[0]))
+
+    def test_a_pattern_repeats_an_object_three_times_and_its_numbers_stay_editable(self):
+        from freecad.BlocksCAD.cad import duplicate
+        text, names = duplicate.pattern(self.doc, [(self.box.Name, "")], 1)
+        array = self.doc.getObject(names[0])
+        self.assertEqual(array.NumberY, 3)
+        self.assertAlmostEqual(array.Shape.BoundBox.YMax, 2 * 110.0 + 100.0)
+        array.NumberY = 4
+        self.doc.recompute()
+        self.assertAlmostEqual(array.Shape.BoundBox.YMax, 3 * 110.0 + 100.0)
+        self.doc.undo()
+        self.assertIsNone(self.doc.getObject(names[0]))
+
+    def test_a_push_fuses_an_extrusion_of_the_face_a_pull_cuts_it_and_the_length_stays_editable(self):
+        from freecad.BlocksCAD.cad import pushpull
+        top = pushpull.face_info(self.box, "Face6")
+        self.assertEqual((top[1], top[0][2]), ((0.0, 0.0, 1.0), 100.0))
+        text, name = pushpull.apply(self.doc, self.box.Name, "Face6", 30.0)
+        pushed = self.doc.getObject(name)
+        self.assertEqual(pushed.TypeId, "Part::MultiFuse")
+        self.assertAlmostEqual(pushed.Shape.BoundBox.ZMax, 130.0)
+        extrusion = [o for o in self.doc.Objects if o.TypeId == "Part::Extrusion"][0]
+        extrusion.LengthFwd = 50.0                                                           # the distance is a parameter
+        self.doc.recompute()
+        self.assertAlmostEqual(pushed.Shape.BoundBox.ZMax, 150.0)
+        self.doc.undo()
+        self.assertIsNone(self.doc.getObject(name))
+        text, name = pushpull.apply(self.doc, self.box.Name, "Face6", -40.0)
+        self.assertEqual(self.doc.getObject(name).TypeId, "Part::Cut")
+        self.assertAlmostEqual(self.doc.getObject(name).Shape.Volume, 100.0 * 100.0 * 60.0)
+        mesh = pushpull.preview_mesh(self.box, "Face6", 20.0)
+        self.assertEqual(len(mesh.triangles), 12)
+        self.assertEqual(sorted({round(p[2]) for p in mesh.points}), [100, 120])
+
+    def test_a_curved_face_cannot_be_pushed_and_a_failed_pull_leaves_the_document_alone(self):
+        from freecad.BlocksCAD.cad import pushpull, primitives as prim
+        cylinder = prim.create(self.doc, "Cylinder", (300.0, 0.0, 0.0), (50.0, 50.0, 80.0))
+        self.assertEqual(pushpull.apply(self.doc, cylinder.Name, "Face1", 10.0), ("Only flat faces can be pushed or pulled", None))
+        count = len(self.doc.Objects)
+        text, name = pushpull.apply(self.doc, self.box.Name, "Face6", -500.0)                # pulls through the whole box
+        self.assertIsNone(name)
+        self.assertTrue(text.startswith("Pull failed"), text)
+        self.assertEqual(len(self.doc.Objects), count)
+
+    def test_the_push_pull_tool_pushes_a_face_by_a_drag_along_its_normal_in_one_undo_step(self):
+        s = self.session()
+        s.select_tool("pushpull")
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (50.0, 50.0, 130.0), trigger=1.0)
+        self.assertEqual(s.ui.gesture_text, "Push: 30 mm")
+        self.hand(1, (50.0, 50.0, 130.0), trigger=0.0)
+        pushed = [o for o in self.doc.Objects if o.TypeId == "Part::MultiFuse"][0]
+        self.assertAlmostEqual(pushed.Shape.BoundBox.ZMax, 130.0)
+        self.assertEqual(self.selection(), [(pushed.Name, ())])
+        self.doc.undo()
+        self.assertEqual([o.TypeId for o in self.doc.Objects], ["Part::Box"])
+
     def test_picking_one_sort_of_element_ignores_closer_elements_of_another_sort(self):
         from freecad.BlocksCAD.cad import picking
         probe = lambda p, kind: picking.pick(self.doc, p, 1000.0, kind)

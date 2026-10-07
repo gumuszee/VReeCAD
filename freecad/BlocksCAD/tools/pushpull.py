@@ -1,0 +1,151 @@
+# ***************************************************************************
+# *                                                                         *
+# *   Copyright (c) 2026 Vojtech Tuma                                       *
+# *                                                                         *
+# *   This program is free software; you can redistribute it and/or modify  *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)    *
+# *   as published by the Free Software Foundation; either version 3 of     *
+# *   the License, or (at your option) any later version.                   *
+# *                                                                         *
+# *   This program is distributed in the hope that it will be useful,       *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# ***************************************************************************
+"""The Push/Pull tool: move a flat face of a solid along its normal (docs/ux-design.md, Push/Pull tool).
+
+The tip of the tool hand is the cursor and only faces are touched (`tools/touch.py`). The trigger pressed on a flat face starts the
+gesture: the distance the hand moves along the normal of the face, rounded to the grid, is how far the face is pushed (out of the
+solid) or pulled (into it); a ghost shows the volume the face sweeps and the readout names the distance. Releasing makes the change
+as parametric features (`cad/pushpull.py`) in one undo step; a release within one grid step of the start is a tap that selects the
+face. A grip cancels. The stick up and down change the grid.
+
+Services besides those of `TouchTool`: ghost (`render.ghost.Ghost`), and `pushpull_face(obj, sub)`, `pushpull_mesh(obj, sub, distance)`
+and `pushpull(doc, name, sub, distance)` that replace `cad.pushpull.face_info`, `preview_mesh` and `apply` (tests)."""
+
+from freecad.BlocksCAD.cad import pushpull
+from freecad.BlocksCAD.core import mathutil as mu
+from freecad.BlocksCAD.core import snapping
+from freecad.BlocksCAD.tools.base import ToolOption
+from freecad.BlocksCAD.tools.registry import register
+from freecad.BlocksCAD.tools.touch import TouchTool
+
+GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
+
+
+@register
+class PushPullTool(TouchTool):
+    name = "pushpull"
+    label = "Push/Pull"
+    hint = "Press on a flat face and move the hand along it to push or pull; the stick changes the grid"
+    pick_kind = "face"
+    options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),)
+
+    def __init__(self, ctx):
+        super().__init__(ctx)
+        self._drag = None            # state of a gesture in progress
+        self._built = None           # the distance the ghost shows
+
+    @property
+    def busy(self):
+        return self._drag is not None
+
+    @property
+    def grid(self):
+        return float(self.values["grid"].split()[0])
+
+    def stick_click(self):
+        self.values["grid"] = self.options[0].default
+        return "Grid reset"
+
+    def _ghost(self):
+        return self._service("ghost")
+
+    # lifecycle
+    def deactivate(self):
+        self._cancel()
+        super().deactivate()
+
+    def _cancel(self):
+        self._drag = self._built = None
+        ghost = self._ghost()
+        if ghost is not None:
+            ghost.hide_shape()
+        self._readout(None)
+
+    def update(self, frame):
+        cursor, to_document = self._service("cursor"), self._service("to_document")
+        doc = self._service("document", lambda: None)()
+        if cursor is None or to_document is None or doc is None:
+            return
+        hand = frame.hands[self.ctx.dominant]
+        raw = to_document(cursor(self.ctx.dominant))
+        gripping = any(h.down("grip") for h in frame.hands)
+        if self._drag is not None:
+            if gripping:
+                self._cancel()
+                self._toast("Cancelled")
+            else:
+                self._follow(doc, hand, raw)
+            self._show_selection(doc)
+            return
+        free = self._service("trigger_free", lambda: True)() and not gripping and hand.aim.tracked
+        pick = self._steady(self._touch(doc, raw) if free else None, frame.dt)
+        self._show_hover(doc, pick)
+        if free and pick is not None and "trigger" in hand.pressed:
+            self._press(doc, pick, raw)
+        elif free and "trigger" in hand.pressed:
+            self._select(doc, [])
+        self._show_selection(doc)
+
+    def _press(self, doc, pick, raw):
+        obj = doc.getObject(pick.name)
+        info = None if obj is None else self._service("pushpull_face", pushpull.face_info)(obj, pick.sub)
+        self._select(doc, [(pick.name, pick.sub)])
+        if info is None:
+            self._toast("Only flat faces can be pushed or pulled")
+            return
+        self._drag = {"pick": pick, "start": raw, "normal": info[1], "distance": 0.0}
+        self._forget_hover()
+        self._haptic(0.3, 0.02)
+
+    def _follow(self, doc, hand, raw):
+        state = self._drag
+        pick = state["pick"]
+        obj = doc.getObject(pick.name)
+        if obj is None:
+            self._cancel()
+            return
+        distance = pushpull.snapped(mu.dot(mu.sub(raw, state["start"]), state["normal"]), self.grid)
+        if distance != state["distance"]:
+            state["distance"] = distance
+            self._haptic(0.08, 0.008)
+        ghost = self._ghost()
+        if ghost is not None and distance != self._built:
+            self._built = distance
+            mesh = self._service("pushpull_mesh", pushpull.preview_mesh)(obj, pick.sub, distance) if distance else None
+            if mesh is None:
+                ghost.hide_shape()
+            else:
+                ghost.show_shape(mesh)
+        self._readout(pushpull.describe(distance, self._format))
+        if not hand.down("trigger"):
+            self._commit(doc, state)
+
+    def _commit(self, doc, state):
+        self._cancel()
+        pick, distance = state["pick"], state["distance"]
+        if distance == 0:
+            self._select(doc, [(pick.name, pick.sub)])           # a tap selects the face
+            return
+        try:
+            text, result = self._service("pushpull", pushpull.apply)(doc, pick.name, pick.sub, distance)
+        except Exception as error:      # a change FreeCAD cannot make must not stop the session
+            self._toast("Could not push or pull the face")
+            print(f"BlocksCAD: push/pull failed: {error}")
+            return
+        self._toast(text)
+        if result is not None:
+            self._select(doc, [(result, "")])
+            self._haptic(0.5, 0.04)

@@ -23,7 +23,8 @@ import nothing else from FreeCAD."""
 KINDS = ("fuse", "cut", "common")
 TYPES = {"fuse": "Part::MultiFuse", "cut": "Part::Cut", "common": "Part::MultiCommon"}
 VERBS = {"fuse": "Fuse", "cut": "Cut", "common": "Common"}
-COPY_GAP = 10.0            # millimetres between an object and its copy
+GAP = 10.0                 # millimetres between an object and its copy, its mirror image or the next of its pattern
+COPY_GAP = GAP
 
 
 def selected_names(items):
@@ -46,13 +47,13 @@ def plan(kind, names):
     return names[0], list(names[1:])
 
 
-def _hide(obj):
+def hide(obj):
     view = getattr(obj, "ViewObject", None)
     if view is not None:
         view.Visibility = False
 
 
-def _sound(obj):
+def sound(obj):
     return obj.isValid() and not obj.Shape.isNull() and obj.Shape.Volume > 0.0
 
 
@@ -82,12 +83,12 @@ def combine(doc, kind, items):
             obj.Shapes = [doc.getObject(n) for n in names]
             hidden = []
         doc.recompute()
-        if not _sound(obj):
+        if not sound(obj):
             raise ValueError("nothing is left" if kind != "fuse" else "FreeCAD could not fuse them")
         for name in names:
-            _hide(doc.getObject(name))
+            hide(doc.getObject(name))
         for extra in hidden:
-            _hide(extra)
+            hide(extra)
         doc.commitTransaction()
     except Exception as error:
         doc.abortTransaction()

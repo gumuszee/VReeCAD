@@ -62,9 +62,9 @@ The carousel is a prism around the long axis of the palette controller. It is at
 
 | Panel | Faces |
 |---|---|
-| Tools | Create, Select, Move |
+| Tools | Create, Select, Move, Push/Pull |
 | Edit | Undo, Redo, Delete |
-| Modify | Fuse, Cut, Common, Copy |
+| Modify | Fuse, Cut, Common, Copy, Mirror X, Mirror Y, Mirror Z, Colour, Pattern X, Pattern Y, Pattern Z |
 | View | Reset view, Reload scene, Reset layout, Show hidden |
 | Session | Pointer (laser or tip), Close VR, and the sliders Angle and Length (tip angle and tip length) |
 
@@ -74,9 +74,12 @@ The carousel is a prism around the long axis of the palette controller. It is at
 
 - **Fuse** joins two or more objects into one `Part::MultiFuse`, **Common** keeps what they all share (`Part::MultiCommon`) and **Cut** takes every object selected after the first away from the first (`Part::Cut`; several tools are fused first, in a `Part::MultiFuse` of their own). The result is a real feature that refers to its sources, so changing a source (a slider, the Move tool, the keypad) changes the result. The sources are hidden, not changed, and the result becomes the selection. A boolean that leaves nothing (objects that do not touch, a cut that removes everything) is refused with a toast and leaves the document as it was.
 - **Copy** copies each selected object together with the features it is built from and lays the copy beside the original, one length of its box along X plus 10 mm away; the copy is a feature of its own with its own properties (a copied box has its own Length), never a frozen shape. The copies become the selection.
-- Every action is one undo step.
+- **Mirror X, Y, Z** mirrors each selected object across a plane that stands 5 mm beyond its box along that axis, so the image lies 10 mm from the object; the image is a `Part::Mirroring` whose `Base` and `Normal` hold the plane (the plane does not move when the source changes size; the image follows the source). The mirror images become the selection.
+- **Pattern X, Y, Z** repeats each selected object three times along that axis, one box length plus 10 mm apart, as a Draft array (`NumberX` and `IntervalX` and the like are properties of the array; the original is the first of the three and is hidden as a source). The arrays become the selection.
+- **Colour** gives every selected object (whole or by an element) the next colour of a palette of eight (grey, red, orange, yellow, green, blue, violet, white), each from its own current colour; the toast names the colour. A colour belongs to the view of the object, so it is not an undo step.
+- Every other action is one undo step.
 
-Planned: push/pull, mirror, pattern and colour, Settings (handedness, comfort, snapping).
+Planned: mirror about a chosen plane, a pattern with a typed count and interval, Settings (handedness, comfort, snapping).
 
 ### Sliders
 
@@ -166,6 +169,15 @@ The third tool of the palette touches, selects, moves, turns and scales objects 
 - **Cancel:** a grip pressed during a grab aborts it and the transaction restores the object; choosing another tool does the same.
 - **Options:** the option disc (see Tool options). From the top, clockwise: **Grid +** (the same steps and the same place as in the Create tool), **Move, turn** and **Move only** (the mode), **Grid -**, **Angle -** and **Angle +** (the angle step of a locked turn). The click of the stick puts the grid and the angle step back to their defaults.
 - A press that starts on the carousel or the radial does not grab. The tool replaces the selection; choose the Select tool to build a selection of several elements.
+
+### Push/Pull tool
+
+The fourth tool of the palette moves a flat face of a solid along its normal (`tools/pushpull.py`, `cad/pushpull.py`, `tools/touch.py`). The cursor is the tip of the tool hand, as in the Select tool, and only faces are touched (the hover and the selection look as in the Select tool).
+
+- **Press** the trigger on a flat face: the face is selected and the gesture starts. A curved face is selected but cannot be pushed (a toast says so).
+- **Drag:** the distance the hand moves along the normal of the face, rounded to the grid (1, 2, 5, 10, 20, 50 or 100 mm; default 10 mm; a distance of less than one step is none), is how far the face moves: out of the solid is a **push**, into it a **pull**. The ghost shows the volume that the face sweeps (a lit translucent body with its outline, as in the Create tool) and the readout names it ("Push: 30 mm", "Pull: 20 mm"). Sideways movement counts for nothing.
+- **Release** makes the change in one undo step and selects the result; a release within one step of the start is a tap that only selects the face. A grip cancels. The stick up and down change the grid and its click puts it back to 10 mm.
+- **Features:** a `PartDesign::SubShapeBinder` follows the face, a `Part::Extrusion` of the binder along the normal has the distance as its `LengthFwd`, and the result is a `Part::MultiFuse` of the solid and the extrusion (push) or a `Part::Cut` of the extrusion from the solid (pull). The solid and the helper features are hidden; changing `LengthFwd` later changes the result. A pull that leaves nothing is refused with a toast and the document is as it was. The faces of a result can be pushed again.
 
 ### Tool options
 

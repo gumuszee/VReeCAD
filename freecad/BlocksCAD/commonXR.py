@@ -29,13 +29,14 @@ from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.core import stage, units
-from freecad.BlocksCAD.cad import combine, edit, picking, values as object_values
+from freecad.BlocksCAD.cad import colour, combine, duplicate, edit, picking, values as object_values
 from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.render.highlight import Highlights
 from freecad.BlocksCAD.ui.controller import UiController
 import freecad.BlocksCAD.tools.primitives  # noqa: F401  (registers the tools)
 import freecad.BlocksCAD.tools.select  # noqa: F401
 import freecad.BlocksCAD.tools.move  # noqa: F401
+import freecad.BlocksCAD.tools.pushpull  # noqa: F401
 from freecad.BlocksCAD.backends.openxr_input import OpenXRInput
 from freecad.BlocksCAD.backends.openxr_models import RuntimeModels
 from freecad.BlocksCAD.render.gltf_coin import load_glb
@@ -543,6 +544,9 @@ class XRwidget(QOpenGLWidget):
             "doc:cut": lambda: self.combine_selection("cut"),
             "doc:common": lambda: self.combine_selection("common"),
             "doc:copy": self.copy_selection,
+            "doc:colour": self.colour_selection,
+            **{f"doc:mirror_{a}": (lambda i=i: self.duplicate_selection("mirror", i)) for i, a in enumerate("xyz")},
+            **{f"doc:pattern_{a}": (lambda i=i: self.duplicate_selection("pattern", i)) for i, a in enumerate("xyz")},
             "app:close": lambda: QTimer.singleShot(0, close_xr_viewer),
         })
         self.ui = UiController(tool_registry.names(), tool_registry.label_of, actions, tool_hint=tool_registry.hint_of,
@@ -622,6 +626,23 @@ class XRwidget(QOpenGLWidget):
         if names:
             picking.set_selection(doc, [(name, "") for name in names])
         return text
+
+    def duplicate_selection(self, kind, axis):
+        """Mirror or repeat the selected objects along an axis in one undo step and select the results; returns the text of the toast."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return "No document"
+        text, names = getattr(duplicate, kind)(doc, picking.get_selection(doc), axis)
+        if names:
+            picking.set_selection(doc, [(name, "") for name in names])
+        return text
+
+    def colour_selection(self):
+        """Give the selected objects the next colour; returns the text of the toast."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return "No document"
+        return colour.cycle(doc, picking.get_selection(doc))
 
     def read_preferences(self):
         # read from user preferences

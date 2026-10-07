@@ -349,6 +349,23 @@ try:
         _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_select_disc.png"))
         _s.input.set_hand(1, stick=(0.0, 0.0))
         _pk.clear_selection()
+        # the Push/Pull tool: the face under the tip is touched, a drag along its normal shows the volume it sweeps (a grip cancels)
+        _s.select_tool("pushpull")
+        _cursor((260.0, 0.0, 72.0))
+        for _ in range(12):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_pushpull_hover.png"))
+        _cursor((260.0, 0.0, 72.0), trigger=1.0)
+        _cursor((260.0, 0.0, 112.0), trigger=1.0)
+        for _ in range(3):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_pushpull_drag.png"))
+        print("pushpull readout:", _s.ui.gesture_text)
+        _s.input.set_hand(1, grip=1.0)
+        _s.frame(0.02)
+        _s.input.set_hand(1, grip=0.0, trigger=0.0)
+        _s.frame(0.02)
+        _pk.clear_selection()
         # the value panels: they follow the selection, so selecting the box adds a side with the panels Values, Number pad and Keys to the carousel
         from freecad.BlocksCAD.cad import picking as _pk
         _pk.set_selection(_temp, [(_temp.Objects[0].Name, "")])
