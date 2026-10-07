@@ -84,6 +84,7 @@ def build_faces(tool_names, tool_label, tool_hint=None):
         Face("app.close", "Close VR", "app:close", tip="Close the VR viewer"),
         Face("pointer.mode", "Pointer", "pointer:mode", tip="Switch between laser and tip"),
         Face("pointer.hands", "Tool hand", "hands:swap", tip="Hold the tools in the other hand and the palette in this one"),
+        Face("pointer.submm", "Small lengths", "units:submm", tip="Write lengths under 1 mm as decimals of a millimetre or as micrometres"),
         Face("pointer.angle", "Angle", "slider:tip_angle", "slider", "Hold the trigger and drag"),
         Face("pointer.length", "Length", "slider:tip_length", "slider", "Hold the trigger and drag"),
     ]
@@ -100,7 +101,7 @@ def default_layout(tool_names):
         Page("Shape", ["doc.extrude", "doc.fillet", "doc.chamfer", "doc.attach", "doc.detach",
                        "doc.joint_fixed", "doc.joint_revolute", "doc.joint_slider", "doc.joint_ball", "doc.unjoint"]),
         Page("View", ["view.reset", "view.reload", "view.layout", "view.hidden", "view.controls"]),
-        Page("Session", ["pointer.mode", "app.close", "pointer.hands", None,
+        Page("Session", ["pointer.mode", "app.close", "pointer.hands", "pointer.submm",
                          "pointer.angle", None, None, None,
                          "pointer.length"]),
     ])

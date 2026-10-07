@@ -83,6 +83,7 @@ class UiController:
             self._save_layout()
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
         self.navigator = Navigator(modifier_hand=tool_hand)
+        self._grip_claimed = [False, False]     # a grip pressed while the tool is in a gesture: it cancels it and does not hold the world
         self.ring = PaletteRing(self.layout.sides(), palette_hand, tool_hand)
         self.ring.can_lift = lambda page, slot: self._is_user_page(page) and self.layout.face_at(page, slot) is not None
         self.ring.can_drop = lambda src, dst: self._is_user_page(src[0]) and self._is_user_page(dst[0]) and self.layout.can_move_face(*src, *dst, self.wide)
@@ -110,7 +111,9 @@ class UiController:
         self.pointer = Pointer()
         self.tips = [TipMarker(), TipMarker()]
         self.pointer_poses = [None, None]     # `pointing.PointerPose` of each hand, set by `update`
+        self._unit_system_name = ""
         self.system = units.METRIC_MM
+        self._apply_system()
         self.mm_to_stage = mm_to_stage     # stage length of one document millimetre at world scale 1
         self.root = coin.SoSeparator()
         self.root.ref()
@@ -139,7 +142,13 @@ class UiController:
 
     def set_unit_system(self, name):
         """Use the measurement system of a FreeCAD document unit system name (the document's `UnitSystem` property)."""
-        self.system = units.system_for(name)
+        self._unit_system_name = name
+        self._apply_system()
+
+    def _apply_system(self):
+        """The measure system of the document, with lengths under a millimetre as the setting `sub_mm` says."""
+        system = units.system_for(self._unit_system_name)
+        self.system = units.without_micrometres(system) if self.settings.sub_mm == "mm" else system
 
     def action_at(self, page, slot):
         face_id = self.shown_layout().face_at(page, slot)
@@ -271,6 +280,7 @@ class UiController:
             "pointer.mode": "Pointer: " + ("Tip" if s.pointer_mode == "tip" else "Laser"),
             "pointer.angle": f"Angle {s.tip_angle:.0f}\u00b0",
             "pointer.length": "Length " + units.format_length(s.tip_length * 1000.0, self.system),
+            "pointer.submm": "Small: " + ("0.1 mm" if s.sub_mm == "mm" else "100 µm"),
         }
 
     def slider_states(self):
@@ -325,6 +335,13 @@ class UiController:
         self.apply_handedness()
         return f"Tool hand: {self.settings.tool_hand}"
 
+    def toggle_sub_mm(self):
+        """Lengths under a millimetre change between decimals of a millimetre and micrometres; the choice is saved. Returns the text for a toast."""
+        self.settings.sub_mm = "um" if self.settings.sub_mm == "mm" else "mm"
+        self._save_settings()
+        self._apply_system()
+        return "Lengths under 1 mm: " + ("decimals of mm" if self.settings.sub_mm == "mm" else "micrometres")
+
     def show_first_help(self):
         """Show the controls cards once when the addon has not been used yet (the setting `onboarded`); they stay until the Controls face
         or the time takes them away, and then the setting is saved."""
@@ -342,6 +359,8 @@ class UiController:
     def _run(self, action, out):
         if action == "hands:swap":
             self.toast(self.swap_hands())
+        elif action == "units:submm":
+            self.toast(self.toggle_sub_mm())
         elif action == "help:toggle":
             shown = self.help.toggle()
             self.toast("Controls shown" if shown else "Controls hidden")
@@ -361,6 +380,17 @@ class UiController:
                     self.toast(message)
         out.activated = action
 
+    def _claim_grips(self, frame):
+        """The hands whose grip belongs to the tool: a grip that goes down while the tool is in a gesture cancels the gesture, and the
+        world stays where it is until that grip is released."""
+        busy = bool(getattr(self.active_tool, "busy", False))
+        for i, hand in enumerate(frame.hands):
+            if not hand.down("grip"):
+                self._grip_claimed[i] = False
+            elif busy and not self.navigator.navigating:
+                self._grip_claimed[i] = True
+        return tuple(self._grip_claimed)
+
     def update(self, frame) -> UiUpdate:
         out = UiUpdate()
         s = self.settings
@@ -369,7 +399,7 @@ class UiController:
         self.pointer_poses = [pointing.pointer_pose(h.aim, s.pointer_mode, s.tip_angle, s.tip_length) for h in frame.hands]
         # in tip mode the world is held with the tips: it pivots about them and the ruler measures between them
         points = [p.position for p in self.pointer_poses] if s.pointer_mode == "tip" else None
-        events = self.navigator.update(frame, points=points)
+        events = self.navigator.update(frame, blocked=self._claim_grips(frame), points=points)
         prof.lap("ui_nav")
         for event in events:
             if event[0] == "grab":
@@ -580,13 +610,14 @@ class UiController:
 
     def _tooltip(self, result, dt, labels):
         """(text, centre, u, v) of the tooltip of the hovered face once it has been hovered for a moment, else None."""
-        idle = self.ring.lifted is None and self.ring.lifted_face is None and self.ring.press is None and not self.radial.is_open
+        idle = (self.ring.lifted is None and self.ring.lifted_face is None and self.ring.press is None and self.ring.slider_drag is None
+                and not self.radial.is_open)
         target = self.dwell.update(result.hover if idle and self.ring.fade > 0.8 else None, dt)
         if target is None:
             return None
         face = self.view_faces.get(self.shown_layout().face_at(*target) or "")
         place = self.ring.slot_centre(*target)
-        if face is None or place is None:
+        if face is None or place is None or face.id in value_module.NO_TOOLTIP:
             return None
         return (face.tip or labels.get(face.id, face.label), *place)
 

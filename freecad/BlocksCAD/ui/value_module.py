@@ -70,6 +70,7 @@ KEYS = {
     "key.makevar": ("Make variable", "makevar", "Make a variable of the picked value (or of what is typed) and bind the value to it"),
     "key.unbind": ("Unbind", "unbind", "Free the picked value from its variable or expression; it keeps its number"),
 }
+NO_TOOLTIP = frozenset([*(f"key.{d}" for d in "0123456789"), "key.point", "key.minus", "key.plus", "key.times", "key.divide", "key.open", "key.close"])   # symbols that need no words
 VALUE_SLOTS = [READOUT, None, None, None, VALUE_SLIDER, None, None, None, STEP_SLIDER, None, None, None]
 PAD_SLOTS = ["key.7", "key.8", "key.9", "key.delete", "key.4", "key.5", "key.6", "key.enter", "key.1", "key.2", "key.3", "key.unit"]
 KEY_SLOTS = ["key.0", "key.point", "key.minus", "key.plus", "key.times", "key.divide", "key.open", "key.close",

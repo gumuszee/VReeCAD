@@ -18,6 +18,7 @@ tooltip of a face, the readout of a tool option next to the tool hand, and the p
 `LabelPlate`s, drawn over the model in the colours and font of the palette."""
 
 import math
+import textwrap
 
 from pivy import coin
 
@@ -25,9 +26,10 @@ from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.ui import style
 from freecad.BlocksCAD.ui.ring_view import DEPTH
 
-CHAR_WIDTH = 0.0062     # metres per character of a label (Segoe UI Bold at the interface text size)
 PAD = 0.016             # plate margin left and right of the text
 HEIGHT = 0.03           # plate height of one line
+LINE_PITCH = 0.0108     # metres between the lines of a text of several lines (the font at the interface text size)
+TOOLTIP_CHARS = 36      # a tooltip is broken into lines of about this many characters
 TOAST_DISTANCE = 0.8    # metres in front of the head
 TOAST_DROP = 0.2        # metres below the line of sight
 TOAST_SCALE = 1.5      # toasts are larger than the other labels: they are read at a distance
@@ -35,6 +37,7 @@ TOAST_PITCH = 0.06      # metres between stacked toasts
 WRIST_SCALE = 0.6       # toasts on the wrist are smaller: they are read at arm's length
 WRIST_PITCH = 0.028     # metres between stacked toasts on the wrist
 TOOLTIP_LIFT = 0.045    # metres above the centre of a face
+TOOLTIP_FRONT = 0.01875  # metres in front of the panel, towards the head
 HELP_SCALE = 0.6        # the controls cards are read at arm's length like the toasts on the wrist
 HELP_PITCH = 0.03       # metres between the lines of a controls card (at the scale of the card)
 HELP_LINES = 8          # the most lines a card holds, the title not counted
@@ -119,8 +122,29 @@ class LockIcon:
         self._show.set(False)
 
 
+_MEASURE = None
+
+
+def text_width(text):
+    """The width in metres of the longest line of `text` (lines separated by newlines) in the interface font at the interface size."""
+    global _MEASURE
+    if _MEASURE is None:
+        root = coin.SoSeparator()
+        root.addChild(style.text_scale())
+        node = coin.SoText3()
+        root.addChild(node)
+        _MEASURE = (root, node, coin.SoGetBoundingBoxAction(coin.SbViewportRegion(100, 100)))
+    root, node, action = _MEASURE
+    lines = text.split("\n")
+    node.string.setValues(0, len(lines), lines)
+    node.string.setNum(len(lines))                      # setValues keeps the lines after the last one it sets
+    action.apply(root)
+    box = action.getBoundingBox()
+    return box.getMax().getValue()[0] - box.getMin().getValue()[0] if not box.isEmpty() else 0.0
+
+
 class LabelPlate:
-    """A plate that fits one line of text. `place` puts it in space; `hide` removes it."""
+    """A plate that fits its text, one line or several (separated by newlines). `place` puts it in space; `hide` removes it."""
 
     def __init__(self, rgb=style.PLATE, text_rgb=style.TEXT):
         self.root = coin.SoSwitch()
@@ -137,6 +161,7 @@ class LabelPlate:
         sep.addChild(self._plate)
         text = style.cached(coin.SoSeparator())
         move = coin.SoTranslation()
+        self._move = move.translation
         move.translation.setValue(0.0, -0.0035, DEPTH * 0.5 + 0.0005)
         text.addChild(move)
         text.addChild(style.color(text_rgb))
@@ -147,16 +172,24 @@ class LabelPlate:
         text.addChild(self._text)
         sep.addChild(text)
         self.root.addChild(sep)
+        self._plate_height = self._plate.height
         self.label = None
-        self._width = 0
+        self._width = 0.0
+        self.lines = 1
 
-    def set_text(self, text, width=0):
-        """The text of the plate; the plate is as wide as `width` characters when the text is shorter (so the lines of a card are as
+    def set_text(self, text, width=0.0):
+        """The text of the plate; the plate is as wide as `width` metres of text when the text is narrower (so the lines of a card are as
         wide as its longest)."""
         if text != self.label or width != self._width:
             self.label, self._width = text, width
-            self._string.setValue(text)
-            self._plate_width.setValue(max(len(text), width) * CHAR_WIDTH + 2 * PAD)
+            lines = text.split("\n")
+            self.lines = len(lines)
+            extra = (self.lines - 1) * LINE_PITCH
+            self._string.setValues(0, self.lines, lines)
+            self._string.setNum(self.lines)
+            self._move.setValue(0.0, extra / 2.0 - 0.0035, DEPTH * 0.5 + 0.0005)      # the block of lines is centred on the plate
+            self._plate_height.setValue(HEIGHT + extra)
+            self._plate_width.setValue(max(text_width(text), width) + 2 * PAD)
 
     def place(self, centre, right, up, scale=1.0):
         self._place.set(centre, right, up, scale)
@@ -186,7 +219,7 @@ class HelpCard:
             return
         centre, title, lines = card
         lines = lines[:HELP_LINES]
-        width = max([len(title)] + [len(line) for line in lines])
+        width = max(text_width(text) for text in [title] + lines)
         self.title.set_text(title, width)
         self.title.place(centre, right, up, HELP_SCALE)
         for i, plate in enumerate(self.lines):
@@ -266,8 +299,12 @@ class FeedbackView:
                 plate.hide()
         if tooltip is not None:
             text, centre, u, v = tooltip
-            self._tooltip.set_text(text)
-            self._tooltip.place(mu.add(centre, mu.mul(v, TOOLTIP_LIFT)), u, v)
+            self._tooltip.set_text("\n".join(textwrap.wrap(text, TOOLTIP_CHARS)))
+            lift = TOOLTIP_LIFT + (self._tooltip.lines - 1) * LINE_PITCH / 2.0       # the bottom edge stays where a one line tooltip has it
+            normal = mu.cross(u, v)
+            if mu.dot(normal, mu.sub(head.position, centre)) < 0.0:
+                normal = mu.mul(normal, -1.0)
+            self._tooltip.place(mu.add(mu.add(centre, mu.mul(v, lift)), mu.mul(normal, TOOLTIP_FRONT)), u, v)
         else:
             self._tooltip.hide()
         if readout is not None:

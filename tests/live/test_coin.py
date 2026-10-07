@@ -469,6 +469,41 @@ class SimUiTest(unittest.TestCase):
             finally:
                 second.close()
 
+    def test_the_small_lengths_face_changes_between_decimal_millimetres_and_micrometres_and_is_saved(self):
+        import os
+        import tempfile
+        import types
+        from freecad.BlocksCAD.core import units
+        from freecad.BlocksCAD.tools import registry
+        from freecad.BlocksCAD.ui import settings as cfg
+        from freecad.BlocksCAD.ui.controller import UiController
+        ui = self.s.ui
+        face = ui.faces["pointer.submm"]
+        self.assertEqual(face.action, "units:submm")
+        self.assertIn(face.id, [f for page in ui.layout.pages for f in page.slots])         # on a panel of the default layout
+        self.assertEqual(units.format_length(0.25, ui.system), "0.25 mm")
+        self.assertEqual(ui.labels()["pointer.submm"], "Small: 0.1 mm")
+        ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        self.assertEqual(units.format_length(0.25, ui.system), "250 µm")
+        self.assertEqual(ui.labels()["pointer.submm"], "Small: 100 µm")
+        ui.set_unit_system("Standard (mm, kg, s, degree)")                                  # a document with the same system keeps the choice
+        self.assertEqual(units.format_length(0.25, ui.system), "250 µm")
+        ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        self.assertEqual(units.format_length(0.25, ui.system), "0.25 mm")
+        with tempfile.TemporaryDirectory() as folder:
+            paths = dict(layout_path=os.path.join(folder, "layout.json"), settings_path=os.path.join(folder, "settings.json"))
+            first = UiController(registry.names(), registry.label_of, {}, **paths)
+            try:
+                first.toggle_sub_mm()
+                self.assertEqual(cfg.load_settings(paths["settings_path"]).sub_mm, "um")
+            finally:
+                first.close()
+            second = UiController(registry.names(), registry.label_of, {}, **paths)
+            try:
+                self.assertEqual(units.format_length(0.25, second.system), "250 µm")
+            finally:
+                second.close()
+
     def test_layout_actions_toast(self):
         self.show_carousel()
         self.s.ui._run("layout:reset", self.s.ui_update)
@@ -485,11 +520,60 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
         self.settle(int(0.6 / 0.02))
         self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
-        self.assertEqual(ui.feedback._tooltip.label, ui.faces[ui.layout.face_at(tools, 0)].tip)
+        self.assertEqual(ui.feedback._tooltip.label.replace("\n", " "), ui.faces[ui.layout.face_at(tools, 0)].tip)
         self.assertNotEqual(ui.feedback._tooltip.label, "")
         self.s.input.set_hand(1, position=(0.3, 1.0, -0.2), point_at=(0.3, 1.0, -2.0))      # point away
         self.settle(3)
         self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
+    def test_a_hovered_face_stands_half_a_centimetre_in_front_of_its_panel_and_goes_back(self):
+        from freecad.BlocksCAD.ui import ring_view as rv
+        self.show_carousel()
+        ui = self.s.ui
+        tools = [p.name for p in ui.layout.pages].index("Tools")
+        panel = ui.view._panels[tools]
+        cell = panel.cells[0][0]
+        z = lambda: panel.plates.rects[cell.plate.index][4]
+        self.assertAlmostEqual(z(), rv.DEPTH * 0.5)
+        self.aim_at_slot(0, tools)
+        self.settle(2)
+        self.assertTrue(cell.raised)
+        self.assertAlmostEqual(z(), rv.DEPTH * 0.5 + 0.005)
+        self.s.input.set_hand(1, position=(0.3, 1.0, -0.2), point_at=(0.3, 1.0, -2.0))      # point away
+        self.settle(3)
+        self.assertFalse(cell.raised)
+        self.assertAlmostEqual(z(), rv.DEPTH * 0.5)
+
+    def test_the_keys_of_the_number_pad_have_no_tooltip(self):
+        from freecad.BlocksCAD.ui import value_module as vm
+        ui = self.s.ui
+        for face_id in ("key.0", "key.9", "key.point", "key.plus", "key.open"):
+            self.assertIn(face_id, vm.NO_TOOLTIP)
+        for face_id in ("key.enter", "key.unit", "key.makevar", "key.delete"):
+            self.assertNotIn(face_id, vm.NO_TOOLTIP)
+
+    def test_a_label_plate_is_as_wide_as_its_text_and_a_long_tooltip_is_broken_into_lines(self):
+        from freecad.BlocksCAD.ui import feedback_view as fv
+        plate = fv.LabelPlate()
+        plate.set_text("Undo")
+        short = plate._plate_width.getValue()
+        plate.set_text("iiiiiiiiiiiiiiii")
+        narrow = plate._plate_width.getValue()
+        plate.set_text("WWWWWWWWWWWWWWWW")
+        wide = plate._plate_width.getValue()
+        self.assertLess(narrow, wide)                                                      # the width follows the glyphs, not the count
+        self.assertAlmostEqual(narrow, fv.text_width("iiiiiiiiiiiiiiii") + 2 * fv.PAD, places=6)
+        self.assertLess(short, narrow)
+        plate.set_text("one"+chr(10)+"two"+chr(10)+"three")
+        self.assertEqual(plate.lines, 3)
+        self.assertAlmostEqual(plate._plate_height.getValue(), fv.HEIGHT + 2 * fv.LINE_PITCH)
+        plate.set_text("8")
+        self.assertEqual(plate._string.getNum(), 1)                                        # no line of the longer text stays behind
+        self.assertAlmostEqual(plate._plate_height.getValue(), fv.HEIGHT)
+        first = fv.text_width("8")
+        fv.text_width("WWWWWWWWWW" + chr(10) + "WWWWWWWWWW")
+        self.assertAlmostEqual(fv.text_width("8"), first)                                  # the measure does not keep the lines of an earlier text
+        self.assertLess(fv.text_width("x" * fv.TOOLTIP_CHARS) + 2 * fv.PAD, 0.3)           # and a line of a tooltip is narrow
 
     def test_the_stick_of_the_tool_hand_adjusts_the_options_of_the_active_tool(self):
         from pivy import coin
@@ -1238,14 +1322,16 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_the_block_is_picked_by_its_points_and_edges(self):
         from freecad.BlocksCAD.cad import block
-        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
-        found = block.pick(self.doc, (98.0, 1.0, 1.0), 1000.0, "vertex")
+        made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        found = block.pick(self.doc, (498.0, 1.0, 1.0), 1000.0, "vertex")
         self.assertEqual((found.name, found.sub), (made.Name, "Point1"))
-        found = block.pick(self.doc, (50.0, 1.0, 1.0), 1000.0, "edge")
-        self.assertEqual(found.sub, "Segment0-1")
-        self.assertIsNone(block.pick(self.doc, (50.0, 50.0, 50.0), 1000.0, "vertex"))
-        self.assertEqual(block.display(made, "Point1").markers, [(100.0, 0.0, 0.0)])
-        self.assertEqual(len(block.handles(self.doc).markers), 8)
+        found = block.pick(self.doc, (450.0, 1.0, 1.0), 1000.0, "edge")
+        self.assertEqual((found.name, found.sub), (made.Name, "Segment0-1"))
+        self.assertIsNone(block.pick(self.doc, (450.0, 50.0, 50.0), 1000.0, "vertex"))
+        self.assertEqual(block.display(made, "Point1").markers, [(500.0, 0.0, 0.0)])
+        self.assertEqual(len(block.handles(self.doc).markers), 16)                          # the points of the block and of the box of the document
+        found = block.pick(self.doc, (98.0, 1.0, 1.0), 1000.0, "vertex")
+        self.assertEqual((found.name, found.sub), (self.box.Name, "Point1"))                # a box is picked like a block
 
     def test_a_block_comes_back_from_a_saved_document_and_recomputes(self):
         import os
@@ -1299,6 +1385,64 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.undo()
         self.assertEqual(tuple(round(c, 6) for c in block.read(made)[0][6]), (500.0, 100.0, 100.0))
         self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
+
+    def test_the_points_tool_turns_a_box_into_a_block_as_the_press_starts_and_one_undo_step_takes_both_back(self):
+        from freecad.BlocksCAD.cad import block
+        import FreeCAD as App
+        placement = App.Placement(App.Vector(300.0, 40.0, 50.0), App.Rotation(App.Vector(0, 0, 1), 30.0))
+        self.box.Placement = placement
+        self.box.Label = "My box"
+        self.doc.recompute()
+        volume = self.box.Shape.Volume
+        self.assertEqual([o.Name for o in block.blocks(self.doc)], [self.box.Name])                # the box is marked like a block
+        s = self.session()
+        s.select_tool("points")
+        corner = block.to_world(self.box, (100.0, 100.0, 100.0))
+        self.hand(1, corner)
+        self.hand(1, corner, trigger=1.0)
+        moved = tuple(c + d for c, d in zip(corner, (0.0, 0.0, 40.0)))
+        self.hand(1, moved, trigger=1.0)
+        self.hand(1, moved, trigger=0.0)
+        made = [o for o in self.doc.Objects if block.is_block(o)]
+        self.assertEqual(len(made), 1)
+        self.assertEqual([o.TypeId for o in self.doc.Objects if o.TypeId == "Part::Box"], [])
+        self.assertEqual(made[0].Label, "My box")
+        self.assertTrue(made[0].Placement.isSame(placement, 1e-9))
+        self.assertGreater(made[0].Shape.Volume, volume)
+        self.doc.undo()                                                                              # the move and the conversion are one step
+        self.assertEqual([o.TypeId for o in self.doc.Objects], ["Part::Box"])
+        self.assertAlmostEqual(self.doc.Objects[0].Shape.Volume, volume)
+
+    def test_a_box_that_another_object_uses_or_that_has_expressions_is_not_editable(self):
+        from freecad.BlocksCAD.cad import block, primitives as prim
+        other = prim.create(self.doc, "Box", (500.0, 0.0, 0.0), (50.0, 50.0, 50.0))
+        self.assertTrue(block.editable_box(self.box))
+        self.box.setExpression("Length", "100 mm")
+        self.assertFalse(block.editable_box(self.box))
+        self.box.setExpression("Length", None)
+        fused = self.doc.addObject("Part::MultiFuse", "Fuse")
+        fused.Shapes = [self.box, other]
+        self.doc.recompute()
+        self.assertFalse(block.editable_box(self.box))
+        self.assertFalse(block.editable_box(fused))
+
+    def test_a_block_can_be_attached_to_a_face_and_follows_it(self):
+        from freecad.BlocksCAD.cad import attach, block
+        import FreeCAD as App
+        small = block.create(self.doc, (500.0, 0.0, 0.0), (40.0, 40.0, 40.0))
+        face = lambda o, z: next(f"Face{i + 1}" for i, f in enumerate(o.Shape.Faces)
+                                 if abs(f.CenterOfMass.z - z) < 1e-6 and abs(f.normalAt(0, 0).z) > 0.9)
+        text, name = attach.attach(self.doc, [(small.Name, face(small, 0.0)), (self.box.Name, face(self.box, 100.0))])
+        self.assertEqual(name, small.Name, text)
+        self.assertAlmostEqual(small.Shape.BoundBox.ZMin, 100.0)
+        self.assertAlmostEqual(small.Shape.BoundBox.Center.x, 50.0)
+        self.box.Placement = App.Placement(App.Vector(30.0, 0.0, 0.0), App.Rotation())
+        self.doc.recompute()
+        self.assertAlmostEqual(small.Shape.BoundBox.Center.x, 80.0)                           # the block follows its support
+        attach.detach(self.doc, [(small.Name, "")])
+        self.box.Placement = App.Placement()
+        self.doc.recompute()
+        self.assertAlmostEqual(small.Shape.BoundBox.Center.x, 80.0)                           # and stays where it was
 
     def test_the_points_tool_splits_an_edge_and_drags_the_new_point_in_one_undo_step(self):
         from freecad.BlocksCAD.cad import block
@@ -2065,6 +2209,13 @@ class MoveLiveTest(unittest.TestCase):
         finally:
             App.closeDocument(other.Name)
 
+    def test_the_anchors_of_a_sphere_skip_its_degenerated_pole_edges(self):
+        from freecad.BlocksCAD.cad import anchors, primitives as prim
+        sphere = prim.create(self.doc, "Sphere", (300.0, 0.0, 0.0), (50.0, 50.0, 50.0))
+        points = anchors.object_points(sphere)
+        self.assertIsNotNone(points)
+        self.assertTrue(all(len(p) == 3 for p in points))
+
     def test_warming_reads_every_box_at_once_and_a_pick_after_it_reads_nothing(self):
         from freecad.BlocksCAD.cad import picking, primitives as prim
         for i in range(5):
@@ -2473,7 +2624,7 @@ class MoveLiveTest(unittest.TestCase):
         module = self.select()
         self.drag_slider("val.step", 0.0)
         self.assertEqual(module.editor.step, 0.01)
-        self.assertEqual(module.slider_states()["val.step"][1], "Step 10 µm")
+        self.assertEqual(module.slider_states()["val.step"][1], "Step 0.01 mm")
         self.focus("val.slider")
         self.push(0.0, 1.0)
         self.assertAlmostEqual(self.box.Length.Value, 100.01)
@@ -2586,6 +2737,40 @@ class MoveLiveTest(unittest.TestCase):
         target.commit()
         self.doc.undo()
         self.assertEqual(self.box.Height.Value, 100.0)
+
+    def test_the_grip_that_cancels_a_grab_does_not_move_the_world_until_it_is_released(self):
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (80.0, 50.0, 96.0), trigger=1.0)
+        world = s.navigator.world
+        s.input.set_hand(0, grip=1.0)
+        s.frame(0.02)
+        for x in (0.1, 0.2, 0.3):                                                             # the gripping hand moves on
+            s.input.set_hand(0, position=(x, 1.2, -0.3))
+            s.frame(0.02)
+        self.assertEqual(s.navigator.world, world)
+        s.input.set_hand(0, grip=0.0)
+        s.frame(0.02)
+        s.input.set_hand(0, grip=1.0)                                                         # a fresh grip holds the world again
+        s.frame(0.02)
+        s.input.set_hand(0, position=(0.5, 1.2, -0.3))
+        s.frame(0.02)
+        self.assertNotEqual(s.navigator.world, world)
+
+    def test_a_free_grab_ticks_once_for_every_grid_step_it_travels(self):
+        s = self.session()
+        ticks = []
+        s.tool_manager.ctx.haptic = lambda hand, amplitude, duration: ticks.append(amplitude)
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        del ticks[:]
+        for x in (51.0, 52.0, 53.0, 54.0):                                                    # within one step of the grid (10 mm)
+            self.hand(1, (x + 0.5, 50.0, 96.0), trigger=1.0)
+        self.assertEqual(ticks, [])
+        for x in range(60, 100, 10):                                                          # four steps further, a step per frame
+            self.hand(1, (float(x), 50.0, 96.0), trigger=1.0)
+        self.assertEqual(len(ticks), 4)
 
     def test_a_grip_cancels_the_grab(self):
         s = self.session()

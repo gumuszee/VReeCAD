@@ -135,7 +135,7 @@ class MoveTool(TouchTool):
         doc.openTransaction(f"Move {obj.Label}")
         self._grab = {"pick": pick, "name": pick.name, "label": obj.Label, "start": (base, rotation),
                       "grab": grabbing.Grab(position, hand_rotation, base, rotation), "now": (base, rotation),
-                      "scaling": False, "scaled": False, "size0": None, "points": None, "source": None, "index": None}
+                      "cell": tuple(round(c / self.grid) for c in base), "scaling": False, "scaled": False, "size0": None, "points": None, "source": None, "index": None}
         self._locked = False
         self._hover = None
         self._select(doc, [(pick.name, "")])             # the object is selected as the grab starts, so it shows as selected at once
@@ -180,7 +180,10 @@ class MoveTool(TouchTool):
             if (base, rotation) != state["now"]:
                 edit.set_placement(obj, base, rotation)
                 state["now"] = (base, rotation)
-                self._haptic(0.08, 0.008)
+                cell = tuple(round(c / self.grid) for c in base)
+                if cell != state["cell"]:           # a free grab changes every frame: the hand ticks for every grid step it travels
+                    state["cell"] = cell
+                    self._haptic(0.08, 0.008)
             self._readout(self._move_text(state))
 
     def _align(self, state, obj, base, rotation):
@@ -215,7 +218,8 @@ class MoveTool(TouchTool):
             edit.set_placement(obj, mu.add(base, shift), rotation)
             state["now"] = (mu.add(base, shift), rotation)
             state["scaled"] = True
-            self._haptic(0.08, 0.008)
+            if locked:
+                self._haptic(0.08, 0.008)
         self._readout(f"Scale: {factor * 100:.0f} %")
 
     def _move_text(self, state):

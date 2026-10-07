@@ -20,7 +20,6 @@ Creates one action set with the actions of `profiles.ACTIONS`, suggests bindings
 `poll` syncs the actions and returns the raw per-hand values; edges are derived by `input.InputTracker`.
 """
 
-import ctypes
 import logging
 
 import xr
@@ -167,8 +166,7 @@ class OpenXRInput:
         vib = xr.HapticVibration(duration=int(duration_s * 1e9), frequency=frequency, amplitude=amplitude)
         xr.apply_haptic_feedback(
             self.session,
-            xr.HapticActionInfo(action=self.actions["haptic"], subaction_path=self.hand_paths[hand]),
-            ctypes.cast(ctypes.byref(vib), ctypes.POINTER(xr.HapticBaseHeader)))
+            xr.HapticActionInfo(action=self.actions["haptic"], subaction_path=self.hand_paths[hand]), vib)   # pyopenxr casts the struct itself
 
     def destroy(self):
         for space in self.aim_space + self.grip_space:

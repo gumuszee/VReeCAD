@@ -4,6 +4,30 @@ import support  # noqa: F401
 from freecad.BlocksCAD.tools import base, manager, registry
 
 
+class TickLimitTest(unittest.TestCase):
+    def setUp(self):
+        self.sent, self.t = [], [0.0]
+        self.haptic = base.tick_limited(lambda *args: self.sent.append(args), interval=0.15, now=lambda: self.t[0])
+
+    def test_ticks_of_a_hand_come_at_most_every_interval(self):
+        for i in range(10):                                 # a tick every 20 ms for 200 ms
+            self.t[0] = 0.02 * i
+            self.haptic(0, 0.08, 0.008)
+        self.assertEqual(len(self.sent), 2)
+        self.assertEqual(self.sent[0], (0, 0.08, 0.008))
+
+    def test_each_hand_has_its_own_interval(self):
+        self.haptic(0, 0.08, 0.008)
+        self.haptic(1, 0.08, 0.008)
+        self.assertEqual([s[0] for s in self.sent], [0, 1])
+
+    def test_a_strong_pulse_always_goes_through(self):
+        self.haptic(0, 0.08, 0.008)
+        self.haptic(0, 0.3, 0.02)
+        self.haptic(0, 0.5, 0.04)
+        self.assertEqual([s[1] for s in self.sent], [0.08, 0.3, 0.5])
+
+
 class Recorder(base.Tool):
     name = "test_recorder"
     label = "Recorder"

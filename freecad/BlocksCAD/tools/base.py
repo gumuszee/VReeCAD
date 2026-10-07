@@ -15,10 +15,28 @@
 # ***************************************************************************
 """Tool base class and the services a tool may use."""
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Tuple
 
 from freecad.BlocksCAD.core import units
+
+TICK_AMPLITUDE = 0.2    # a pulse weaker than this is a tick of a tool (a grid step, a guide), the others mark a start or an end
+TICK_INTERVAL = 0.15    # s between two ticks of a hand
+
+
+def tick_limited(send, interval=TICK_INTERVAL, now=time.monotonic):
+    """`send(hand, amplitude, duration_s)` that drops a tick (amplitude below `TICK_AMPLITUDE`) when the hand got a pulse less than
+    `interval` seconds ago, so a moving hand does not buzz; the stronger pulses always go through."""
+    last = {}
+
+    def haptic(hand, amplitude, duration_s):
+        t = now()
+        if amplitude < TICK_AMPLITUDE and t - last.get(hand, -interval) < interval:
+            return
+        last[hand] = t
+        send(hand, amplitude, duration_s)
+    return haptic
 
 
 @dataclass(frozen=True)
@@ -114,9 +132,10 @@ class Tool:
             return
         key = tuple((g.kind, g.axis, g.anchor) for g in guides)
         if key != self._guide_key:
+            appeared = bool(key) and not self._guide_key        # a change from one guide to another is silent: near many objects it never stops
             self._guide_key = key
-            if key and self.ctx.haptic is not None:
-                self.ctx.haptic(self.ctx.dominant, 0.12, 0.01)
+            if appeared and self.ctx.haptic is not None:
+                self.ctx.haptic(self.ctx.dominant, 0.08, 0.008)
         ghost.show_guides(guides, half)
 
     def hide_guides(self):

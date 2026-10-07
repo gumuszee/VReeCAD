@@ -51,7 +51,6 @@ class PrimitiveTool(Tool):
         self._page = 0
         self._start = None        # document point (on the grid) where the trigger went down
         self._current = None
-        self._marker = None
         self._built = None       # (shape, lo, size) the ghost shows
 
     @property
@@ -95,7 +94,6 @@ class PrimitiveTool(Tool):
         ghost = self._ghost()
         if ghost is not None:
             ghost.hide()
-        self._marker = None
 
     def _cancel(self):
         self._start = self._current = self._built = None
@@ -134,10 +132,6 @@ class PrimitiveTool(Tool):
         if free and not gripping and "trigger" in hand.pressed and hand.aim.tracked:
             self._start = self._current = point
             self._haptic(0.3, 0.02)
-        elif point != self._marker:
-            self._marker = point
-            if free and not gripping:
-                self._haptic(0.08, 0.008)       # a tick whenever the cursor moves to another grid point
 
     def _drag(self, hand, point):
         ghost, readout = self._ghost(), self._service("readout")

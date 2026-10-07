@@ -241,9 +241,9 @@ class ToolTest(unittest.TestCase):
         self.assertEqual(self.ghost.calls[-1][:2], ("marker", (7.0, 30.0, 10.0)))        # X is that of the anchor, the rest is on the grid
         (guide,) = self.ghost.guide_calls[-1]
         self.assertEqual((guide.kind, guide.axis, guide.anchor), ("axis", 0, (7.0, 40.0, 0.0)))
-        self.assertEqual(len([h for h in self.haptics if h[1] == 0.12]), 1)                 # a tick when the guide appears
+        self.assertEqual(len([h for h in self.haptics if h[1] == 0.08]), 1)                 # a tick when the guide appears
         self.step(3)
-        self.assertEqual(len([h for h in self.haptics if h[1] == 0.12]), 1)                 # and not on every frame
+        self.assertEqual(len([h for h in self.haptics if h[1] == 0.08]), 1)                 # and not on every frame
         self.hand_at((30.0, 28.0, 12.0))
         self.step()
         self.assertEqual(self.ghost.guide_calls[-1], [])

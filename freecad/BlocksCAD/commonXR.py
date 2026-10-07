@@ -29,6 +29,7 @@ import freecad.BlocksCAD.controllerXR as conXR
 from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
+from freecad.BlocksCAD.tools import base as tools_base
 from freecad.BlocksCAD.core import guides, stage, units
 from freecad.BlocksCAD.cad import anchors, attach, colour, combine, duplicate, edges, edit, joints, picking, sketching, values as object_values
 from freecad.BlocksCAD.render.ghost import Ghost
@@ -579,7 +580,8 @@ class XRwidget(QOpenGLWidget):
         self.highlights = Highlights()      # what the hand touches and what is selected, also in document space
         self.ui_consumes_trigger = False
         context = self.tools.ctx
-        context.haptic = self.haptic
+        context.haptic = tools_base.tick_limited(self.haptic)
+        self._ui_haptic = tools_base.tick_limited(self.haptic)      # the ticks of the sliders and the stick come as fast as the values pass
         context.services.update({
             "cursor": lambda hand: self.ui.cursor(self.input_frame.hands[hand]),
             "to_document": lambda point: stage.to_document(self.navigator.world, point,
@@ -621,6 +623,7 @@ class XRwidget(QOpenGLWidget):
         if doc is not None and doc.UndoCount:
             doc.undo()
             doc.recompute()
+            colour.sync(doc)
             return "Undo"
         return "Nothing to undo"
 
@@ -630,6 +633,7 @@ class XRwidget(QOpenGLWidget):
         if doc is not None and doc.RedoCount:
             doc.redo()
             doc.recompute()
+            colour.sync(doc)
             return "Redo"
         return "Nothing to redo"
 
@@ -1354,7 +1358,7 @@ class XRwidget(QOpenGLWidget):
         prof.note_shown(self.ui.ring.fade > 0.02)
         self.apply_navigation()
         for hand, amplitude, duration in update.haptics:
-            self.haptic(hand, amplitude, duration)
+            self._ui_haptic(hand, amplitude, duration)
         return update
 
     def haptic(self, hand, amplitude, duration_s):

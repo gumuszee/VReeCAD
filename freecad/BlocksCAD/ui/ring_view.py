@@ -36,6 +36,7 @@ TITLE_H = rg.TITLE_Y[1] - rg.TITLE_Y[0]
 TITLE_CENTRE = (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2
 TEXT_LIFT = DEPTH * 0.5 + 0.0005      # text lies this far in front of the plane of the plates
 MARKER_LIFT = 0.003
+RAISE = 0.005                         # a hovered, active or dragged face stands this far (0.5 cm) in front of its panel
 
 
 def _at(x, y, z):
@@ -59,6 +60,9 @@ class _Plate:
 
     def move(self, x, y):
         self.owner.move(self.index, x, y)
+
+    def lift(self, z):
+        self.owner.lift(self.index, z)
 
 
 class _Plates:
@@ -104,6 +108,12 @@ class _Plates:
         w, h, _, _, z = self.rects[index]
         self.rects[index] = (w, h, x, y, z)
         self._points.setValues(4 * index, 4, self._corners(w, h, x, y, z))
+
+    def lift(self, index, z):
+        w, h, x, y, old = self.rects[index]
+        if z != old:
+            self.rects[index] = (w, h, x, y, z)
+            self._points.setValues(4 * index, 4, self._corners(w, h, x, y, z))
 
     def flush(self):
         """Write the colours that changed since the last flush (one write for all of them)."""
@@ -154,6 +164,7 @@ class _Cell:
         self.palette = palette
         self.x, self.y = x, y
         self.plate = plates.add(rg.CELL, rg.CELL, palette.face if face_label is not None else palette.empty, x, y, DEPTH * 0.5)
+        self.raised = False
         self.text_color = None
         self.label = face_label
         if face_label is not None:
@@ -173,7 +184,8 @@ class _Cell:
 
     def _write(self, label):
         lines = lay.wrap_label(label)
-        self._text_at.setValue(self.x, self.y + ((len(lines) - 1) * 0.5 * style.LINE_HEIGHT - 0.0035) * style.PANEL_TEXT, TEXT_LIFT)
+        self._text_y = self.y + ((len(lines) - 1) * 0.5 * style.LINE_HEIGHT - 0.0035) * style.PANEL_TEXT
+        self._text_at.setValue(self.x, self._text_y, TEXT_LIFT + (RAISE if self.raised else 0.0))
         self._string.setNum(len(lines))
         self._string.setValues(0, len(lines), lines)
 
@@ -189,6 +201,13 @@ class _Cell:
         color = (self.palette.empty if not has_face or lifted else style.GRAB if target else self.palette.picked if inert
                  else style.ACTIVE if active else style.HOVER if hover else self.palette.face)
         self.plate.set(color)
+        raised = has_face and not lifted and not inert and (hover or active or target)
+        if raised != self.raised:
+            self.raised = raised
+            lift = RAISE if raised else 0.0
+            self.plate.lift(DEPTH * 0.5 + lift)
+            if self.text_color is not None:
+                self._text_at.setValue(self.x, self._text_y, TEXT_LIFT + lift)
         if self.text_color is not None:
             self.text_color.set(style.TEXT_ON_ACTIVE if (active or target) and not lifted
                                 else style.TEXT_DIM if lifted else style.TEXT)
@@ -209,7 +228,10 @@ class _SliderRow:
         self.handle_color = plates.add(self.HANDLE[0], self.HANDLE[1], style.TEXT, self.low, y + self.TRACK_Y, DEPTH * 1.5)
         self._handle_x = self.low
         label = style.cached(coin.SoSeparator())
-        label.addChild(_at(-rg.GRID_W / 2 + 0.009, y + 0.008, TEXT_LIFT))
+        move = _at(-rg.GRID_W / 2 + 0.009, y + 0.008, TEXT_LIFT)
+        self._label_at = move.translation
+        self.raised = False
+        label.addChild(move)
         label.addChild(style.color(style.TEXT))
         label.addChild(style.text_scale(style.PANEL_TEXT * 1.1))
         self.text = coin.SoText3()
@@ -230,6 +252,14 @@ class _SliderRow:
         self.plate_color.set(style.HOVER if hovered else self.palette.picked if picked else self.palette.face)
         self.handle_color.set(style.ACTIVE if dragged else style.TEXT)
         self.track_color.set(style.TEXT if bar_hot else self.palette.plate)
+        raised = hovered or dragged or bar_hot
+        if raised != self.raised:
+            self.raised = raised
+            lift = RAISE if raised else 0.0
+            self.plate_color.lift(DEPTH * 0.5 + lift)
+            self.track_color.lift(DEPTH + lift)
+            self.handle_color.lift(DEPTH * 1.5 + lift)
+            self._label_at.setValue(-rg.GRID_W / 2 + 0.009, self.y + 0.008, TEXT_LIFT + lift)
 
 
 class _ReadoutRow:

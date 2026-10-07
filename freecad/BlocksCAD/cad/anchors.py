@@ -31,7 +31,11 @@ def object_points(obj):
         return None
     points = [(v.X, v.Y, v.Z) for v in shape.Vertexes]
     for edge in shape.Edges:
-        if isinstance(edge.Curve, Part.Line):
+        try:
+            straight = isinstance(edge.Curve, Part.Line)
+        except TypeError:                                   # a degenerated edge (the pole of a sphere) has no curve
+            continue
+        if straight:
             middle = edge.valueAt((edge.FirstParameter + edge.LastParameter) / 2.0)
             points.append((middle.x, middle.y, middle.z))
     return points or None
