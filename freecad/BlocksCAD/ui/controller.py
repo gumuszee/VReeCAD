@@ -35,6 +35,7 @@ from freecad.BlocksCAD.ui import defaults
 from freecad.BlocksCAD.ui import layout as lay
 from freecad.BlocksCAD.ui import pointing, settings as cfg
 from freecad.BlocksCAD.ui import options as tool_options
+from freecad.BlocksCAD.ui import help as controls_help
 from freecad.BlocksCAD.ui import radial, toast
 from freecad.BlocksCAD.ui.feedback_view import FeedbackView
 from freecad.BlocksCAD.render.model_anchor import BUTTON_PARTS, STICK_PARTS
@@ -63,6 +64,7 @@ OPTION_DISC_LIFT = 0.04        # metres above the top of the thumbstick: the dis
 LOCK_LIFT = 0.012              # metres above the top of the A button
 WRIST_BACK = 0.07              # metres behind the face buttons, towards the wrist
 WRIST_LIFT = 0.03              # metres above the plane of the buttons
+HELP_LIFT = 0.15               # metres above a controller: where the title of its controls card hangs
 
 
 class UiController:
@@ -98,6 +100,8 @@ class UiController:
         self.active_tool = None            # the active `tools.base.Tool`, set by the host before `update`
         self.gesture_text = None           # readout of a running gesture (the size of a shape being dragged), set by the tool
         self.toasts = toast.Toasts()
+        self.help = controls_help.HelpState()
+        self._first_help = False           # the controls card shows for the first time (`show_first_help`)
         self.dwell = toast.Dwell()
         self.feedback = FeedbackView()
         self.view = RingView()
@@ -297,8 +301,27 @@ class UiController:
             self._save_settings()
             self.toast("Pointer: " + ("Tip" if self.settings.pointer_mode == "tip" else "Laser"))
 
+    def show_first_help(self):
+        """Show the controls cards once when the addon has not been used yet (the setting `onboarded`); they stay until the Controls face
+        or the time takes them away, and then the setting is saved."""
+        if not self.settings.onboarded:
+            self._first_help = True
+            self.help.show()
+            self.toast("Controls help: the Controls face on the View panel shows it again")
+
+    def _help_ended(self):
+        if self._first_help:
+            self._first_help = False
+            self.settings.onboarded = True
+            self._save_settings()
+
     def _run(self, action, out):
-        if action == "layout:reset":
+        if action == "help:toggle":
+            shown = self.help.toggle()
+            self.toast("Controls shown" if shown else "Controls hidden")
+            if not shown:
+                self._help_ended()
+        elif action == "layout:reset":
             self.reset_layout()
         elif action == "layout:show_hidden":
             self.show_hidden()
@@ -409,8 +432,10 @@ class UiController:
                                 centre=labels.get(quick.hub, self.faces[quick.hub].label) if quick.hub else None)
         tooltip = self._tooltip(result, frame.dt, labels)
         text = readout or self.gesture_text
+        if self.help.update(frame.dt):
+            self._help_ended()
         self.feedback.update(frame.head, self.toasts.update(frame.dt), tooltip, text or None, self._lock_hint(frame),
-                             self._wrist_anchor(frame))
+                             self._wrist_anchor(frame), self._help_cards(frame) if self.help.visible else None)
         prof.lap("ui_feedback")
 
         if result.activated is not None:
@@ -513,6 +538,19 @@ class UiController:
             return None
         position, _, forward, up = placed
         return mu.add(position, mu.add(mu.mul(forward, -WRIST_BACK), mu.mul(up, WRIST_LIFT)))
+
+    def _help_cards(self, frame):
+        """The controls cards: (centre of the title, title, lines) over the controller of the tool hand and over the one of the palette
+        hand; a hand that is not tracked has none."""
+        tool = self.active_tool
+        up = mu.rotate(frame.head.orientation, (0.0, 1.0, 0.0))
+        cards = []
+        for hand, (title, lines) in ((self.tool_hand, controls_help.tool_card(getattr(tool, "label", "Tool") or "Tool", getattr(tool, "controls", ()))),
+                                     (self.palette_hand, controls_help.palette_card())):
+            placed = self._controller_frame(frame, hand, BUTTON_PARTS, 0.0)
+            if placed is not None:
+                cards.append((mu.add(placed[0], mu.mul(up, HELP_LIFT)), title, lines))
+        return cards
 
     def _tooltip(self, result, dt, labels):
         """(text, centre, u, v) of the tooltip of the hovered face once it has been hovered for a moment, else None."""

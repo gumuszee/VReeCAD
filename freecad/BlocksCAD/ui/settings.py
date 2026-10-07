@@ -41,6 +41,7 @@ class Settings:
     tip_angle: float = 15.0       # degrees; positive tilts the pointer down from the controller axis
     tip_length: float = 0.04      # metres from the controller to the tip
     recent: List[str] = field(default_factory=list)   # ids of the faces used last, newest first
+    onboarded: bool = False       # the controls card has been shown (and gone) once
 
     def __post_init__(self):
         if self.pointer_mode not in MODES:
@@ -48,6 +49,7 @@ class Settings:
         self.tip_angle = _clamp(float(self.tip_angle), *ANGLE_RANGE)
         self.tip_length = _clamp(float(self.tip_length), *LENGTH_RANGE)
         self.recent = [current_face(f) for f in self.recent if isinstance(f, str)] if isinstance(self.recent, list) else []
+        self.onboarded = bool(self.onboarded)
 
     def toggle_mode(self):
         self.pointer_mode = "tip" if self.pointer_mode == "laser" else "laser"
@@ -58,7 +60,7 @@ class Settings:
     @classmethod
     def from_json(cls, text):
         data = json.loads(text)
-        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length", "recent") if k in data}
+        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length", "recent", "onboarded") if k in data}
         return cls(**known)
 
 

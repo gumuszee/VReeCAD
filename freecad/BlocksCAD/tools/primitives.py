@@ -42,6 +42,7 @@ class PrimitiveTool(Tool):
     name = "primitive"
     label = "Create"
     hint = "Drag a box in space to make a shape, tap to place one"
+    controls = (("Trigger", "drag out a shape, tap: place one"),)
     options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
                ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES + (primitives.BLOCK,)))
 

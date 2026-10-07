@@ -45,5 +45,9 @@ def hint_of(name):
     return _TOOLS[name].hint
 
 
+def controls_of(name):
+    return _TOOLS[name].controls
+
+
 def unregister(name):
     _TOOLS.pop(name, None)

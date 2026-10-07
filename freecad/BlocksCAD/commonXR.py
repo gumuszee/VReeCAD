@@ -566,6 +566,7 @@ class XRwidget(QOpenGLWidget):
         self.ui.part_frame = lambda hand, names, lift: self.xr_con[hand].part_frame(names, lift)
         self.ui.values_source = lambda: object_values.source(App.ActiveDocument)
         self.setup_tool_services()
+        self.ui.show_first_help()          # the controls card, once, the first time the addon runs
 
     def setup_tool_services(self):
         """What the tools may use besides the input frame (docs/design.md, Architecture): the cursor, the document, the ghost."""

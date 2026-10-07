@@ -35,6 +35,9 @@ TOAST_PITCH = 0.06      # metres between stacked toasts
 WRIST_SCALE = 0.6       # toasts on the wrist are smaller: they are read at arm's length
 WRIST_PITCH = 0.028     # metres between stacked toasts on the wrist
 TOOLTIP_LIFT = 0.045    # metres above the centre of a face
+HELP_SCALE = 0.6        # the controls cards are read at arm's length like the toasts on the wrist
+HELP_PITCH = 0.03       # metres between the lines of a controls card (at the scale of the card)
+HELP_LINES = 8          # the most lines a card holds, the title not counted
 
 
 class _Placement:
@@ -145,12 +148,15 @@ class LabelPlate:
         sep.addChild(text)
         self.root.addChild(sep)
         self.label = None
+        self._width = 0
 
-    def set_text(self, text):
-        if text != self.label:
-            self.label = text
+    def set_text(self, text, width=0):
+        """The text of the plate; the plate is as wide as `width` characters when the text is shorter (so the lines of a card are as
+        wide as its longest)."""
+        if text != self.label or width != self._width:
+            self.label, self._width = text, width
             self._string.setValue(text)
-            self._plate_width.setValue(len(text) * CHAR_WIDTH + 2 * PAD)
+            self._plate_width.setValue(max(len(text), width) * CHAR_WIDTH + 2 * PAD)
 
     def place(self, centre, right, up, scale=1.0):
         self._place.set(centre, right, up, scale)
@@ -158,6 +164,37 @@ class LabelPlate:
 
     def hide(self):
         self._show.set(False)
+
+
+class HelpCard:
+    """The controls card of one controller: a title and up to `HELP_LINES` lines on plates of one width, stacked downwards from the
+    title, facing the head."""
+
+    def __init__(self):
+        self.title = LabelPlate(style.ACTIVE, style.TEXT_ON_ACTIVE)
+        self.lines = [LabelPlate(style.FACE) for _ in range(HELP_LINES)]
+
+    @property
+    def plates(self):
+        return [self.title] + self.lines
+
+    def update(self, card, right, up):
+        """`card`: (centre of the title, title, lines) or None to hide it; `right` and `up` are the axes of the plates."""
+        if card is None:
+            for plate in self.plates:
+                plate.hide()
+            return
+        centre, title, lines = card
+        lines = lines[:HELP_LINES]
+        width = max([len(title)] + [len(line) for line in lines])
+        self.title.set_text(title, width)
+        self.title.place(centre, right, up, HELP_SCALE)
+        for i, plate in enumerate(self.lines):
+            if i < len(lines):
+                plate.set_text(lines[i], width)
+                plate.place(mu.add(centre, mu.mul(up, -(i + 1) * HELP_PITCH * HELP_SCALE)), right, up, HELP_SCALE)
+            else:
+                plate.hide()
 
 
 def head_axes(head):
@@ -199,14 +236,16 @@ class FeedbackView:
         self._tooltip = LabelPlate(style.PLATE, style.TEXT)
         self._readout = LabelPlate(style.GRAB, style.TEXT_ON_ACTIVE)
         self._lock = LockIcon()
-        for plate in self._toasts + [self._tooltip, self._readout, self._lock]:
+        self._cards = [HelpCard(), HelpCard()]
+        for plate in self._toasts + [self._tooltip, self._readout, self._lock] + self._cards[0].plates + self._cards[1].plates:
             self.root.addChild(plate.root)
 
-    def update(self, head, toasts, tooltip=None, readout=None, lock=None, wrist=None):
+    def update(self, head, toasts, tooltip=None, readout=None, lock=None, wrist=None, cards=None):
         """`toasts`: the `toast.Toast`s to draw, oldest first. `tooltip`: (text, centre of the face, u, v of its panel) or None.
         `readout`: the text of the readout of a gesture or a tool option, or None; it hangs on the wrist like the toasts, at the bottom of the
         stack (the toasts stand above it), so it never covers what the hand works on. `lock`: (position, right, up, locked) of the padlock on the controller, or None.
-        `wrist`: the point on the controller where the toasts are attached, or None to show them in front of the head."""
+        `wrist`: the point on the controller where the toasts are attached, or None to show them in front of the head.
+        `cards`: up to two (centre of the title, title, lines) of the controls cards, or None."""
         right, up, forward = head_axes(head)
         if wrist is not None:
             base = wrist
@@ -240,3 +279,10 @@ class FeedbackView:
             self._lock.place(lock[0], lock[1], lock[2], lock[3])
         else:
             self._lock.hide()
+        cards = list(cards or [])
+        for i, view in enumerate(self._cards):
+            if i < len(cards):
+                card_right, card_up = billboard_axes(cards[i][0], head.position, up)
+                view.update(cards[i], card_right, card_up)
+            else:
+                view.update(None, right, up)

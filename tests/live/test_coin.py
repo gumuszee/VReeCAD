@@ -368,6 +368,57 @@ class SimUiTest(unittest.TestCase):
         self.settle(int(3.0 / 0.02))
         self.assertTrue(all(p.root.whichChild.getValue() == coin.SO_SWITCH_NONE for p in self.s.ui.feedback._toasts))
 
+    def card_plates(self):
+        from pivy import coin
+        return [[p for p in card.plates if p.root.whichChild.getValue() == coin.SO_SWITCH_ALL] for card in self.s.ui.feedback._cards]
+
+    def test_the_controls_face_shows_a_card_over_each_controller_and_the_tool_decides_what_the_tool_hand_card_says(self):
+        import types
+        self.show_carousel()
+        ui = self.s
+        ui.select_tool("move")
+        face = ui.ui.faces["view.controls"]
+        self.assertEqual(face.action, "help:toggle")
+        self.assertEqual([len(c) for c in self.card_plates()], [0, 0])
+        ui.ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        self.settle(3)
+        tool_card, palette_card = self.card_plates()
+        self.assertEqual(self.s.ui.toasts.items[-1].text, "Controls shown")
+        self.assertEqual(tool_card[0].label, "Move: tool hand")                           # the active tool of the session
+        self.assertEqual(tool_card[1].label, "Trigger: tap: select, hold: move and turn")
+        self.assertEqual(palette_card[0].label, "Palette hand")
+        self.assertEqual(len({p._width for p in tool_card}), 1)                           # one width for the whole card
+        self.assertGreater(len(palette_card), 4)
+        ui.ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        self.settle(3)
+        self.assertEqual([len(c) for c in self.card_plates()], [0, 0])
+
+    def test_the_cards_show_once_on_the_first_run_and_the_setting_is_saved_when_they_go(self):
+        import os
+        import tempfile
+        from freecad.BlocksCAD.tools import registry
+        from freecad.BlocksCAD.ui import help as controls_help
+        from freecad.BlocksCAD.ui import settings as cfg
+        from freecad.BlocksCAD.ui.controller import UiController
+        with tempfile.TemporaryDirectory() as folder:
+            paths = dict(layout_path=os.path.join(folder, "layout.json"), settings_path=os.path.join(folder, "settings.json"))
+            first = UiController(registry.names(), registry.label_of, {}, **paths)
+            try:
+                first.show_first_help()
+                self.assertTrue(first.help.visible)
+                self.assertFalse(cfg.load_settings(paths["settings_path"]).onboarded)       # not before they have been seen
+                if first.help.update(controls_help.SHOW_SECONDS):                           # the time is up, as in `update`
+                    first._help_ended()
+                self.assertTrue(cfg.load_settings(paths["settings_path"]).onboarded)
+            finally:
+                first.close()
+            second = UiController(registry.names(), registry.label_of, {}, **paths)
+            try:
+                second.show_first_help()
+                self.assertFalse(second.help.visible)                                       # seen once: it stays away
+            finally:
+                second.close()
+
     def test_layout_actions_toast(self):
         self.show_carousel()
         self.s.ui._run("layout:reset", self.s.ui_update)

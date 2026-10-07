@@ -58,6 +58,7 @@ def plane_square(plane, centre, half):
 class SketchTool(TouchTool):
     name = "sketch"
     label = "Sketch"
+    controls = (("Trigger", "drag a shape (an arc: press again)"), ("A", "hold: off the grid"))
     hint = "Drag a line, rectangle or circle on a plane or a face; Edit drags a point or dimensions a line"
     options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
                ToolOption("mode", "Mode", "choice", default=MODES[1], choices=MODES),

@@ -66,7 +66,7 @@ The carousel is a prism around the long axis of the palette controller. It is at
 | Edit | Undo, Redo, Delete |
 | Modify | Fuse, Cut, Common, Copy, Mirror X, Mirror Y, Mirror Z, Colour, Pattern X, Pattern Y, Pattern Z |
 | Shape | Extrude, Fillet, Chamfer, Attach, Detach, Fixed joint, Hinge, Slider, Ball joint, Unjoint |
-| View | Reset view, Reload scene, Reset layout, Show hidden |
+| View | Reset view, Reload scene, Reset layout, Show hidden, Controls |
 | Session | Pointer (laser or tip), Close VR, and the sliders Angle and Length (tip angle and tip length) |
 
 **Delete** removes the selected objects in one transaction, so one undo step brings them back; a face, an edge or a vertex that is selected is not an object and is left alone (a toast says so). The selection that remains is what was not deleted.
@@ -263,6 +263,15 @@ All three are dark plates that fit their text, drawn over the model in the inter
 - **Toasts** hang on the wrist of the tool hand controller: 7 cm behind the face buttons (towards the wrist) and 3 cm above their plane, tracked on the controller and always turned to face the head, at 0.6 times the size of the labels and stacked 2.8 cm apart. While the tool hand is not tracked they stand 0.8 m in front of the head, 0.2 m below the line of sight, at 1.5 times the size of the labels, and stack 6 cm apart. Up to three stand at once, the newest at the bottom; each stays for 2.2 s, grows in and shrinks away, and a message that is still there is renewed instead of repeated. Toasts report the result of an action: undo and redo, the tool chosen with its hint, the pointer mode, layout reset, hidden and shown faces, the selection and deletion of objects.
 - **Tooltips:** hovering one face for 0.5 s shows its description above it in the plane of its panel. Tool faces use the hint of the tool. The tooltip disappears when the pointer leaves the face and is not shown while something is lifted or pressed.
 - **Readout** of a running gesture (the move of an object, the size of a shape being dragged out, the distance of a push) and of a tool option (see Tool options): an orange plate on the wrist like a toast, at the same place and size, at the bottom of the stack with the toasts one place above it. It never stands next to the pointer, so it does not cover the object that is worked on. While the tool hand is not tracked it stands in front of the head like the toasts.
+
+### Controls card
+
+What the buttons do is shown on the controllers themselves (`ui/help.py`, `ui/feedback_view.py`). The **Controls** face of the View panel toggles a **card** over each controller: a plate with a title (orange) and one line per control ("Trigger: ...") on plates of one width, 15 cm above the controller, turned to face the head, at the size of the toasts on the wrist, drawn over the model like the other messages.
+
+- **Tool hand card:** titled "<tool>: tool hand". It lists what the active tool declares in `Tool.controls` (the trigger and where it matters the A button, for example "Trigger: tap: select, hold: move and turn", "A: hold: lock to grid and angles"), then "A: hold: quick menu" when the tool says nothing about A, and what every tool has: "Stick: options of the tool", "B: tap: undo, hold: redo", "Grip: grab the world (both: turn, scale)". The card follows the active tool.
+- **Palette hand card:** "Palette hand": the stick turns the palette, the trigger presses a face with the tip, the grips, A pins the palette, the D-pad undoes and redoes.
+- **Time:** the cards go after 40 s or when the face is pressed again (toasts say "Controls shown" and "Controls hidden"). A hand that is not tracked has no card.
+- **First run:** the first time the addon runs (the setting `onboarded` in `settings.json` is false) the cards show by themselves with a toast that names the face; when they go, by time or by the face, `onboarded` is saved and they stay away from then on.
 
 ### Quick radial
 

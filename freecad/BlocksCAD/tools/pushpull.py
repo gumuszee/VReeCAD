@@ -39,6 +39,7 @@ GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
 class PushPullTool(TouchTool):
     name = "pushpull"
     label = "Push/Pull"
+    controls = (("Trigger", "press a face, move along it"),)
     hint = "Press on a flat face and move the hand along it to push or pull; the stick changes the grid"
     pick_kind = "face"
     options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),)

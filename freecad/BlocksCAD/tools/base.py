@@ -91,6 +91,7 @@ class Tool:
     name = ""
     label = ""
     hint = ""        # one line shown as a toast when the tool is chosen and as the tooltip of its face
+    controls = ()    # (control, text) pairs for the controls card of the tool hand: what the trigger and the A button do in this tool
     options = ()     # `ToolOption`s: with `disc_slots` the disc chooses among them, else the first is on the stick up and down, the second left and right
     busy = False     # a gesture is running: the quick radial stays closed
     lock_state = None   # None: no hint; False: the padlock over the A button is open (free); True: closed (locked to the grid and the angles)

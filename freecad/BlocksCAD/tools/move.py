@@ -50,6 +50,7 @@ class MoveTool(TouchTool):
     name = "move"
     label = "Move"
     hint = "Touch to highlight, tap to select, hold the trigger to move; the other trigger scales"
+    controls = (("Trigger", "tap: select, hold: move and turn"), ("Other trigger", "scale"), ("A", "hold: lock to grid and angles"))
     options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
                ToolOption("angle", "Angle", "choice", default="15 deg", choices=ANGLE_LABELS, wrap=False),
                ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES))

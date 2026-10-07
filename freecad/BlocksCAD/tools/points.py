@@ -46,6 +46,7 @@ class PointsTool(TouchTool):
     name = "points"
     label = "Points"
     hint = "Press on a point of a block and drag it; the stick switches to splitting an edge"
+    controls = (("Trigger", "drag a point (or split an edge)"), ("A", "hold: off the grid"))
     options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
                ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),
                ToolOption("faces", "Faces", "choice", default=FACES[0], choices=FACES))

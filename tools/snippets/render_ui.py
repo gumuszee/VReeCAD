@@ -173,6 +173,14 @@ try:
         _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_feedback.png"))
     print("tooltip:", _s.ui.feedback._tooltip.label, "| toasts:", [t.text for t in _s.ui.toasts.items])
+    # the controls cards over both controllers, for the Move tool
+    _s.select_tool("move")
+    _s.ui.help.show()
+    for _ in range(12):
+        _s.frame(0.02)
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_controls.png"))
+    _s.ui.help.hide()
+    _s.frame(0.02)
 
     class _Sized(_tb.Tool):
         name, label = "sized", "Sized"
