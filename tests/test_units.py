@@ -49,6 +49,23 @@ class UnitsTest(unittest.TestCase):
         self.assertEqual(un.format_length(609.6, un.IMPERIAL), "2 ft")
         self.assertEqual(un.format_length(100.0, un.METRIC_MM, un.CM), "10 cm")
 
+    def test_the_resolution_of_a_value_decides_its_digits(self):
+        self.assertEqual(un.format_length(100.4, un.METRIC_MM, resolution_mm=0.1), "100.4 mm")
+        self.assertEqual(un.format_length(100.0, un.METRIC_MM, resolution_mm=0.1), "100 mm")
+        self.assertEqual(un.format_length(23.05, un.METRIC_MM, resolution_mm=0.01), "23.05 mm")
+        self.assertEqual(un.format_length(100.4, un.METRIC_MM, resolution_mm=1.0), "100 mm")
+        self.assertEqual(un.format_length(1234.5, un.METRIC_MM, resolution_mm=0.1), "1.2345 m")
+        self.assertEqual(un.format_length(142.0, un.METRIC_MM, resolution_mm=0.05), "142 mm")
+
+    def test_lengths_under_a_millimetre_can_be_decimals_of_a_millimetre(self):
+        decimal = un.without_micrometres(un.METRIC_MM)
+        self.assertEqual(un.format_length(0.25, decimal), "0.25 mm")
+        self.assertEqual(un.format_length(0.0, decimal), "0 mm")
+        self.assertEqual(un.format_length(0.25, un.METRIC_MM), "250 µm")
+        self.assertEqual(un.format_length(1250.0, decimal), "1.25 m")
+        self.assertIs(un.without_micrometres(un.IMPERIAL), un.IMPERIAL)
+        self.assertEqual(un.ruler_spec(decimal, 0.03).unit, un.MM)
+
     def test_ruler_spec_falls_on_round_numbers(self):
         spec = un.ruler_spec(un.METRIC_MM, 23.0)
         self.assertEqual((spec.unit.symbol, spec.step_mm, spec.minor_mm), ("mm", 20.0, 5.0))

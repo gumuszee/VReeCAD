@@ -307,7 +307,7 @@ class ValueEditor:
     def text_of(self, field):
         """The value as text; a zero is in the unit of the system that suits a length of 100 mm (not in micrometres)."""
         unit = units.unit_for(self.system, 100.0) if field.value == 0 else None
-        return units.format_length(field.value, self.system, unit)
+        return units.format_length(field.value, self.system, unit, self.step)
 
     def select(self, index):
         """Pick a value (clamped); typing starts again."""

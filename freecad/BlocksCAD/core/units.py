@@ -83,20 +83,31 @@ def nice_step(target):
     return best[1] * 10.0 ** best[2]
 
 
-def format_number(value):
-    """About three significant digits, without trailing zeros: 142, 14.2, 1.42, 0.5."""
+def without_micrometres(system):
+    """`system` with its lengths under a millimetre in millimetres (0.25 mm), not in micrometres."""
+    steps = tuple((threshold, MM if unit is UM else unit) for threshold, unit in system.steps)
+    return system if steps == system.steps else MeasureSystem(system.name + ", decimal mm", steps)
+
+
+def format_number(value, resolution=None):
+    """About three significant digits, without trailing zeros: 142, 14.2, 1.42, 0.5. With a `resolution` (the smallest change that is
+    shown, in the same unit) the digits needed for it are shown too: 100.4 for a resolution of 0.1."""
     a = abs(value)
     digits = 0 if a >= 100 else 1 if a >= 10 else 2 if a >= 1 else 3
+    if resolution is not None and 0.0 < resolution < 1.0:
+        digits = max(digits, math.ceil(-math.log10(resolution) - 1e-9))
     text = f"{value:.{digits}f}"
     if "." in text:
         text = text.rstrip("0").rstrip(".")
     return "0" if text in ("-0", "") else text
 
 
-def format_length(length_mm, system, unit=None):
-    """"142 mm", "1.25 m" ...; `unit` forces a unit, otherwise the one that suits the length."""
+def format_length(length_mm, system, unit=None, resolution_mm=None):
+    """"142 mm", "1.25 m" ...; `unit` forces a unit, otherwise the one that suits the length; `resolution_mm` is the smallest change
+    that is shown (a step of a value), whose digits are shown whatever the length."""
     unit = unit or unit_for(system, length_mm)
-    return f"{format_number(length_mm / unit.mm)} {unit.symbol}"
+    resolution = None if resolution_mm is None else resolution_mm / unit.mm
+    return f"{format_number(length_mm / unit.mm, resolution)} {unit.symbol}"
 
 
 @dataclass(frozen=True)

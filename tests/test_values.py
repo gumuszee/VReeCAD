@@ -362,6 +362,13 @@ class EditorTest(unittest.TestCase):
         self.editor.nudge(1)
         self.assertAlmostEqual(self.target.values["a"], 23.1)
 
+    def test_the_readout_shows_the_digits_of_the_step(self):
+        value = v.Field("a", "A", 123.4)
+        self.editor.set_step(3)                                                # 0.1 mm
+        self.assertEqual(self.editor.text_of(value), "123.4 mm")
+        self.editor.set_step(7)                                                # a step of a millimetre or more shows whole numbers
+        self.assertEqual(self.editor.text_of(value), "123 mm")
+
     def test_the_picked_value_goes_round_the_values(self):
         self.assertEqual(self.editor.selected, 0)
         self.assertTrue(self.editor.select_next(-1))

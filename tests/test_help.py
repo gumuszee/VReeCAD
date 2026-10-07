@@ -76,6 +76,12 @@ class HandednessSettingTest(unittest.TestCase):
         self.assertEqual(cfg.Settings.from_json(json.dumps({"tool_hand": "both"})).tool_hand, "right")
         self.assertEqual(cfg.Settings.from_json(json.dumps({"tip_angle": 20})).tool_hand, "right")
 
+    def test_small_lengths_are_decimals_of_a_millimetre_unless_the_setting_says_micrometres(self):
+        self.assertEqual(cfg.Settings().sub_mm, "mm")
+        self.assertEqual(cfg.Settings.from_json(cfg.Settings(sub_mm="um").to_json()).sub_mm, "um")
+        self.assertEqual(cfg.Settings.from_json(json.dumps({"sub_mm": "nm"})).sub_mm, "mm")
+        self.assertEqual(cfg.Settings.from_json(json.dumps({"tip_angle": 20})).sub_mm, "mm")
+
 
 if __name__ == "__main__":
     unittest.main()
