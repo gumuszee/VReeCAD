@@ -1,7 +1,0 @@
-; metadata.txt
-[general]
-name=Virtual Reality
-description=Virtual Reality workbench
-[dependencies]
-pylibs=pyopenxr,PyOpenGL
-workbenches=

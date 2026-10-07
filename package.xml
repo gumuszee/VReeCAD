@@ -12,7 +12,7 @@
 
   <version>0.1.0</version>
 
-  <date>2026-10-06</date>
+  <date>2026-10-07</date>
 
   <maintainer email="vojtech.tuma@inventi.cz">Vojtech Tuma</maintainer>
 
@@ -21,6 +21,8 @@
   <license file="LICENSE">LGPL-3.0-or-later</license>
 
   <pythonmin>3.11.0</pythonmin>
+
+  <freecadmin>1.1.0</freecadmin>
 
   <url branch="main" type="repository">https://github.com/gumuszee/BlocksCAD_VR</url>
 
@@ -32,10 +34,13 @@
 
   <content>
     <workbench>
+      <name>BlocksCAD</name>
+      <description>Parametric CAD modelling in virtual reality: create, select, move, push and pull, edit points and sketch with controllers.</description>
+      <icon>Resources/Gui/Resources/icons/preferences-virtual_reality.svg</icon>
       <classname>BlocksCADWorkbench</classname>
       <subdirectory>./</subdirectory>
-      <depend>pyopenxr</depend>
-      <depend>PyOpenGL</depend>
+      <depend type="python">pyopenxr</depend>
+      <depend type="python">PyOpenGL</depend>
     </workbench>
   </content>
 

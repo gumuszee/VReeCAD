@@ -28,9 +28,11 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Runtime controller models displayed at both controllers in the headset, animated with input | Verified | owner-confirmed, alignment identical to the controllers of the Steam overlay |
 | Offscreen render of the document scene from an arbitrary camera pose to PNG | Verified | `tools/snippets/offscreen_render.py` |
 | Sim backend: scripted head and controller poses and inputs, edge events, offscreen mono and stereo render of the document scene with controller shapes | Verified | `backends/sim.py`, `tools/snippets/sim_demo.py`, `tests/live/test_coin.py` |
-| Unit tests without FreeCAD (input, profiles, glTF, Sim math, tool registry, navigation, units, pointing, carousel, layout, sliders, face moves, quick radial, toasts, undo button, tool options, keypad expressions, value editor, value module) | Verified | 494 tests: `"%LOCALAPPDATA%\Programs\FreeCAD 1.1\bin\python.exe" -m unittest discover -s tests` |
+| Unit tests without FreeCAD (input, profiles, glTF, Sim math, tool registry, navigation, units, pointing, carousel, layout, sliders, face moves, quick radial, toasts, undo button, tool options, keypad expressions, value editor, value module) | Verified | 499 tests: `"%LOCALAPPDATA%\Programs\FreeCAD 1.1\bin\python.exe" -m unittest discover -s tests` |
 | Unit tests with the live GUI (glTF to Coin loader, generated controller shape, Sim session render, interface scene graph, radial, face moves, undo button, toasts, tooltips and option readout through the controller) | Verified | 131 tests: `tools/snippets/run_live_tests.py`, headless `tools/run_headless_tests.py --render` |
 | Import check of the sources | Verified | `tools/lint_imports.py` reports no problem |
+| Addon metadata (`package.xml`): read by FreeCAD's `App.Metadata` without error, names the workbench class, icon and licence file that exist, declares `pyopenxr` and `PyOpenGL` as Python dependencies | Verified | `tests/test_package.py`, `FreeCADCmd` on FreeCAD 1.1.4 |
+| Installing through the Addon Manager as a custom repository, and the Python packages it installs | Unverified | never run; the Addon Manager of FreeCAD 1.1.4 has not been tried against the repository |
 | Dev remote control (`tools/fc_rpc.py`, MCP smoke test) | Verified | `tools/mcp_smoke_test.py` passes end to end |
 | Meta Quest / Index / Vive / WMR / Pico controllers | Unverified | bindings exist for the profiles; no device tested |
 | Performance with large scenes | Unverified | |

@@ -64,3 +64,11 @@ tools\start-freecad.ps1
 uv run --directory refs/freecad-mcp python ../../tools/mcp_smoke_test.py   # whole MCP chain
 & "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" tools\xr_probe.py # OpenXR runtime/HMD check
 ```
+
+## Installing as an addon
+
+The repository root is the addon (`package.xml`, `freecad/BlocksCAD/`, `Resources/`). `package.xml` names the workbench class `BlocksCADWorkbench`, the icon, the licence file, `freecadmin` 1.1.0 and `pythonmin` 3.11.0, and declares `pyopenxr` and `PyOpenGL` as Python dependencies (`type="python"`). `tests/test_package.py` checks that the files it names exist and that the declared packages are the ones the code needs; FreeCAD's own `App.Metadata` reads it without error (FreeCAD 1.1.4).
+
+- **Addon Manager (custom repository):** Edit, Preferences, Addon Manager, Custom repositories: add `https://github.com/gumuszee/BlocksCAD_VR` with the branch `main`, then install BlocksCAD from the list. The Addon Manager offers to install the two Python packages.
+- **By hand:** put (or link) the repository folder into the `Mod` directory of the FreeCAD user data folder and install the two packages into FreeCAD's Python (`tools/bootstrap.ps1` does both for the development setup).
+- An OpenXR runtime with `XR_KHR_opengl_enable` is needed; the workbench is `BlocksCAD`, its command "Open XR viewer" starts the session.
