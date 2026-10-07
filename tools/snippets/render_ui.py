@@ -409,6 +409,14 @@ try:
         for _ in range(12):
             _s.frame(0.02)
         _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_sketch_plane.png"))
+        _sketch_services = _s.tool_manager.active.ctx.services
+        _sketch_services["guide_anchors"] = lambda exclude: ([(300.0, 0.0, 0.0), (300.0, 300.0, 300.0), (0.0, 0.0, 300.0)], 12.0)
+        _cursor((296.0, -30.0, 160.0))                      # the corners of the test cube are anchors, seen on the plane of the sketch
+        for _ in range(12):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_sketch_guides.png"))
+        del _sketch_services["guide_anchors"]
+        _cursor((250.0, -30.0, 160.0))
         _cursor((250.0, -30.0, 160.0), trigger=1.0)
         _cursor((450.0, 30.0, 160.0), trigger=1.0)
         for _ in range(3):

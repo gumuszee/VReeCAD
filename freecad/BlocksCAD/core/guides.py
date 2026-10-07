@@ -36,27 +36,56 @@ class Guide:
 
     @property
     def text(self):
-        return "On the point" if self.kind == "point" else f"Aligned {AXIS_NAMES[self.axis]}"
+        if self.kind == "point":
+            return "On the point"
+        return f"Aligned {AXIS_NAMES[self.axis]}" if 0 <= self.axis < 3 else "Aligned"
 
 
 def _distance_squared(a, b):
     return sum((x - y) ** 2 for x, y in zip(a, b))
 
 
-def align(raw, grid_point, anchors, tolerance):
+def align(raw, grid_point, anchors, tolerance, axes=(0, 1, 2)):
     """(point, guides) for a cursor at `raw` that the grid rounds to `grid_point`: see the module text. `tolerance` is how far in
-    millimetres a coordinate may be from the one of an anchor to line up with it."""
-    nearest: List[Optional[tuple]] = []
-    for axis in range(3):
+    millimetres a coordinate may be from the one of an anchor to line up with it. Only the coordinates in `axes` line up; the point is
+    an anchor when one anchor matches on all of them."""
+    nearest: List[Optional[tuple]] = [None, None, None]
+    for axis in axes:
         best, best_distance = None, None
         for anchor in anchors:
             if abs(anchor[axis] - raw[axis]) < tolerance:
                 distance = _distance_squared(anchor, raw)
                 if best is None or distance < best_distance:
                     best, best_distance = anchor, distance
-        nearest.append(best)
-    if nearest[0] is not None and nearest[0] == nearest[1] == nearest[2]:
-        return tuple(nearest[0]), [Guide("point", -1, tuple(nearest[0]), tuple(nearest[0]))]
+        nearest[axis] = best
+    first = nearest[axes[0]]
+    if first is not None and all(nearest[axis] == first for axis in axes):
+        return tuple(first), [Guide("point", -1, tuple(first), tuple(first))]
     point = tuple(nearest[axis][axis] if nearest[axis] is not None else grid_point[axis] for axis in range(3))
-    guides = [Guide("axis", axis, tuple(nearest[axis]), point) for axis in range(3) if nearest[axis] is not None]
+    guides = [Guide("axis", axis, tuple(nearest[axis]), point) for axis in axes if nearest[axis] is not None]
     return point, guides
+
+
+OFF_AXIS = 3                          # the `axis` of a guide along a direction of a face that is no axis of the document
+
+
+def flatten(anchors, to_local):
+    """The anchors seen on a plane: each one in the coordinates `to_local` gives, as (x, y, 0), a position once."""
+    seen, flat = set(), []
+    for anchor in anchors:
+        x, y, _ = to_local(anchor)
+        key = (round(x, 4), round(y, 4))
+        if key not in seen:
+            seen.add(key)
+            flat.append((x, y, 0.0))
+    return flat
+
+
+def align_plane(raw, grid_point, flat, tolerance, to_world, world_axes):
+    """`align` for a point that moves on a plane. `raw` and `grid_point` are (x, y) on the plane, `flat` the anchors of `flatten`;
+    returns ((x, y), guides) with the guides in the document (`to_world` of the plane) and `world_axes` giving for the x and the y of
+    the plane the axis of the document it runs along (or `OFF_AXIS`), which sets the colour of the guide."""
+    point, found = align((raw[0], raw[1], 0.0), (grid_point[0], grid_point[1], 0.0), flat, tolerance, axes=(0, 1))
+    guides = [Guide(g.kind, g.axis if g.kind == "point" else world_axes[g.axis], tuple(to_world(g.anchor)), tuple(to_world(g.point)))
+              for g in found]
+    return (point[0], point[1]), guides

@@ -587,6 +587,7 @@ class XRwidget(QOpenGLWidget):
                                                                         self.input_frame.hands[hand].aim.orientation),
             "mm_per_metre": self.context_mm_per_metre,
             "guides": self.align_point,
+            "guide_anchors": self.guide_anchors,
             "toast": self.ui.toast,
             "readout": self.ui.set_readout,
             "format_length": lambda mm: units.format_length(mm, self.ui.system),
@@ -595,11 +596,16 @@ class XRwidget(QOpenGLWidget):
     def align_point(self, raw, point, exclude=()):
         """(point, guides) for a cursor at `raw` rounded to the grid as `point`: lined up with the vertices and straight edge middles of the
         visible objects (except those in `exclude`) within `GUIDE_REACH` of hand space (docs/ux-design.md, Guides)."""
+        anchors, tolerance = self.guide_anchors(exclude)
+        return guides.align(raw, point, anchors, tolerance) if anchors else (point, [])
+
+    def guide_anchors(self, exclude=()):
+        """(anchors, reach in millimetres) that a tool lines a point up with: the vertices and straight edge middles of the visible
+        objects of the active document except those in `exclude`."""
         doc = App.ActiveDocument
         if doc is None:
-            return point, []
-        tolerance = GUIDE_REACH * self.context_mm_per_metre()
-        return guides.align(raw, point, self.anchor_cache.get(doc, exclude), tolerance)
+            return [], 0.0
+        return self.anchor_cache.get(doc, exclude), GUIDE_REACH * self.context_mm_per_metre()
 
     def context_mm_per_metre(self):
         return 1.0 / (self.doc_xr_transform.scaleFactor.getValue()[0] * self.navigator.world.scale)

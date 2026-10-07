@@ -39,3 +39,50 @@ class AlignTest(unittest.TestCase):
 
     def test_nothing_to_align_with(self):
         self.assertEqual(guides.align((1.0, 2.0, 3.0), (0.0, 0.0, 0.0), [], 5.0), ((0.0, 0.0, 0.0), []))
+
+    def test_only_the_listed_axes_line_up(self):
+        anchors = [(100.0, 50.0, 49.0), (0.0, 0.0, 49.0)]
+        point, found = guides.align((101.0, 1.0, 49.0), (100.0, 0.0, 70.0), anchors, 5.0, axes=(0, 1))
+        self.assertEqual(point, (100.0, 0.0, 70.0))                         # z is not lined up although an anchor has it
+        self.assertEqual(sorted(g.axis for g in found), [0, 1])
+        self.assertEqual([g.kind for g in found], ["axis", "axis"])         # the z of the anchor does not make it a point guide on two axes of three...
+
+
+class PlaneTest(unittest.TestCase):
+    """A plane that is the XZ plane of the document: x of the plane is X, y of the plane is Z, its z is -Y."""
+    @staticmethod
+    def to_local(p):
+        return (p[0], p[2], -p[1])
+
+    @staticmethod
+    def to_world(p):
+        return (p[0], -p[2], p[1])
+
+    def test_anchors_are_seen_on_the_plane_once_each(self):
+        flat = guides.flatten([(10.0, 5.0, 20.0), (10.0, 99.0, 20.0), (3.0, 0.0, 4.0)], self.to_local)
+        self.assertEqual(flat, [(10.0, 20.0, 0.0), (3.0, 4.0, 0.0)])
+
+    def test_a_coordinate_on_the_plane_lines_up_and_the_guide_is_in_the_document(self):
+        flat = guides.flatten([(100.0, 70.0, 40.0)], self.to_local)
+        point, found = guides.align_plane((101.0, 10.0), (100.0, 10.0), flat, 5.0, self.to_world, (0, 2))
+        self.assertEqual(point, (100.0, 10.0))
+        (guide,) = found
+        self.assertEqual((guide.kind, guide.axis), ("axis", 0))
+        self.assertEqual(guide.anchor, (100.0, 0.0, 40.0))
+        self.assertEqual(guide.point, (100.0, 0.0, 10.0))
+
+    def test_the_second_axis_of_the_plane_is_named_by_the_axis_of_the_document(self):
+        flat = [(0.0, 40.0, 0.0)]
+        _, found = guides.align_plane((60.0, 41.0), (60.0, 40.0), flat, 5.0, self.to_world, (0, 2))
+        self.assertEqual([g.axis for g in found], [2])
+
+    def test_one_anchor_on_both_axes_is_a_point_guide_on_the_plane(self):
+        flat = [(30.0, 40.0, 0.0)]
+        point, found = guides.align_plane((31.0, 39.0), (30.0, 40.0), flat, 5.0, self.to_world, (0, 2))
+        self.assertEqual(point, (30.0, 40.0))
+        self.assertEqual([(g.kind, g.axis) for g in found], [("point", -1)])
+
+    def test_a_direction_of_a_face_that_is_no_axis_has_its_own_colour_key(self):
+        flat = [(0.0, 40.0, 0.0)]
+        _, found = guides.align_plane((60.0, 41.0), (60.0, 40.0), flat, 5.0, self.to_world, (3, 3))
+        self.assertEqual((found[0].axis, found[0].text), (guides.OFF_AXIS, "Aligned"))

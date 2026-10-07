@@ -1280,6 +1280,28 @@ class MoveLiveTest(unittest.TestCase):
         xz = self.sketch_on("XZ", (0.0, 0.0, 0.0))
         self.assertEqual(tuple(round(c, 6) for c in sketching.to_world(xz, (10.0, 20.0, 0.0))), (10.0, 0.0, 20.0))   # x to X, y to Z
 
+    def test_frames_of_planes_and_sketches_agree_and_name_the_axes_of_the_document(self):
+        from freecad.BlocksCAD.cad import sketching
+        for plane, axes in (("XY", (0, 1)), ("XZ", (0, 2)), ("YZ", (1, 2))):
+            frame = sketching.plane_frame(plane, (5.0, 44.0, 7.0), 10.0)
+            sketch = self.sketch_on(plane, (5.0, 44.0, 7.0))
+            self.assertEqual(sketching.world_axes(frame), axes)
+            world = sketching.frame_to_world(frame, (10.0, 20.0, 0.0))
+            self.assertEqual(tuple(round(c, 6) for c in sketching.to_world(sketch, (10.0, 20.0, 0.0))), tuple(round(c, 6) for c in world))
+            self.assertEqual(tuple(round(c, 6) for c in sketching.frame_to_local(frame, world)), (10.0, 20.0, 0.0))
+        tilted = (((0.0, 0.0, 0.0)), (0.0, 0.3826834, 0.0, 0.9238795))                      # 45 degrees about Y
+        self.assertEqual(sketching.world_axes(tilted), (3, 1))
+
+    def test_the_own_points_of_a_sketch_leave_out_the_dragged_point_and_those_that_move_with_it(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        first, _ = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
+        points = sketching.own_points(sketch)
+        self.assertEqual(len(points), 8)                                                     # a corner is the end of two lines
+        apart = sketching.own_points(sketch, (first, 1))
+        self.assertEqual(len(apart), 6)
+        self.assertNotIn((10.0, 10.0, 0.0), [tuple(round(c, 6) for c in p) for p in apart])
+
     def test_a_rectangle_is_four_joined_horizontal_and_vertical_lines_with_free_size_and_position(self):
         from freecad.BlocksCAD.cad import sketching
         sketch = self.sketch_on()

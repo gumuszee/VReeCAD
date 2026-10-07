@@ -65,26 +65,59 @@ def placement(sketch):
     return tuple(p.Base), (q[0], q[1], q[2], q[3])
 
 
+def frame_to_local(frame, point):
+    """A document point in the coordinates of `frame` ((base, rotation) as `placement` gives them)."""
+    base, rotation = frame
+    return mu.rotate(mu.quat_conjugate(rotation), mu.sub(point, base))
+
+
+def frame_to_world(frame, point):
+    """A point of `frame` in the document."""
+    base, rotation = frame
+    return mu.add(base, mu.rotate(rotation, point))
+
+
 def to_local(sketch, point):
     """A document point in the coordinates of a sketch (x and y on the plane, z off it)."""
-    base, rotation = placement(sketch)
-    return mu.rotate(mu.quat_conjugate(rotation), mu.sub(point, base))
+    return frame_to_local(placement(sketch), point)
 
 
 def to_world(sketch, point):
     """A point of a sketch (x, y, z) in the document."""
-    base, rotation = placement(sketch)
-    return mu.add(base, mu.rotate(rotation, point))
+    return frame_to_world(placement(sketch), point)
+
+
+def plane_frame(plane, point, grid):
+    """The frame of a new sketch on `plane` at the height of `point` (document millimetres) along the normal, rounded to the grid."""
+    normal = plane_normal(plane)
+    height = round(mu.dot(point, normal) / grid) * grid
+    return mu.mul(normal, height), PLANE_ROTATION[plane]
+
+
+def world_axes(frame):
+    """For the x and the y of `frame` the axis of the document (0, 1 or 2) it runs along, or 3 when it runs along none."""
+    axes = []
+    for unit in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)):
+        direction = mu.rotate(frame[1], unit)
+        axes.append(next((i for i in range(3) if abs(direction[i]) > 0.999), 3))
+    return tuple(axes)
+
+
+def own_points(sketch, apart_from=None):
+    """The points of the geometry of a sketch as (x, y, 0), except those at the position of the point `apart_from` ((geometry id,
+    position id)): a point that is dragged does not line up with itself or with the points that move with it."""
+    found = existing(sketch)
+    skip = next((at for geo, pos, at in found.points if (geo, pos) == apart_from), None)
+    return [(at[0], at[1], 0.0) for _, _, at in found.points if skip is None or math.dist(at, skip) > 1e-6]
 
 
 # making sketches
 def create_on_plane(doc, plane, point, grid):
     """A sketch on `plane` at the height of `point` (document millimetres) along the normal, rounded to the grid."""
     import FreeCAD as App
-    normal = plane_normal(plane)
-    height = round(mu.dot(point, normal) / grid) * grid
+    base, rotation = plane_frame(plane, point, grid)
     sketch = doc.addObject(TYPE, "Sketch")
-    sketch.Placement = App.Placement(App.Vector(*mu.mul(normal, height)), App.Rotation(*PLANE_ROTATION[plane]))
+    sketch.Placement = App.Placement(App.Vector(*base), App.Rotation(*rotation))
     return sketch
 
 

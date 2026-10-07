@@ -32,6 +32,7 @@ import math
 
 from freecad.BlocksCAD.cad import sketching
 from freecad.BlocksCAD.cad.meshes import Mesh
+from freecad.BlocksCAD.core import guides
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
@@ -63,6 +64,7 @@ class SketchTool(TouchTool):
         self._plane = 0               # index into `sketching.PLANES`: the plane of the next new sketch
         self._gesture = None
         self._handles_key = None
+        self._flat_source = self._flat_frame = self._flat = None    # the anchors of the model on the plane being drawn on, kept per frame
 
     @property
     def busy(self):
@@ -157,6 +159,7 @@ class SketchTool(TouchTool):
         super().deactivate()
 
     def _hide_preview(self):
+        self.hide_guides()
         ghost = self._ghost()
         if ghost is not None:
             ghost.hide_shape()
@@ -195,6 +198,22 @@ class SketchTool(TouchTool):
     def _snap2(self, point):
         return (snapping.snap(point[0], self.grid), snapping.snap(point[1], self.grid))
 
+    def _align2(self, frame, local, sketch=None, apart_from=None):
+        """((x, y), guides) for a cursor at `local` (x and y of `frame`): the grid point lined up with the points of the model and of the
+        sketch (service `guide_anchors`; a sketch is left out of the model's points and read live: the point `apart_from` of it, and those
+        that move with it, are not anchors). The guides are in the document; the same grid point and no guides without the service."""
+        snapped = self._snap2(local)
+        service = self._service("guide_anchors")
+        if service is None or frame is None:
+            return snapped, []
+        sk = self._sk()
+        anchors, tolerance = service((sketch.Name,) if sketch is not None else ())
+        if self._flat_source is not anchors or self._flat_frame != frame:
+            self._flat_source, self._flat_frame = anchors, frame
+            self._flat = guides.flatten(anchors, lambda p: sk.frame_to_local(frame, p))
+        flat = self._flat + (sk.own_points(sketch, apart_from) if sketch is not None else [])
+        return guides.align_plane(local, snapped, flat, tolerance, lambda p: sk.frame_to_world(frame, p), sk.world_axes(frame))
+
     def _show_cursor(self, doc, raw, free):
         """The cross where a press would start; with no current sketch the square that shows the plane of the new one."""
         ghost = self._ghost()
@@ -203,18 +222,22 @@ class SketchTool(TouchTool):
         if not free:
             self._hide_preview()
             return
+        sk = self._sk()
         sketch = self._current(doc)
-        if sketch is not None:
-            x, y = self._snap2(self._sk().to_local(sketch, raw))
-            ghost.show_marker(self._sk().to_world(sketch, (x, y, 0.0)), self.grid * 0.75)
-            ghost.hide_shape()
+        if sketch is not None or self._hover is None:
+            frame = sk.placement(sketch) if sketch is not None else sk.plane_frame(self.plane, raw, self.grid)
+            (x, y), found = self._align2(frame, sk.frame_to_local(frame, raw), sketch)
+            point = sk.frame_to_world(frame, (x, y, 0.0))
+            self.show_guides(found, self.grid * 0.5)
+            ghost.show_marker(point, self.grid * 0.75)
+            if sketch is not None:
+                ghost.hide_shape()
+            else:
+                ghost.show_shape(Mesh(outline=[plane_square(self.plane, point, self.grid * PLANE_HALF_CELLS)]))
             return
-        point = snapping.snap_point(raw, self.grid)
-        ghost.show_marker(point, self.grid * 0.75)
-        if self._hover is not None:
-            ghost.hide_shape()
-        else:
-            ghost.show_shape(Mesh(outline=[plane_square(self.plane, point, self.grid * PLANE_HALF_CELLS)]))
+        self.hide_guides()
+        ghost.show_marker(snapping.snap_point(raw, self.grid), self.grid * 0.75)
+        ghost.hide_shape()
 
     def _press_draw(self, doc, pick, raw):
         sk = self._sk()
@@ -229,7 +252,8 @@ class SketchTool(TouchTool):
             doc.recompute()
         else:
             doc.openTransaction(f"Draw {self.values['mode']}")
-        start = self._snap2(sk.to_local(sketch, raw))
+        frame = sk.placement(sketch)
+        start, _ = self._align2(frame, sk.frame_to_local(frame, raw), sketch)
         self._gesture = {"sketch": sketch.Name, "created": created, "start": start, "now": start, "kind": self.values["mode"]}
         self._forget_hover()
         self._hide_preview()
@@ -266,7 +290,12 @@ class SketchTool(TouchTool):
         if not hand.down("trigger"):                        # released: the shape is what the last frame left (A may let go in the same frame)
             self._finish_draw(doc, sketch, state)
             return
-        now = (local[0], local[1]) if hand.down("button1") else self._snap2(local)
+        if hand.down("button1"):
+            now = (local[0], local[1])
+            self.hide_guides()
+        else:
+            now, found = self._align2(sk.placement(sketch), local, sketch)
+            self.show_guides(found, self.grid * 0.5)
         if now != state["now"]:
             state["now"] = now
             self._haptic(0.08, 0.008)
@@ -337,6 +366,7 @@ class SketchTool(TouchTool):
         if not hand.down("trigger"):
             self._gesture = None
             self._readout(None)
+            self.hide_guides()
             if state["changed"]:
                 doc.commitTransaction()
                 self._toast(f"Moved a point of {sketch.Label}")
@@ -345,8 +375,13 @@ class SketchTool(TouchTool):
                 doc.abortTransaction()
             self._select(doc, [(sketch.Name, "")])
             return
-        target = (local[0], local[1]) if hand.down("button1") else self._snap2(local)
         geo, pos = state["edit"]
+        if hand.down("button1"):
+            target = (local[0], local[1])
+            self.hide_guides()
+        else:
+            target, found = self._align2(sk.placement(sketch), local, sketch, (geo, pos))
+            self.show_guides(found, self.grid * 0.5)
         error = sk.move_point(doc, sketch, geo, pos, target)
         if error is not None:
             self._readout(error)

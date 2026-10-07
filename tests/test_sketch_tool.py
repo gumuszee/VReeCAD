@@ -83,6 +83,16 @@ class FakeSketching:
     def to_world(self, sketch, point):
         return tuple(point)
 
+    IDENTITY = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+    placement = staticmethod(lambda sketch: FakeSketching.IDENTITY)
+    plane_frame = staticmethod(lambda plane, point, grid: FakeSketching.IDENTITY)
+    frame_to_local = staticmethod(lambda frame, point: tuple(point))
+    frame_to_world = staticmethod(lambda frame, point: tuple(point))
+    world_axes = staticmethod(lambda frame: (0, 1))
+
+    def own_points(self, sketch, apart_from=None):
+        return [(at[0], at[1], 0.0) for key, at in sketch.points.items() if key != apart_from]
+
     def add_line(self, doc, sketch, p0, p1):
         sketch.shapes.append(("Line", p0, p1))
         sketch.points[(len(sketch.shapes) - 1, 1)], sketch.points[(len(sketch.shapes) - 1, 2)] = p0, p1
@@ -142,7 +152,7 @@ class FakeHighlights(FakeLayer):
 
 class FakeGhost:
     def __init__(self):
-        self.shapes, self.markers = [], []
+        self.shapes, self.markers, self.guide_calls = [], [], []
 
     def show_shape(self, mesh):
         self.shapes.append(mesh)
@@ -155,6 +165,12 @@ class FakeGhost:
 
     def hide_marker(self):
         pass
+
+    def show_guides(self, guides, half):
+        self.guide_calls.append(list(guides))
+
+    def hide_guides(self):
+        self.guide_calls.append([])
 
 
 class SketchToolTest(unittest.TestCase):
@@ -293,6 +309,44 @@ class SketchToolTest(unittest.TestCase):
         self.tool._press_edit(self.doc, picked, (0.0, 0.0, 0.0))
         self.assertEqual(self.toasts[-1], "Dimension length = 10 mm")
         self.assertEqual(self.doc.log, [("open", "Dimension"), ("commit",)])
+
+    def with_anchors(self, anchors, reach=5.0):
+        self.tool.ctx.services["guide_anchors"] = lambda exclude: (anchors, reach)
+
+    def test_the_start_and_the_end_of_a_rectangle_line_up_with_the_model_and_the_guides_are_drawn(self):
+        self.with_anchors([(7.0, 0.0, 0.0), (0.0, 33.0, 0.0)])
+        self.drag((6.0, 32.0, 0.0), (61.0, 41.0, 0.0), release=False)
+        self.assertEqual(self.tool._gesture["start"], (7.0, 33.0))                  # the grid point (0, 0) is not what the cursor lines up with
+        self.assertTrue(self.ghost.guide_calls[-1] == [])                           # the end has nothing near
+        self.cursor = [8.0, 41.0, 0.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.tool._gesture["now"], (7.0, 40.0))
+        (guide,) = self.ghost.guide_calls[-1]
+        self.assertEqual((guide.kind, guide.axis, guide.anchor), ("axis", 0, (7.0, 0.0, 0.0)))
+
+    def test_the_cursor_of_a_new_sketch_shows_the_guides_and_the_a_button_leaves_them(self):
+        self.with_anchors([(7.0, 0.0, 0.0)])
+        self.cursor = [8.0, 41.0, 0.0]
+        self.sim.set_hand(1, trigger=0.0, button1=False)
+        self.frames()
+        self.assertEqual(self.ghost.markers[-1], (7.0, 40.0, 0.0))
+        self.assertEqual(len(self.ghost.guide_calls[-1]), 1)
+        self.drag((8.0, 41.0, 0.0), (61.0, 73.0, 0.0), button1=True)
+        self.assertEqual(self.sketches()[0].shapes, [("Rectangle", (7.0, 40.0), (61.0, 73.0))])      # the start is on the guides, the end is free
+        self.assertEqual(self.ghost.guide_calls[-1], [])
+
+    def test_a_point_of_the_sketch_lines_up_with_the_points_of_the_sketch_but_not_with_itself(self):
+        self.with_anchors([])
+        self.tool.values["mode"] = "Line"
+        self.drag((0.0, 0.0, 0.0), (50.0, 0.0, 0.0))
+        self.tool.values["mode"] = "Edit"
+        self.drag((50.0, 0.0, 0.0), (3.0, 52.0, 0.0), release=False)
+        self.assertEqual(self.tool._gesture["now"], (0.0, 50.0))                    # x lines up with the other end of the line
+        (guide,) = self.ghost.guide_calls[-1]
+        self.assertEqual((guide.kind, guide.axis, guide.anchor), ("axis", 0, (0.0, 0.0, 0.0)))
+        self.cursor = [47.0, 2.0, 0.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.tool._gesture["now"], (50.0, 0.0))                    # its own old place is no anchor: only the grid and the other end
 
     def test_the_disc_has_the_grid_and_the_four_modes_and_the_square_shows_the_plane(self):
         labels = [slot.label for slot in self.tool.disc_slots()]

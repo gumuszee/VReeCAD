@@ -33,7 +33,7 @@ EDGE_HIDDEN = (0.25, 0.4, 0.65)
 EDGE_WIDTH = 2.0
 OUTLINE = (0.95, 0.65, 0.10)
 MARKER = (0.95, 0.65, 0.10)
-GUIDE_COLOURS = {0: (0.95, 0.35, 0.35), 1: (0.40, 0.85, 0.40), 2: (0.45, 0.60, 1.0), -1: MARKER}   # X, Y and Z of the document, a point
+GUIDE_COLOURS = {0: (0.95, 0.35, 0.35), 1: (0.40, 0.85, 0.40), 2: (0.45, 0.60, 1.0), 3: (0.85, 0.85, 0.85), -1: MARKER}   # X, Y and Z of the document, a direction of a face, a point
 GUIDE_WIDTH = 2.0
 GUIDE_DIM = 0.45          # the part of a guide that lies behind the model is this much darker
 
