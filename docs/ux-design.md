@@ -119,7 +119,7 @@ A slider is a face that takes a whole row of its panel: the label with the curre
 
 ### Rearranging panels
 
-Each panel has a title bar with a grip mark on its right. The layout of the palette carousel is a JSON document (`%APPDATA%\BlocksCAD\layout.json`, version 4; the values carousel keeps its own in `values_layout.json`, see Value panels): the panels in order, the side and the row of each panel, the face ids in each slot and the ids of the hidden faces. Defaults come from code. The initial layout has one panel per side.
+Each panel has a title bar with a grip mark on its right (a tap on the mark opens the panel editor, see Panel editor). The layout of the palette carousel is a JSON document (`%APPDATA%\BlocksCAD\layout.json`, version 5, with the optional hue of a panel; the values carousel keeps its own in `values_layout.json`, see Value panels): the panels in order, the side and the row of each panel, the face ids in each slot and the ids of the hidden faces. Defaults come from code. The initial layout has one panel per side.
 
 1. Point the tool hand at a title bar (it highlights) and **hold the trigger**: the panel lifts off the carousel and follows the laser as a small card. The panels close up and one extra empty side ("Drop here") is offered at the end of the carousel.
 2. **Turn the carousel** with the palette stick while holding, to bring the target side to the front (only sides facing the user can be pointed at).
@@ -129,6 +129,16 @@ Each panel has a title bar with a grip mark on its right. The layout of the pale
    - the empty slot of an empty side: that side, alone.
 4. **Release the trigger** to drop the panel. Releasing over nothing cancels.
 5. The layout is saved on every change. Stacking panels in rows and columns on one side puts every module in reach without turning the carousel. The **Reset layout** face restores the defaults of both carousels and removes the saved files.
+
+### Panel editor
+
+A **tap on the menu mark** (the three grooves, the hamburger) at the right end of the title bar of a panel of the palette carousel opens the panel editor, which renames the panel and gives it a colour. The mark lights up under the pointer; a press on it does not lift the panel (the rest of the title bar does) and the editor opens when the trigger is released over the same mark. OpenXR has no keyboard (the core specification, the EXT and Valve extensions have none; the one that exists, `XR_META_virtual_keyboard`, belongs to Meta runtimes), so the editor is a carousel of its own made of the same panels, `ui/panel_editor.py`:
+
+- **Keyboard:** three panels standing next to each other in the bottom row, a wide keyboard of 12 columns and 3 rows that reads across the panels (A to L, M to X, Y to 9). Letters are capitals at the start of the name and after a space, and small letters otherwise; the **Case** key keeps the capitals on.
+- **Name** (above the keyboard, left): the text field (the readout, with a cursor), **Space**, **Delete**, **Clear**, **Case**, **OK** and **Cancel**. A name has at most 16 characters (it has to fit the title bar) and needs a letter; the text starts as the name the panel has.
+- **Colour** (next to Name): **Auto** (the colour that the name gives the panel) and eleven hues. Every panel of the editor wears the colour that is chosen, so it is seen before OK.
+
+**OK** gives the panel the name and the colour, saves the layout and brings the carousel that was shown back, **Cancel** leaves the panel as it is. While the editor is open nothing on it can be lifted, the trigger of the palette hand does not swap carousels, and a selection that comes up waits: the values carousel is shown after the editor closes. The panels of the values carousel and the Value panel have no editor (their names are what the program finds them by). The name and the colour (`hue`) of a panel are part of the layout file (`layout.json`, version 5); a layout file of an older version is migrated to the default panels when it is read, and one of version 5 is left as the user made it. The same keyboard can serve other text later (naming a variable); nothing else uses it.
 
 ### Moving and hiding faces
 

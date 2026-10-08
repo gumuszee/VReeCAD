@@ -127,8 +127,8 @@ def migrate(layout, default):
     """Bring a saved layout up to the panels of `default`: the panel that held the pointer faces gets the pointer panel's own place when
     the layout has none (the faces move there), and the faces that the layout lacks come back through `Layout.add_missing`."""
     pointer = next((p for p in default.pages if p.name == "Pointer"), None)
-    if pointer is None or any(p.name == "Pointer" for p in layout.pages):
-        return False
+    if layout.version >= 5 or pointer is None or any(p.name == "Pointer" for p in layout.pages):
+        return False                                    # a layout of version 5 may have a panel renamed: its panels are what the user made
     moved = [f for f in pointer.slots if f]
     kept = Page("Pointer", [None if f in layout.hidden else f for f in pointer.slots])
     for page in layout.pages:

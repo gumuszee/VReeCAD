@@ -59,7 +59,7 @@ class MigrationTest(unittest.TestCase):
         return layout
 
     def test_the_session_panel_is_the_settings_panel_and_the_pointer_faces_move_to_a_pointer_panel(self):
-        loaded = lay.Layout.from_json(self.saved().to_json())
+        loaded = lay.Layout.from_json(self.saved().to_json().replace('"version": 5', '"version": 4'))      # a file of the version before the Pointer panel
         self.assertIn("Settings", [p.name for p in loaded.pages])
         default = defaults.default_layout(TOOLS)
         self.assertTrue(defaults.migrate(loaded, default))
@@ -71,6 +71,24 @@ class MigrationTest(unittest.TestCase):
         self.assertEqual(sorted(placed), sorted(defaults.build_faces(TOOLS, lambda name: name)))
         self.assertEqual(len(placed), len(set(placed)))
         self.assertEqual((pages["Settings"].slots[4], pages["Settings"].slots[8]), ("settings.grid", "settings.angle"))
+
+    def test_a_layout_of_the_current_version_is_never_migrated_so_a_panel_the_user_renamed_stays_renamed(self):
+        layout = defaults.default_layout(TOOLS)
+        next(p for p in layout.pages if p.name == "Pointer").name = "Laser"
+        loaded = lay.Layout.from_json(layout.to_json())
+        self.assertEqual(loaded.version, lay.VERSION)
+        self.assertFalse(defaults.migrate(loaded, defaults.default_layout(TOOLS)))
+        self.assertEqual(sum(p.name == "Pointer" for p in loaded.pages), 0)
+        self.assertEqual(lay.Layout.from_json('{"pages": [{"name": "A"}]}').version, 0)         # a file without a version is an old one
+
+    def test_the_hue_of_a_panel_is_kept_in_the_file_and_a_bad_one_is_dropped(self):
+        layout = lay.Layout([lay.Page("A", ["x"], 0, 0, 0.25), lay.Page("B", ["y"], 1, 0)])
+        loaded = lay.Layout.from_json(layout.to_json())
+        self.assertEqual([p.hue for p in loaded.pages], [0.25, None])
+        text = '{"version": 5, "pages": [{"name": "A", "hue": 7.5}, {"name": "B", "hue": "red"}, {"name": "C", "hue": true}]}'
+        self.assertEqual([p.hue for p in lay.Layout.from_json(text).pages], [1.0, None, None])
+        self.assertEqual(lay.default_hue("Tools"), 0.38)
+        self.assertIn(lay.default_hue("Anything else"), lay.SPARE_HUES)
 
     def test_a_layout_that_has_the_pointer_panel_is_left_alone(self):
         layout = defaults.default_layout(TOOLS)

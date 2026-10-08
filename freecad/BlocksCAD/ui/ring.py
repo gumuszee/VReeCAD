@@ -23,8 +23,8 @@ tool hand's pointer hovers faces and its trigger activates them: a press on a fa
 the same face within `HOLD_LIFT` seconds, while a longer hold lifts the face. A lifted face goes to the slot it is released over (a
 face there changes places with it) or, released over the hide slot (an X) that every panel shows in its title bar while a face is
 lifted, is hidden. Holding the trigger on
-the title bar of a panel lifts the panel;
-releasing it over the left or right half of another panel puts the panel next to it in its row, over the upper or lower part makes a
+the title bar of a panel lifts the panel; a tap on the menu mark at its right end (the hamburger) asks for the panel editor
+(`RingResult.menu`); releasing it over the left or right half of another panel puts the panel next to it in its row, over the upper or lower part makes a
 new row above or below it, over the empty slot of an empty side gives the panel that side.
 `update` returns what the host needs: hover, activation, drops, haptics and the ray end point."""
 
@@ -45,6 +45,7 @@ PANEL_W = GRID_W + 0.014
 PANEL_H = GRID_H + 0.034
 GRID_Y = -0.010        # centre of the grid of faces in panel coordinates (origin at the centre of the panel plate)
 TITLE_Y = (GRID_Y + GRID_H / 2 + 0.003, GRID_Y + GRID_H / 2 + 0.024)   # title bar, the handle for lifting a panel
+MENU_X = GRID_W / 2 - 0.024      # from here to the right end of the title bar is the menu mark: a tap on it opens the editor of the panel
 HIDE_X = (GRID_W / 2 - 0.046, GRID_W / 2 - 0.026)    # the hide slot in the title bar while a face is lifted: where a face dropped is hidden (x on the panel)
 PANEL_GAP = 0.008
 FORWARD = 0.09         # distance of the carousel centre in front of the grip point, along the controller
@@ -131,7 +132,7 @@ class PanelPose:
 
 @dataclass
 class Hit:
-    kind: str                          # "face", "slider", "title", "hide" (the hide slot of the title bar), "body" or "ghost"
+    kind: str                          # "face", "slider", "title", "menu" (the mark at the end of the title bar), "hide" (the hide slot), "body" or "ghost"
     side: int
     row: int
     page: Optional[int]                # None on a ghost
@@ -148,6 +149,8 @@ class RingResult:
     visible: bool = False
     hover: Optional[Tuple[int, int]] = None      # (page index, slot) of the face under the ray
     hover_title: Optional[int] = None            # page whose title bar is under the ray
+    menu_hover: Optional[int] = None             # page whose menu mark is under the ray
+    menu: Optional[int] = None                   # page whose menu mark was tapped this frame
     activated: Optional[Tuple[int, int]] = None  # (page index, slot) activated this frame
     lifted: Optional[int] = None                 # page held by the trigger (being rearranged)
     lift_point: Optional[Tuple[float, float, float]] = None
@@ -207,6 +210,7 @@ class PaletteRing:
         self.fixed_from = None                           # set by the host: pages from this index on are never lifted nor dropped on
         self.hold_visible = False                        # set by the host: something on the carousel is being worked, so it stays
         self.press: Optional[Tuple[int, int]] = None     # (page, slot) of the face the trigger went down on
+        self._menu_press: Optional[int] = None           # the page whose menu mark the trigger went down on
         self._press_age = 0.0
         self._press_dead = False                         # the pointer left the face: the press does nothing
         self.slider_rows: Dict[int, Dict[int, str]] = {}   # page -> row of the grid -> face id, for the rows that hold a slider
@@ -362,6 +366,8 @@ class PaletteRing:
         if TITLE_Y[0] <= y <= TITLE_Y[1]:
             if self.lifted_face is not None and HIDE_X[0] <= x <= HIDE_X[1]:
                 return Hit("hide", pose.side, pose.row, page, None, point, distance, zone)
+            if self.lifted_face is None and self.lifted is None and x >= MENU_X:
+                return Hit("menu", pose.side, pose.row, page, None, point, distance, zone)
             return Hit("title", pose.side, pose.row, page, None, point, distance, zone)
         slot = self.locate_slot(x, y - GRID_Y)
         if slot is not None and slot // COLS in self.slider_rows.get(page, ()):
@@ -478,7 +484,7 @@ class PaletteRing:
 
     def _hide(self):
         self.hover = self.hover_title = self.lifted = self._target = self.slider_drag = None
-        self.lifted_face = self._face_target = self.press = None
+        self.lifted_face = self._face_target = self.press = self._menu_press = None
         self.poses, self.ghosts = {}, {}
         self._laid = None
 
@@ -549,10 +555,20 @@ class PaletteRing:
         self.hover = (hit.page, hit.slot) if hit is not None and hit.kind in ("face", "slider") else None
         self.hover_title = hit.page if hit is not None and hit.kind == "title" else None
         result.hover, result.hover_title = self.hover, self.hover_title
+        result.menu_hover = hit.page if hit is not None and hit.kind == "menu" else None
         self._target = None
 
         if self.lifted_face is not None:
             self._move_face(result, hit, tool, pointer)
+        elif self._menu_press is not None:
+            result.consume_trigger = True
+            if hit is not None:
+                result.ray_end = hit.point
+            if not tool.down("trigger"):                 # a tap: released over the same mark
+                if hit is not None and hit.kind == "menu" and hit.page == self._menu_press:
+                    result.menu = self._menu_press
+                    result.haptics.append((self.tool_hand, 0.5, 0.04))
+                self._menu_press = None
         elif self.press is not None:
             self._hold_face(result, hit, tool, dt)
             if hit is not None:
@@ -570,6 +586,8 @@ class PaletteRing:
                             self.slider_drag = self.hover
                             result.slider = (hit.page, hit.slot, hit.along)
                             result.haptics.append((self.tool_hand, 0.3, 0.02))
+                    elif hit.kind == "menu":
+                        self._menu_press = hit.page
                     elif hit.kind == "title" and not self._fixed(hit.page):
                         self.lifted = hit.page
                         self._lift_distance = hit.distance

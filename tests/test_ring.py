@@ -673,6 +673,70 @@ class RingTest(unittest.TestCase):
         self.sim.set_hand(1, trigger=0.0)
         self.assertIsNone(self.run_frames(1).face_dropped)
 
+    def menu_point(self, page=0):
+        pose = self.ring.poses[page]
+        x = (rg.MENU_X + rg.GRID_W / 2) / 2
+        y = (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2
+        return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.n
+
+    def test_the_menu_mark_at_the_end_of_the_title_bar_is_hovered_and_a_tap_on_it_asks_for_the_editor(self):
+        self.run_frames()
+        point, n = self.menu_point()
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertEqual((r.menu_hover, r.hover_title, r.menu), (0, None, None))
+        self.sim.set_hand(1, trigger=1.0)
+        r = self.run_frames(1)
+        self.assertTrue(r.consume_trigger)
+        self.assertIsNone(self.ring.lifted)                                           # a press on the mark does not lift the panel
+        self.assertIsNone(r.menu)                                                     # it is the tap that asks
+        r = self.run_frames(3)
+        self.assertIsNone(r.menu)
+        self.sim.set_hand(1, trigger=0.0)
+        r = self.run_frames(1)
+        self.assertEqual(r.menu, 0)
+        self.assertIsNone(self.run_frames(1).menu)
+
+    def test_a_press_on_the_menu_mark_that_leaves_it_asks_for_nothing_and_the_rest_of_the_title_still_lifts(self):
+        self.run_frames()
+        point, n = self.menu_point()
+        self.aim_at(point, n)
+        self.run_frames(1)
+        self.sim.set_hand(1, trigger=1.0)
+        self.run_frames(2)
+        point, n = self.slot_point(5)
+        self.aim_at(point, n)
+        self.run_frames(2)
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertIsNone(self.run_frames(1).menu)
+        self.run_frames(2)
+        point, n = self.title_point(0)
+        self.aim_at(point, n)
+        self.run_frames(1)
+        self.sim.set_hand(1, trigger=1.0)
+        self.run_frames(1)
+        self.assertEqual(self.ring.lifted, 0)
+
+    def test_the_menu_mark_is_no_menu_while_a_panel_or_a_face_is_lifted(self):
+        self.run_frames()
+        self.press_face(5)
+        self.run_frames(25)
+        point, n = self.menu_point()
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertEqual((r.menu_hover, r.face_hide), (None, False))
+        self.sim.set_hand(1, trigger=0.0)
+        self.run_frames(2)
+        point, n = self.title_point(0)
+        self.aim_at(point, n)
+        self.run_frames(1)
+        self.sim.set_hand(1, trigger=1.0)
+        self.run_frames(1)
+        self.assertEqual(self.ring.lifted, 0)
+        point, n = self.menu_point(1)
+        self.aim_at(point, n)
+        self.assertIsNone(self.run_frames(1).menu_hover)
+
     def test_without_a_lifted_face_the_place_of_the_hide_slot_is_part_of_the_title_bar(self):
         self.run_frames()
         point, n = self.hide_slot_point()

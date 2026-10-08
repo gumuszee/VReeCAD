@@ -18,10 +18,11 @@ Text is `SoText3` (glyph outlines) at a fixed physical size: Coin's default glyp
 glyphs of about 9 mm. Everything is unlit so it never depends on the scene lighting."""
 
 import colorsys
-import zlib
 from dataclasses import dataclass
 
 from pivy import coin
+
+from freecad.BlocksCAD.ui import layout as lay
 
 PLATE = (0.10, 0.11, 0.14)
 PLATE_LIT = (0.15, 0.17, 0.23)
@@ -87,19 +88,15 @@ def tinted(hue):
 
 
 DEFAULT_PALETTE = Palette()
-PANEL_HUES = {"Tools": 0.38, "Edit": 0.92, "View": 0.11, "Modify": 0.68, "Settings": 0.50, "Pointer": 0.30}   # the default panels, green, rose, ochre, violet, teal, lime
-SPARE_HUES = (0.75, 0.02, 0.25, 0.45, 0.62)                                  # panels of other names take one of these by their name
 
 
-def panel_palette(name, plain=False):
-    """The palette of the panel called `name`: the tint of the default panels, a tint picked by the name for any other panel and the
-    grey default for a `plain` panel (the panels of the value module)."""
+def panel_palette(name, plain=False, hue=None):
+    """The palette of the panel called `name`: the tint of the hue the user gave it (`hue`), else the tint of the default panels or one
+    picked by the name for any other panel (`layout.default_hue`), and the grey default for a `plain` panel (the panels of the value
+    module)."""
     if plain:
         return DEFAULT_PALETTE
-    hue = PANEL_HUES.get(name)
-    if hue is None:
-        hue = SPARE_HUES[zlib.crc32(name.encode("utf-8")) % len(SPARE_HUES)]
-    return tinted(hue)
+    return tinted(hue if hue is not None else lay.default_hue(name))
 
 
 def invert(rgb):

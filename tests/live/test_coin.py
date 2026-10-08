@@ -440,6 +440,127 @@ class SimUiTest(unittest.TestCase):
         ui.show_hidden()
         self.assertEqual((ui.layout.hidden, ui.layout.face_at(tools, 0)), ([], face))
 
+    def tap_menu_of(self, name):
+        """Tap the menu mark in the title bar of the panel called `name` with the laser."""
+        from freecad.BlocksCAD.ui import ring as rg
+        ui = self.s.ui
+        page = [p.name for p in ui.layout.pages].index(name)
+        pose = ui.ring.poses[page]
+        x, y = (rg.MENU_X + rg.GRID_W / 2) / 2, (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2
+        point = tuple(c + u * x + v * y for c, u, v in zip(pose.centre, pose.u, pose.v))
+        self.s.input.set_hand(1, position=tuple(c + n * 0.3 for c, n in zip(point, pose.n)), point_at=point, trigger=0.0)
+        self.settle(3)
+        self.s.input.set_hand(1, trigger=1.0)
+        self.settle(2)
+        self.s.input.set_hand(1, trigger=0.0)
+        self.settle(3)
+
+    def press_editor_face(self, face_id):
+        """Press a face of the panel editor with the laser."""
+        ui = self.s.ui
+        pages = ui.shown_layout().pages
+        page = next(i for i, p in enumerate(pages) if face_id in p.slots)
+        self.aim_at_slot(pages[page].slots.index(face_id), page)
+        self.settle(3)
+        self.s.input.set_hand(1, trigger=1.0)
+        self.settle(2)
+        self.s.input.set_hand(1, trigger=0.0)
+        self.settle(3)
+
+    def test_a_tap_on_the_menu_mark_of_a_panel_opens_the_editor_that_renames_and_colours_it(self):
+        from freecad.BlocksCAD.ui import panel_editor as pe
+        self.show_carousel()
+        ui = self.s.ui
+        names = [p.name for p in ui.layout.pages]
+        front = ui.ring.front_side()
+        self.tap_menu_of("Edit")
+        self.assertEqual((ui.carousel, ui.panel_editor.text), ("editor", "Edit"))
+        self.assertEqual([p.name for p in ui.shown_layout().pages], list(pe.PAGE_NAMES))
+        self.assertEqual(ui.ring.fixed_from, 0)                                        # nothing of the editor can be lifted
+        self.assertEqual(len(ui.ring.display_sides()), 1)
+        self.press_editor_face(pe.CLEAR)
+        for char in "hammer":
+            self.press_editor_face(pe.key_id(char))
+        self.assertEqual(ui.panel_editor.text, "Hammer")
+        self.press_editor_face(pe.HUE_IDS[8])                                          # Blue
+        self.assertEqual(ui.panel_editor.preview_hue(), 0.62)
+        self.assertTrue(all(p.hue == 0.62 for p in ui.shown_layout().pages))           # the panels of the editor wear the colour
+        self.press_editor_face(pe.OK)
+        self.assertEqual((ui.carousel, ui.panel_editor), ("tools", None))
+        self.assertEqual(ui.ring.front_side(), front)
+        page = next(p for p in ui.layout.pages if p.name == "Hammer")
+        self.assertEqual(page.hue, 0.62)
+        self.assertEqual(sorted(p.name for p in ui.layout.pages), sorted(["Hammer" if n == "Edit" else n for n in names]))
+        self.assertEqual([t.text for t in ui.toasts.items][-1], "Panel: Hammer")
+
+    def test_cancel_leaves_the_panel_and_an_empty_name_is_refused(self):
+        from freecad.BlocksCAD.ui import panel_editor as pe
+        self.show_carousel()
+        ui = self.s.ui
+        self.tap_menu_of("Tools")
+        self.press_editor_face(pe.CLEAR)
+        self.press_editor_face(pe.OK)
+        self.assertEqual(ui.carousel, "editor")                                        # nothing typed: it stays
+        self.assertEqual([t.text for t in ui.toasts.items][-1], "A name needs a letter")
+        self.press_editor_face(pe.key_id("z"))
+        self.press_editor_face(pe.HUE_IDS[2])
+        self.press_editor_face(pe.CANCEL)
+        self.assertEqual(ui.carousel, "tools")
+        page = ui.layout.pages[0]
+        self.assertEqual((page.name, page.hue), ("Tools", None))
+
+    def test_the_editor_keeps_the_carousel_while_the_selection_changes_and_the_other_carousel_comes_back(self):
+        from freecad.BlocksCAD.ui import panel_editor as pe
+        from freecad.BlocksCAD.cad import picking
+        import FreeCAD as App
+        doc = App.newDocument("BlocksCADEditor")
+        try:
+            from freecad.BlocksCAD.cad import primitives as prim
+            box = prim.create(doc, "Box", (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+            self.show_carousel()
+            ui = self.s.ui
+            self.tap_menu_of("Edit")
+            self.assertEqual(ui.carousel, "editor")
+            picking.set_selection(doc, [(box.Name, "")])
+            self.settle(5)
+            self.assertEqual(ui.carousel, "editor")                                    # the values carousel waits
+            self.assertTrue(ui.module.is_open)
+            self.s.input.set_hand(0, trigger=1.0)
+            self.settle(2)
+            self.s.input.set_hand(0, trigger=0.0)
+            self.settle(2)
+            self.assertEqual(ui.carousel, "editor")                                    # the trigger of the palette hand does not swap
+            self.press_editor_face(pe.CANCEL)
+            self.assertEqual(ui.carousel, "values")
+            picking.clear_selection()
+        finally:
+            App.closeDocument(doc.Name)
+
+    def test_the_hue_and_the_name_of_a_panel_are_saved_with_the_layout(self):
+        import os
+        import tempfile
+        from freecad.BlocksCAD.tools import registry
+        from freecad.BlocksCAD.ui.controller import UiController
+        with tempfile.TemporaryDirectory() as folder:
+            paths = dict(layout_path=os.path.join(folder, "layout.json"), settings_path=os.path.join(folder, "settings.json"),
+                         values_layout_path=os.path.join(folder, "values_layout.json"))
+            first = UiController(registry.names(), registry.label_of, {}, **paths)
+            second = None
+            try:
+                first.open_panel_editor(1)
+                first.panel_editor.activate("ed.hue.4")
+                first.panel_editor.activate("ed.clear")
+                for char in "abc":
+                    first.panel_editor.activate(f"ed.key.{char}")
+                first.close_panel_editor(True)
+                second = UiController(registry.names(), registry.label_of, {}, **paths)
+                self.assertEqual([(p.name, p.hue) for p in second.layout.pages][1], ("Abc", 0.68))
+                self.assertEqual(second.layout.version, 5)
+            finally:
+                first.close()
+                if second is not None:
+                    second.close()
+
     def test_button2_of_the_tool_hand_taps_to_undo_and_holds_to_redo_with_a_toast(self):
         self.s.actions["doc:undo"] = lambda: self.calls.append("undo") or "Undo"
         self.show_carousel()

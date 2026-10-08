@@ -16,7 +16,8 @@
 """The user interface as one unit: grip navigation with its ruler, the palette carousel with its panels, the quick radial, action
 dispatch, undo and redo on the tool hand, tool options, toasts, tooltips.
 While an editable object is selected a values carousel (the panels of `ui/value_module.py`) can replace the palette carousel; the trigger of
-the palette hand swaps the two.
+the palette hand swaps the two. A tap on the menu mark of a panel title opens the panel editor (`ui/panel_editor.py`), a carousel of its
+own that renames the panel and gives it a colour.
 Hosts (the XR widget and the Sim session) feed it one `InputFrame` per frame and apply what it returns: the world pose goes to a
 scene transform, `haptics` to the controllers, `ray_end` to the tool hand's ray, `consume_trigger` suppresses the tool hand's trigger.
 The scene graph has two roots: `root` (the carousel, depth tested) and `overlay` (the ruler, drawn last on top of everything)."""
@@ -47,7 +48,7 @@ from freecad.BlocksCAD.ui.ring import PaletteRing
 from freecad.BlocksCAD.ui.ring_view import RingView
 from freecad.BlocksCAD.ui.ruler import Ruler
 from freecad.BlocksCAD.ui.undo_button import UndoButton
-from freecad.BlocksCAD.ui import value_module
+from freecad.BlocksCAD.ui import panel_editor, value_module
 from freecad.BlocksCAD.ui.value_module import ValueModule
 
 
@@ -98,11 +99,15 @@ class UiController:
         self.part_frame = None             # callable(hand, part names, lift) -> (position, right, forward, up) on the controller, set by the host
         self.undo_button = UndoButton(tool_hand)
         self.module = ValueModule(tool_hand)       # the panels for the values of the selected object, on a carousel side of their own
-        self.view_faces = {**self.faces, **self.module.faces}      # every face that can be drawn: the user's and the module's
+        self.panel_editor = None           # the `panel_editor.PanelEditor` while a panel is renamed or coloured
+        self._editor_faces = panel_editor.faces()
+        self._editor_layout = None         # (hue, layout) of the editor carousel
+        self._return_to = "tools"          # the carousel that comes back when the editor closes
+        self.view_faces = {**self.faces, **self.module.faces, **self._editor_faces}      # every face that can be drawn: the user's, the module's and the editor's
         self.values_layout = (value_module.load_layout(set(self.module.faces), values_layout_path) if use_user_layout
                               else value_module.default_layout())     # the panels of the values carousel that the user can rearrange
-        self.carousel = "tools"            # which carousel the palette hand shows: "tools" (the user layout) or "values" (while the module is open)
-        self._front = {"tools": 0, "values": 0}     # the side at the front of each carousel while the other one is shown
+        self.carousel = "tools"            # which carousel the palette hand shows: "tools" (the user layout), "values" (while the module is open) or "editor"
+        self._front = {"tools": 0, "values": 0, "editor": 0}     # the side at the front of each carousel while the other one is shown
         self.values_source = None          # callable() -> (key, factory of a `core.values.ValueTarget`) of the selected object, or None; set by the host
         self._shown = None                 # (key, layout of the values carousel) while it is shown
         self.options = tool_options.OptionControl(tool_hand)
@@ -218,6 +223,11 @@ class UiController:
     def shown_layout(self):
         """The layout the carousel shows: the palette layout of the user, or, while the module is open and the values carousel is shown,
         the panels of the values carousel with a Value panel at the top of every side."""
+        if self.carousel == "editor" and self.panel_editor is not None:
+            hue = self.panel_editor.preview_hue()
+            if self._editor_layout is None or self._editor_layout[0] != hue:
+                self._editor_layout = (hue, panel_editor.layout(hue))
+            return self._editor_layout[1]
         if not self.module.is_open or self.carousel != "values":
             return self.layout
         key = (id(self.values_layout), tuple((p.name, tuple(p.slots), p.side, p.row) for p in self.values_layout.pages))
@@ -227,6 +237,9 @@ class UiController:
 
     def _show_carousel(self, mode):
         """Show the palette carousel ("tools") or the values carousel ("values") on the palette hand, each at the side it was left at."""
+        if self.panel_editor is not None and self.carousel == "editor" and mode != "editor":
+            self._return_to = mode                   # the editor has the carousel: the other one comes back when it closes
+            return
         if mode == self.carousel:
             return
         self._front[self.carousel] = self.ring.front_side()
@@ -237,11 +250,36 @@ class UiController:
 
     def swap_carousels(self):
         """The trigger of the palette hand: the other carousel, when there is one (an object is selected). Returns whether it swapped."""
-        if not self.module.is_open:
+        if not self.module.is_open or self.panel_editor is not None:
             return False
         self._show_carousel("values" if self.carousel == "tools" else "tools")
         self.toast("Values carousel" if self.carousel == "values" else "Tools carousel")
         return True
+
+    def open_panel_editor(self, page):
+        """Show the panel editor for the panel `page` of the palette layout (a tap on the menu mark of its title)."""
+        if self.carousel != "tools" or self.panel_editor is not None or not 0 <= page < len(self.layout.pages):
+            return False
+        chosen = self.layout.pages[page]
+        self.panel_editor = panel_editor.PanelEditor(page, chosen.name, chosen.hue)
+        self._return_to = "tools"
+        self._front["editor"] = 0
+        self._show_carousel("editor")
+        return True
+
+    def close_panel_editor(self, applied):
+        """Leave the panel editor: with `applied` the panel gets the name and the colour, then the carousel that was shown comes back."""
+        editor, self.panel_editor = self.panel_editor, None
+        if editor is None:
+            return
+        if applied and editor.page < len(self.layout.pages):
+            name, hue = editor.result()
+            chosen = self.layout.pages[editor.page]
+            chosen.name, chosen.hue = name, hue
+            self._save_layout()
+            self.toast(f"Panel: {name}")
+        target = self._return_to if self._return_to == "tools" or self.module.is_open else "tools"
+        self._show_carousel(target)
 
     def _editing_layout(self):
         """The layout the user rearranges on the carousel that is shown."""
@@ -476,7 +514,10 @@ class UiController:
         quick = self.radial.update(frame, self.radial_items(), blocked=busy, hub=hub)
         out.owns_stick, readout = self._tool_hand_buttons(frame, self.navigator.navigating or self.radial.is_open or self.module.engaged, out)
         carousel = self.shown_layout()
-        self.ring.fixed_from = len(self.values_layout.pages) if carousel is not self.layout else None
+        if self.panel_editor is not None and self.carousel == "editor":
+            self.ring.fixed_from = 0                     # nothing of the editor is lifted or dropped on
+        else:
+            self.ring.fixed_from = len(self.values_layout.pages) if carousel is not self.layout else None
         self.ring.set_sides(carousel.sides())
         self.ring.slider_rows = self.slider_rows()
         self.ring.readout_rows = self.slider_rows("readout")
@@ -488,6 +529,8 @@ class UiController:
         result = self.ring.update(frame, navigating=self.navigator.navigating, pointers=pointers)
         prof.lap("ui_ring")
         out.haptics += result.haptics + quick.haptics
+        if result.menu is not None:
+            self.open_panel_editor(result.menu)
         out.ray_end = result.ray_end
         out.consume_trigger = result.consume_trigger or self.radial.is_open or quick.activated is not None or quick.activated_hub
         if result.focus is not None:
@@ -536,10 +579,13 @@ class UiController:
         if edit.message:
             self.toast(edit.message)
         prof.lap("ui_module")
-        labels = {**self.labels(), **self.module.labels()}
+        editing = self.panel_editor if self.carousel == "editor" else None
+        labels = {**self.labels(), **self.module.labels(), **(editing.labels() if editing is not None else {})}
         sliders = {**self.slider_states(), **self.module.slider_states()} if self.module.is_open else self.slider_states()
-        self.view.update(self.ring, result, carousel, self.view_faces, frame.head.position, self.active_actions | self.module.picked_actions(), labels, sliders,
-                         self.module.titles(), self.module.readouts() if self.module.is_open else None)
+        readouts = {**(self.module.readouts() if self.module.is_open else {}), **(editing.readouts() if editing is not None else {})}
+        lit = self.active_actions | self.module.picked_actions() | (editing.lit_actions() if editing is not None else frozenset())
+        self.view.update(self.ring, result, carousel, self.view_faces, frame.head.position, lit, labels, sliders,
+                         self.module.titles(), readouts or None)
         prof.lap("ui_view")
         self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items],
                                 centre=labels.get(quick.hub, self.faces[quick.hub].label) if quick.hub else None)
@@ -553,7 +599,14 @@ class UiController:
 
         if result.activated is not None:
             face_id = carousel.face_at(*result.activated)
-            if face_id in self.module.faces:
+            if face_id in self._editor_faces and self.panel_editor is not None:
+                step = self.panel_editor.activate(face_id)
+                if step.message:
+                    self.toast(step.message)
+                if step.done:
+                    self.close_panel_editor(step.applied)
+                out.activated = self._editor_faces[face_id].action
+            elif face_id in self.module.faces:
                 self.module.activate(face_id)
                 out.activated = self.module.faces[face_id].action
             else:
@@ -678,7 +731,7 @@ class UiController:
             return None
         face = self.view_faces.get(self.shown_layout().face_at(*target) or "")
         place = self.ring.slot_centre(*target)
-        if face is None or place is None or face.id in value_module.NO_TOOLTIP:
+        if face is None or place is None or face.id in value_module.NO_TOOLTIP or face.id.startswith("ed.key."):
             return None
         return (face.tip or labels.get(face.id, face.label), *place)
 

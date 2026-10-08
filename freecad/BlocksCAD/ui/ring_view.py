@@ -317,7 +317,7 @@ class _Panel:
     def __init__(self, page, faces):
         self.switch = coin.SoSwitch()
         self.shown = style.Show(self.switch)
-        self.palette = style.panel_palette(page.name, page.name in value_module.PAGE_NAMES)
+        self.palette = style.panel_palette(page.name, page.name in value_module.PAGE_NAMES, page.hue)
         palette = self.palette
         outer = coin.SoSeparator()
         self.place = _Place(outer)
@@ -335,8 +335,9 @@ class _Panel:
         outer.addChild(self.front)
         self.plates = _Plates()
         self.title_color = self.plates.add(rg.GRID_W, TITLE_H, palette.title, 0.0, TITLE_CENTRE, DEPTH * 0.5)
-        for i in (-1, 0, 1):   # grooves: the title bar is the handle for lifting the panel
-            self.plates.add(0.012, 0.0012, palette.groove, rg.GRID_W / 2 - 0.012, TITLE_CENTRE + i * 0.0045, DEPTH)
+        self.grooves = [self.plates.add(0.012, 0.0012, palette.groove, rg.GRID_W / 2 - 0.012, TITLE_CENTRE + i * 0.0045, DEPTH)
+                        for i in (-1, 0, 1)]        # grooves: the title bar is the handle for lifting the panel, a tap on them opens its editor
+        self.menu_hover = False
         plates_at = sep.getNumChildren()
         sep.addChild(coin.SoSeparator())         # the place of the plates, which are built once every row has added its rectangles
         self.title = _text(sep, [page.name], -rg.GRID_W / 2 + 0.006, TITLE_CENTRE, TEXT_LIFT, palette.title_text,
@@ -376,6 +377,12 @@ class _Panel:
         if facing != self.facing:
             self.facing = facing
             self._front_show.set(facing)
+
+    def set_menu_hover(self, hovered):
+        if hovered != self.menu_hover:
+            self.menu_hover = hovered
+            for groove in self.grooves:
+                groove.set(style.HOVER if hovered else self.palette.groove)
 
     def set_hide_slot(self, state):
         """Show the hide slot (an X in the title bar) while a face is lifted, lit while the face is over it."""
@@ -521,7 +528,7 @@ class RingView:
 
     @staticmethod
     def _signature(layout):
-        return id(layout), tuple((p.name, tuple(p.slots)) for p in layout.pages)
+        return id(layout), tuple((p.name, tuple(p.slots), p.hue) for p in layout.pages)
 
     def build(self, layout, faces):
         """(Re)build the panel nodes for a layout; `faces` maps face id to `layout.Face`."""
@@ -596,9 +603,10 @@ class RingView:
                          lifted_face[1] if lifted_face is not None and lifted_face[0] == index else None,
                          face_target[1] if face_target is not None and face_target[0] == index else None,
                          result.bar_hover[1] if result.bar_hover is not None and result.bar_hover[0] == index else None,
-                         drag, 2 if result.hide_page == index else 1 if lifted_face is not None else 0)
+                         drag, result.menu_hover == index, 2 if result.hide_page == index else 1 if lifted_face is not None else 0)
                 if not same or state != view.key:
                     view.key = state
+                    view.set_menu_hover(state[-2])
                     view.set_hide_slot(state[-1])
                     view.title_color.set(style.HOVER if hover_title == index else view.palette.title)
                     self._refresh(view, index, layout.pages[index].name, ring, result, active_actions, labels, sliders, titles, readouts)

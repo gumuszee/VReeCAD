@@ -23,6 +23,7 @@ list of pages plus the ids of the faces the user has hidden; panels and faces ar
 
 import json
 import os
+import zlib
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -30,6 +31,17 @@ COLS, ROWS = 4, 3
 SLOTS = COLS * ROWS
 RENAMED_FACES = {"tool.grab": "tool.move", "view.controls": "settings.tutorial"}    # ids that saved layouts and settings may hold, and the faces they stand for
 RENAMED_PAGES = {"Session": "Settings"}       # names of panels that saved layouts may hold, and the panels they stand for
+
+
+PANEL_HUES = {"Tools": 0.38, "Edit": 0.92, "View": 0.11, "Modify": 0.68, "Settings": 0.50, "Pointer": 0.30}   # the default panels, green, rose, ochre, violet, teal, lime
+SPARE_HUES = (0.75, 0.02, 0.25, 0.45, 0.62)                                  # panels of other names take one of these by their name
+VERSION = 5                                                                  # the version of the layout file that `to_json` writes
+
+
+def default_hue(name):
+    """The hue (0 to 1) of the tint of the panel called `name` when the user has chosen none."""
+    hue = PANEL_HUES.get(name)
+    return hue if hue is not None else SPARE_HUES[zlib.crc32(name.encode("utf-8")) % len(SPARE_HUES)]
 
 
 def current_face(face_id):
@@ -52,6 +64,7 @@ class Page:
     slots: List[Optional[str]] = field(default_factory=lambda: [None] * SLOTS)
     side: Optional[int] = None   # carousel side; None puts the page on a side of its own
     row: Optional[int] = None    # row on the side; None puts the page in the bottom row
+    hue: Optional[float] = None  # the tint the user gave the panel (0 to 1); None leaves it to the name (`default_hue`)
 
     def __post_init__(self):
         self.slots = (list(self.slots) + [None] * SLOTS)[:SLOTS]
@@ -73,6 +86,7 @@ def without_page(sides, page):
 class Layout:
     pages: List[Page] = field(default_factory=list)
     hidden: List[str] = field(default_factory=list)   # faces taken off the panels by the user; they stay out of `add_missing`
+    version: int = VERSION                            # the version of the file the layout was read from (`from_json`); layouts made in code are current
 
     def __post_init__(self):
         self.normalize()
@@ -202,8 +216,9 @@ class Layout:
         return len(self.hidden) < len(hidden)
 
     def to_json(self):
-        return json.dumps({"version": 4, "hidden": self.hidden,
-                           "pages": [{"name": p.name, "side": p.side, "row": p.row, "slots": p.slots} for p in self.pages]}, indent=1)
+        return json.dumps({"version": VERSION, "hidden": self.hidden,
+                           "pages": [{"name": p.name, "side": p.side, "row": p.row, "slots": p.slots, **({"hue": p.hue} if p.hue is not None else {})}
+                                     for p in self.pages]}, indent=1)
 
     @classmethod
     def from_json(cls, text, known_faces=None):
@@ -216,12 +231,15 @@ class Layout:
             slots = [current_face(s) if (isinstance(s, str) and (known_faces is None or current_face(s) in known_faces)) else None
                      for s in page.get("slots", [])]
             side, row = page.get("side"), page.get("row")
+            hue = page.get("hue")
             pages.append(Page(RENAMED_PAGES.get(str(page["name"]), str(page["name"])), slots, side if isinstance(side, int) else None,
-                              row if isinstance(row, int) else None))
+                              row if isinstance(row, int) else None,
+                              min(max(float(hue), 0.0), 1.0) if isinstance(hue, (int, float)) and not isinstance(hue, bool) else None))
         if not pages:
             raise ValueError("layout without pages")
         hidden = [current_face(f) for f in data.get("hidden", []) if isinstance(f, str) and (known_faces is None or current_face(f) in known_faces)]
-        return cls(pages, hidden)
+        version = data.get("version")
+        return cls(pages, hidden, version if isinstance(version, int) else 0)
 
 
 def user_layout_path(name="layout"):
