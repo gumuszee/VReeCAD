@@ -452,7 +452,8 @@ try:
         _s.frame(0.02)
         _s.tool_manager.active.values["mode"] = "Rectangle"
         _pk.clear_selection()
-        # the value panels: they follow the selection, so selecting the box adds a side with the panels Value, Number pad, Keys and Variables to the carousel
+        # the value panels: they follow the selection, so selecting the box swaps the palette carousel for the values carousel: the Values panel
+        # under the Value panel on the front side, the Number pad, Keys and Variables under another Value panel on the next one
         from freecad.BlocksCAD.cad import picking as _pk
         _pk.set_selection(_temp, [(_temp.Objects[0].Name, "")])
         _cursor((600.0, 0.0, 400.0))
@@ -463,6 +464,10 @@ try:
             _s.ui.module.editor.key(_key)
         _s.input.set_head(position=_head, look_at_point=_ctrl)
         for _ in range(20):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_values_list.png"))
+        _s.ui.ring.focus_side(1)
+        for _ in range(8):
             _s.frame(0.02)
         _pages = _s.ui.shown_layout().pages
         _page = next(i for i, p in enumerate(_pages) if "key.5" in p.slots)

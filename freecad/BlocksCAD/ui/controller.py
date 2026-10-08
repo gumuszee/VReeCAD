@@ -15,6 +15,8 @@
 # ***************************************************************************
 """The user interface as one unit: grip navigation with its ruler, the palette carousel with its panels, the quick radial, action
 dispatch, undo and redo on the tool hand, tool options, toasts, tooltips.
+While an editable object is selected a values carousel (the panels of `ui/value_module.py`) can replace the palette carousel; the trigger of
+the palette hand swaps the two.
 Hosts (the XR widget and the Sim session) feed it one `InputFrame` per frame and apply what it returns: the world pose goes to a
 scene transform, `haptics` to the controllers, `ray_end` to the tool hand's ray, `consume_trigger` suppresses the tool hand's trigger.
 The scene graph has two roots: `root` (the carousel, depth tested) and `overlay` (the ruler, drawn last on top of everything)."""
@@ -69,7 +71,7 @@ HELP_LIFT = 0.15               # metres above a controller: where the title of i
 
 class UiController:
     def __init__(self, tool_names, tool_label, actions: Dict[str, Callable], palette_hand=0, tool_hand=1,
-                 layout_path=None, use_user_layout=True, mm_to_stage=0.001, settings_path=None, tool_hint=None):
+                 layout_path=None, use_user_layout=True, mm_to_stage=0.001, settings_path=None, tool_hint=None, values_layout_path=None):
         self.actions = actions
         self.faces = defaults.build_faces(tool_names, tool_label, tool_hint)
         self._tool_names = list(tool_names)
@@ -78,6 +80,7 @@ class UiController:
         self.layout = lay.load_layout(default, set(self.faces), layout_path) if use_user_layout else default
         self.settings = cfg.load_settings(settings_path) if use_user_layout else cfg.Settings()
         self.settings_path = settings_path
+        self.values_layout_path = values_layout_path
         self.wide = {fid for fid, face in self.faces.items() if face.kind == "slider"}
         if use_user_layout and self.layout is not default and self.layout.add_missing(default, self.wide):
             self._save_layout()
@@ -85,8 +88,8 @@ class UiController:
         self.navigator = Navigator(modifier_hand=tool_hand)
         self._grip_claimed = [False, False]     # a grip pressed while the tool is in a gesture: it cancels it and does not hold the world
         self.ring = PaletteRing(self.layout.sides(), palette_hand, tool_hand)
-        self.ring.can_lift = lambda page, slot: self._is_user_page(page) and self.layout.face_at(page, slot) is not None
-        self.ring.can_drop = lambda src, dst: self._is_user_page(src[0]) and self._is_user_page(dst[0]) and self.layout.can_move_face(*src, *dst, self.wide)
+        self.ring.can_lift = lambda page, slot: self.carousel == "tools" and self.layout.face_at(page, slot) is not None
+        self.ring.can_drop = lambda src, dst: self.carousel == "tools" and self.layout.can_move_face(*src, *dst, self.wide)
         self.radial = radial.QuickRadial(tool_hand)
         self.radial_view = RadialView()
         self.options_view = RadialView(OPTION_DISC_OUTER, OPTION_DISC_INNER, 0.8)        # the disc of the options of the active tool
@@ -94,9 +97,12 @@ class UiController:
         self.undo_button = UndoButton(tool_hand)
         self.module = ValueModule(tool_hand)       # the panels for the values of the selected object, on a carousel side of their own
         self.view_faces = {**self.faces, **self.module.faces}      # every face that can be drawn: the user's and the module's
+        self.values_layout = (value_module.load_layout(set(self.module.faces), values_layout_path) if use_user_layout
+                              else value_module.default_layout())     # the panels of the values carousel that the user can rearrange
+        self.carousel = "tools"            # which carousel the palette hand shows: "tools" (the user layout) or "values" (while the module is open)
+        self._front = {"tools": 0, "values": 0}     # the side at the front of each carousel while the other one is shown
         self.values_source = None          # callable() -> (key, factory of a `core.values.ValueTarget`) of the selected object, or None; set by the host
-        self._shown = None                 # (key, layout with the pages of the module) while the module is bound
-        self._front_before = 0             # the front side of the carousel before the panels of the module appeared
+        self._shown = None                 # (key, layout of the values carousel) while it is shown
         self.options = tool_options.OptionControl(tool_hand)
         self.active_tool = None            # the active `tools.base.Tool`, set by the host before `update`
         self.hands_changed = None          # callable(tool hand index), set by the host: the hands have swapped roles
@@ -187,8 +193,7 @@ class UiController:
         if source is None:
             if module.is_open:
                 module.close()
-                if self.ring.front_side() == len(self.layout.sides()):
-                    self.ring.index = self._front_before
+                self._show_carousel("tools")
             return
         key, factory = source
         if module.is_open and module.key == key:
@@ -203,23 +208,41 @@ class UiController:
             return
         module.open(editor, key)
         if not was_open:
-            sides = len(self.layout.sides())
-            self._front_before = self.ring.front_side()
-            self.ring.focus_side(sides, sides + 1)
+            self._front["values"] = 0
+            self._show_carousel("values")
             out.haptics.append((self.palette_hand, 0.2, 0.02))
 
     def shown_layout(self):
-        """The layout the carousel shows: the user's, plus the panels of the module on a side of their own during a session."""
-        if not self.module.is_open:
+        """The layout the carousel shows: the palette layout of the user, or, while the module is open and the values carousel is shown,
+        the panels of the values carousel with a Value panel at the top of every side."""
+        if not self.module.is_open or self.carousel != "values":
             return self.layout
-        key = (id(self.layout), tuple((p.name, tuple(p.slots), p.side, p.row) for p in self.layout.pages))
+        key = (id(self.values_layout), tuple((p.name, tuple(p.slots), p.side, p.row) for p in self.values_layout.pages))
         if self._shown is None or self._shown[0] != key:
-            pages = list(self.layout.pages) + value_module.pages(len(self.layout.sides()))
-            self._shown = (key, lay.Layout(pages, list(self.layout.hidden)))
+            self._shown = (key, value_module.shown_layout(self.values_layout))
         return self._shown[1]
 
-    def _is_user_page(self, page):
-        return page < len(self.layout.pages)
+    def _show_carousel(self, mode):
+        """Show the palette carousel ("tools") or the values carousel ("values") on the palette hand, each at the side it was left at."""
+        if mode == self.carousel:
+            return
+        self._front[self.carousel] = self.ring.front_side()
+        self.carousel = mode
+        sides = self.shown_layout().sides()
+        self.ring.set_sides(sides)
+        self.ring.focus_side(min(self._front[mode], len(sides) - 1), len(sides))
+
+    def swap_carousels(self):
+        """The trigger of the palette hand: the other carousel, when there is one (an object is selected). Returns whether it swapped."""
+        if not self.module.is_open:
+            return False
+        self._show_carousel("values" if self.carousel == "tools" else "tools")
+        self.toast("Values carousel" if self.carousel == "values" else "Tools carousel")
+        return True
+
+    def _editing_layout(self):
+        """The layout the user rearranges on the carousel that is shown."""
+        return self.values_layout if self.carousel == "values" and self.module.is_open else self.layout
 
     def radial_items(self):
         """Face ids offered by the quick radial: the faces used last, then the defaults."""
@@ -257,21 +280,26 @@ class UiController:
     def reset_layout(self):
         """Back to the default layout (no hidden faces); a saved layout file is removed."""
         self.layout = defaults.default_layout(self._tool_names)
-        self.ring.set_sides(self.layout.sides())
+        self.values_layout = value_module.default_layout()
+        self._front = {"tools": 0, "values": 0}
+        self.ring.set_sides(self.shown_layout().sides())
         self.ring.focus_side(0)
         self._save_layout(remove=True)
         self.toast("Layout reset")
 
     def _save_layout(self, remove=False):
+        """Save the layout of the palette carousel and the one of the values carousel (or remove both files)."""
         if not self.use_user_layout:
             return
-        try:
-            if remove:
-                os.remove(self.layout_path or lay.user_layout_path())
-            else:
-                lay.save_layout(self.layout, self.layout_path)
-        except OSError:
-            pass   # the layout is a convenience; a failed write must not stop the session
+        for layout, path in ((self.layout, self.layout_path or lay.user_layout_path()),
+                             (self.values_layout, self.values_layout_path or value_module.user_layout_path())):
+            try:
+                if remove:
+                    os.remove(path)
+                else:
+                    lay.save_layout(layout, path)
+            except OSError:
+                pass   # the layout is a convenience; a failed write must not stop the session
 
     def labels(self):
         """Labels of the faces whose text shows a value, by face id."""
@@ -395,6 +423,10 @@ class UiController:
         out = UiUpdate()
         s = self.settings
         self._sync_values(out)
+        # the trigger of the palette hand swaps the carousels, except while the tool is in a gesture (the Move tool scales with it)
+        if ("trigger" in frame.hands[self.palette_hand].pressed and not getattr(self.active_tool, "busy", False)
+                and not self.navigator.navigating and self.swap_carousels()):
+            out.haptics.append((self.palette_hand, 0.3, 0.025))
         prof.lap("ui_values")
         self.pointer_poses = [pointing.pointer_pose(h.aim, s.pointer_mode, s.tip_angle, s.tip_length) for h in frame.hands]
         # in tip mode the world is held with the tips: it pivots about them and the ruler measures between them
@@ -420,7 +452,7 @@ class UiController:
         quick = self.radial.update(frame, self.radial_items(), blocked=busy, hub=hub)
         out.owns_stick, readout = self._tool_hand_buttons(frame, self.navigator.navigating or self.radial.is_open or self.module.engaged, out)
         carousel = self.shown_layout()
-        self.ring.fixed_from = len(self.layout.pages) if self.module.is_open else None
+        self.ring.fixed_from = len(self.values_layout.pages) if carousel is not self.layout else None
         self.ring.set_sides(carousel.sides())
         self.ring.slider_rows = self.slider_rows()
         self.ring.readout_rows = self.slider_rows("readout")
@@ -458,9 +490,10 @@ class UiController:
             self._save_settings()
         if result.dropped is not None:
             page, side, row, before, new_row = result.dropped
-            index = self.layout.move_page(page, side, row, before, new_row)
-            self.ring.set_sides(self.layout.sides())
-            self.ring.focus_side(self.layout.pages[index].side)
+            moved = self._editing_layout()
+            index = moved.move_page(page, side, row, before, new_row)
+            self.ring.set_sides(self.shown_layout().sides())
+            self.ring.focus_side(moved.pages[index].side)
             self._save_layout()
         if result.face_dropped is not None:
             page, slot, target_page, target_slot = result.face_dropped
@@ -481,7 +514,7 @@ class UiController:
         prof.lap("ui_module")
         labels = {**self.labels(), **self.module.labels()}
         sliders = {**self.slider_states(), **self.module.slider_states()} if self.module.is_open else self.slider_states()
-        self.view.update(self.ring, result, carousel, self.view_faces, frame.head.position, self.active_actions, labels, sliders,
+        self.view.update(self.ring, result, carousel, self.view_faces, frame.head.position, self.active_actions | self.module.picked_actions(), labels, sliders,
                          self.module.titles(), self.module.readouts() if self.module.is_open else None)
         prof.lap("ui_view")
         self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items],

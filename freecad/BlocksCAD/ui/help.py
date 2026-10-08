@@ -30,7 +30,7 @@ TOOL_HAND_COMMON = (
 )
 PALETTE_HAND = (
     ("Stick", "turn the palette"),
-    ("Trigger", "press a face with the tip"),
+    ("Trigger", "tools or values of the selection"),
     ("Grip", "grab the world (both: turn, scale)"),
     ("A", "pin the palette"),
     ("D-pad", "left: undo, right: redo"),

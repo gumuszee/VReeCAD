@@ -2466,7 +2466,11 @@ class MoveLiveTest(unittest.TestCase):
         from freecad.BlocksCAD.ui import ring as rg
         ui = self.s.ui
         pages = ui.shown_layout().pages
-        page = next(i for i, p in enumerate(pages) if face_id in p.slots)
+        candidates = [i for i, p in enumerate(pages) if face_id in p.slots]
+        page = next((i for i in candidates if pages[i].side == ui.ring.front_side()), candidates[0])     # the Value panel stands on every side
+        if pages[page].side != ui.ring.front_side():
+            ui.ring.focus_side(pages[page].side)                          # turn the carousel to the face
+            self.s.frame(0.02)
         centre, u, v = ui.ring.slot_centre(page, pages[page].slots.index(face_id))
         x = 0.0 if along is None else (-rg.GRID_W / 2 + rg.SLIDER_PAD) + along * (rg.GRID_W - 2 * rg.SLIDER_PAD)
         n = ui.ring.poses[page].n
@@ -2502,27 +2506,80 @@ class MoveLiveTest(unittest.TestCase):
         self.tip_to(self.face_point(face_id, 0.5, 0.0, front=0.08), trigger=0.0)
         self.tip_to(self.face_point(face_id, 0.5, 0.0, front=0.08))
 
-    def test_selecting_an_object_brings_up_the_value_panels_and_clearing_the_selection_takes_them_away(self):
+    def test_selecting_an_object_swaps_the_palette_carousel_for_the_values_carousel_and_clearing_it_swaps_back(self):
         from pivy import coin
         s = self.session()
-        sides, front = len(s.ui.layout.sides()), s.ui.ring.front_side()
+        s.ui.ring.focus_side(2)
+        tool_sides, front = len(s.ui.layout.sides()), s.ui.ring.front_side()
         module = self.select("")
         self.assertFalse(module.is_open)                                               # nothing is selected
+        self.assertEqual(s.ui.carousel, "tools")
         module = self.select()
         self.assertTrue(module.is_open)                                                # no click is needed
         self.assertEqual(module.editor.target.title, self.box.Label)
         self.assertEqual([f.label for f in module.editor.fields], ["Length", "Width", "Height", "X", "Y", "Z"])
-        self.assertEqual([p.name for p in s.ui.shown_layout().pages][-4:], ["Value", "Number pad", "Keys", "Variables"])
-        self.assertEqual(len(s.ui.ring.display_sides()), sides + 1)
-        self.assertEqual(s.ui.ring.front_side(), sides)                                # the carousel turned to them
+        self.assertEqual(s.ui.carousel, "values")
+        names = [p.name for p in s.ui.shown_layout().pages]
+        self.assertEqual(sorted(names), sorted(["Values", "Variables", "Keys", "Number pad", "Value", "Value"]))
+        self.assertEqual(len(s.ui.ring.display_sides()), 2)                            # the palette carousel is gone
+        self.assertEqual(s.ui.ring.front_side(), 0)                                    # the list of the values is in front
         self.assertEqual(s.ui.view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
         self.assertFalse(s.ui.ring.pinned)                                             # it is not forced open
-        self.assertEqual(s.ui.ring.fixed_from, len(s.ui.layout.pages))
+        self.assertEqual(s.ui.ring.fixed_from, len(s.ui.values_layout.pages))
         module = self.select("")
         self.assertFalse(module.is_open)
         for _ in range(3):
             s.frame(0.02)
-        self.assertEqual((len(s.ui.ring.display_sides()), s.ui.ring.front_side(), s.ui.ring.fixed_from), (sides, front, None))
+        self.assertEqual((s.ui.carousel, len(s.ui.ring.display_sides()), s.ui.ring.front_side(), s.ui.ring.fixed_from),
+                         ("tools", tool_sides, front, None))
+
+    def test_the_trigger_of_the_palette_hand_swaps_the_carousels_while_an_object_is_selected(self):
+        s = self.session()
+        self.select("")
+        s.input.set_hand(0, trigger=1.0)
+        s.frame(0.02)
+        s.input.set_hand(0, trigger=0.0)
+        s.frame(0.02)
+        self.assertEqual(s.ui.carousel, "tools")                                       # nothing is selected: there is no other carousel
+        self.select()
+        s.ui.ring.focus_side(1)
+        s.frame(0.02)
+
+        def tap():
+            s.input.set_hand(0, trigger=1.0)
+            s.frame(0.02)
+            s.input.set_hand(0, trigger=0.0)
+            s.frame(0.02)
+        tap()
+        self.assertEqual(s.ui.carousel, "tools")
+        self.assertEqual(len(s.ui.ring.display_sides()), len(s.ui.layout.sides()))
+        self.assertEqual(s.ui.ring.front_side(), 0)
+        s.ui.ring.focus_side(3)
+        s.frame(0.02)
+        tap()
+        self.assertEqual(s.ui.carousel, "values")
+        self.assertEqual(s.ui.ring.front_side(), 1)                                    # each carousel is at the side it was left at
+        tap()
+        self.assertEqual((s.ui.carousel, s.ui.ring.front_side()), ("tools", 3))
+        self.assertTrue(s.ui.module.is_open)                                           # the object stays selected
+
+    def test_the_trigger_of_the_palette_hand_scales_in_the_move_tool_and_does_not_swap(self):
+        s = self.session()
+        self.select()
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.assertTrue(s.tool_manager.active.busy)                                    # the box is grabbed
+        s.input.set_hand(0, trigger=1.0)
+        s.frame(0.02)
+        self.assertEqual(s.ui.carousel, "values")                                      # the other trigger scales, it does not swap
+        s.input.set_hand(0, trigger=0.0)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=0.0)
+        self.assertFalse(s.tool_manager.active.busy)
+        s.input.set_hand(0, trigger=1.0)
+        s.frame(0.02)
+        s.input.set_hand(0, trigger=0.0)
+        s.frame(0.02)
+        self.assertEqual(s.ui.carousel, "tools")                                       # after the grab it swaps again
 
     def test_the_panels_follow_the_selection_from_one_object_to_the_next_and_stay_where_they_are(self):
         from freecad.BlocksCAD.cad import primitives as prim
@@ -2533,11 +2590,58 @@ class MoveLiveTest(unittest.TestCase):
         self.select(cylinder.Name)
         self.assertEqual(module.key[1], cylinder.Name)
         self.assertEqual([f.label for f in module.editor.fields], ["Radius", "Height", "X", "Y", "Z"])
-        self.assertEqual(s.ui.ring.front_side(), len(s.ui.layout.sides()))             # they did not turn again
+        s.ui.ring.focus_side(1)
+        s.frame(0.02)
+        self.select(self.box.Name)
+        self.assertEqual(s.ui.ring.front_side(), 1)                                    # they did not turn again
         self.select("")
         self.assertFalse(module.is_open)
         self.select(self.box.Name, "Face6")                                            # a selected face selects its object for the panels
         self.assertEqual(module.key[1], self.box.Name)
+
+    def test_a_press_on_the_values_panel_picks_the_value_and_lights_its_face(self):
+        s = self.session()
+        module = self.select()
+        self.press_face("val.item.2")
+        self.assertEqual(module.editor.selected, 2)
+        self.assertEqual(module.readouts()["val.readout"], ("Height", "100 mm", False))
+        self.assertEqual(s.ui.module.picked_actions(), {"values:val.item.2"})
+        self.assertEqual(s.ui.module.labels()["val.item.3"], "X 0 mm")
+
+    def test_the_value_panels_are_rearranged_like_the_palette_panels_and_the_value_panel_stays_on_top(self):
+        import os
+        import tempfile
+        from freecad.BlocksCAD.ui.controller import UiController
+        from freecad.BlocksCAD.tools import registry
+        s = self.session()
+        self.select()
+        ui = s.ui
+        layout = ui.values_layout
+        names = [p.name for p in layout.pages]
+        self.assertEqual(names, ["Values", "Variables", "Keys", "Number pad"])
+        self.assertTrue(all(ui.shown_layout().pages[i].name == "Value" for i in range(len(names), len(ui.shown_layout().pages))))
+        ui.values_layout.move_page(3, 0, 0, 0, False)                                  # the Number pad next to the Values panel
+        ui._save_layout()
+        s.frame(0.02)
+        self.assertEqual([(p.name, p.side) for p in ui.values_layout.pages][:2], [("Number pad", 0), ("Values", 0)])
+        self.assertEqual(ui.ring.fixed_from, 4)
+        self.assertEqual(ui.shown_layout().pages[-1].name, "Value")
+        # the faces of the values carousel cannot be lifted or moved
+        self.assertFalse(ui.ring.can_lift(0, 0))
+        self.assertFalse(ui.ring.can_drop((0, 0), (1, 0)))
+        with tempfile.TemporaryDirectory() as folder:
+            paths = dict(layout_path=os.path.join(folder, "layout.json"), settings_path=os.path.join(folder, "settings.json"),
+                         values_layout_path=os.path.join(folder, "values_layout.json"))
+            first = UiController(registry.names(), registry.label_of, {}, **paths)
+            first.values_layout.move_page(3, 0, 0, 0, False)
+            first._save_layout()
+            second = UiController(registry.names(), registry.label_of, {}, **paths)
+            self.assertEqual([(p.name, p.side) for p in second.values_layout.pages][:2], [("Number pad", 0), ("Values", 0)])
+            second.reset_layout()
+            self.assertEqual([p.name for p in second.values_layout.pages], ["Values", "Variables", "Keys", "Number pad"])
+            self.assertFalse(os.path.exists(paths["values_layout_path"]))
+            first.close()
+            second.close()
 
     def test_the_value_panels_are_ordinary_depth_tested_geometry(self):
         from pivy import coin

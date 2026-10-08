@@ -13,23 +13,24 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""The value module: four panels on a carousel side of their own that follow the selection (docs/ux-design.md, Value panels). No
-Coin, OpenXR or FreeCAD imports.
+"""The value module: the panels of the values carousel, which replaces the palette carousel while an editable object is selected
+(docs/ux-design.md, Value panels). No Coin, OpenXR or FreeCAD imports.
 
-While an editable object is selected the carousel of the palette hand has one more side with four ordinary panels, so they are
-pointed at, hovered and pressed with the laser or the tip like the others. From the top: **Value** holds the readout of the picked
-value (its name, and the number or the text being typed, large), the slider of that value and the slider of the step; **Number
-pad** the digits with Del, Enter and Unit; **Keys** the rest of the expression (0, the point, the operators, brackets), the
-selector of the picked value (Previous value, "Value 2 of 6", Next value) and Clear; **Variables** the named lengths of the document
-(eight at a time, a press types the name into the expression) with the keys that make a variable of the picked value and free it
-again. The title of the Value panel names the object. There is no editing mode: selecting another object rebinds the panels,
-clearing the selection removes them, and every gesture (a slider drag, one Enter, one push of the stick) is its own undo step.
+The values carousel has two kinds of panels. The **Value** panel is fixed: it stands at the top of every side and holds the readout
+of the picked value (its name, and the number or the text being typed, large; it is the text field of the keys), the slider of that
+value and the slider of the step. The panels under it can be rearranged like the panels of the palette: **Values** lists every value
+of the object (a press picks it), **Number pad** holds the digits with Del, Enter and Unit; **Keys** the rest of the expression
+(0, the point, the operators, brackets), the selector of the picked value (Previous value, "Value 2 of 6", Next value) and Clear;
+**Variables** the named lengths of the document (eight at a time, a press types the name into the expression) with the keys that
+make a variable of the picked value and free it again. The title of the Value panel names the object. There is no editing mode:
+selecting another object rebinds the panels, clearing the selection removes the carousel, and every gesture (a slider drag, one
+Enter, one push of the stick) is its own undo step.
 
 The slider of the value is **focused** when the pointer comes near it (the tip within a hand's breadth in front of the panel, the
 laser over the row): as long as it stays focused the stick of the tool hand steps the picked value, up and down, by one step, while
 the tool's own options keep the stick the rest of the time. A slider changes its value only when its bar is pressed and dragged.
 `ValueModule` holds the `core.values.ValueEditor` of the selected object and turns what the carousel reports (a face pressed, a
-slider dragged, the value slider focused) into editor calls; the controller adds and removes the pages."""
+slider dragged, the value slider focused) into editor calls; the controller shows the panels and swaps the carousels."""
 
 import math
 from dataclasses import dataclass, field
@@ -37,7 +38,8 @@ from typing import List, Optional
 
 from freecad.BlocksCAD.core import snapping, units
 from freecad.BlocksCAD.core.values import VALUE_STEPS, ValueEditor, pretty_expression
-from freecad.BlocksCAD.ui.layout import Face, Page
+from freecad.BlocksCAD.ui import layout as lay
+from freecad.BlocksCAD.ui.layout import Face, Layout, Page
 from freecad.BlocksCAD.ui.options import FIRST_REPEAT, PUSH_OFF, PUSH_ON, REPEAT
 
 ROW_CHARS = 36                         # the label line of the readout is cut after this many characters
@@ -49,8 +51,11 @@ PREV, WHICH, NEXT = "val.prev", "val.which", "val.next"
 VARIABLES = 8                          # variables shown on the Variables panel at a time
 VARIABLE_IDS = tuple(f"var.{i}" for i in range(VARIABLES))
 VARIABLE_GROUP = "var.group"
-PAGE_VALUE, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES = "Value", "Number pad", "Keys", "Variables"
-PAGE_NAMES = (PAGE_VALUE, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES)
+ITEMS = 12                             # faces of the Values panel; with more values the last one is "More values"
+ITEM_IDS = tuple(f"val.item.{i}" for i in range(ITEMS))
+PAGE_VALUE, PAGE_LIST, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES = "Value", "Values", "Number pad", "Keys", "Variables"
+PAGE_NAMES = (PAGE_VALUE, PAGE_LIST, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES)
+MOVABLE_NAMES = PAGE_NAMES[1:]         # the panels the user can rearrange: the Value panel is fixed at the top of every side
 TYPED_CHARS = 30                       # the readout shows at most this many characters of what is typed
 
 # face id -> (label, key of the editor, tooltip)
@@ -76,6 +81,7 @@ PAD_SLOTS = ["key.7", "key.8", "key.9", "key.delete", "key.4", "key.5", "key.6",
 KEY_SLOTS = ["key.0", "key.point", "key.minus", "key.plus", "key.times", "key.divide", "key.open", "key.close",
              PREV, WHICH, NEXT, "key.clear"]
 VARIABLE_SLOTS = [*VARIABLE_IDS, "key.makevar", "key.unbind", VARIABLE_GROUP, None]
+LIST_SLOTS = list(ITEM_IDS)
 WIDE_KINDS = ("slider", "readout")     # faces that take a whole row of their panel
 
 
@@ -92,14 +98,45 @@ def faces():
     for fid in VARIABLE_IDS:
         result[fid] = Face(fid, "Variable", f"values:{fid}", tip="Type this variable into the expression")
     result[VARIABLE_GROUP] = Face(VARIABLE_GROUP, "More variables", f"values:{VARIABLE_GROUP}", tip="Show the next variables")
+    for fid in ITEM_IDS:
+        result[fid] = Face(fid, "Value", f"values:{fid}", tip="Pick this value")
     return result
 
 
-def pages(side):
-    """The four panels on carousel side `side`, from the top: Value (rows count from the bottom, nearest the user, so it is the highest
-    row), the Number pad, Keys and Variables."""
-    return [Page(PAGE_VALUE, list(VALUE_SLOTS), side, 3), Page(PAGE_PAD, list(PAD_SLOTS), side, 2), Page(PAGE_KEYS, list(KEY_SLOTS), side, 1),
-            Page(PAGE_VARIABLES, list(VARIABLE_SLOTS), side, 0)]
+def default_layout():
+    """The panels the user can rearrange, as they stand to begin with: the Values panel alone on the front side, the keys on the next
+    (the Number pad over Keys over Variables; rows count from the bottom, nearest the user)."""
+    return Layout([Page(PAGE_LIST, list(LIST_SLOTS), 0, 0), Page(PAGE_VARIABLES, list(VARIABLE_SLOTS), 1, 0),
+                   Page(PAGE_KEYS, list(KEY_SLOTS), 1, 1), Page(PAGE_PAD, list(PAD_SLOTS), 1, 2)])
+
+
+def complete(layout):
+    """A saved layout of the values carousel made fit to use: the Value panel is never part of it (it is added to every side), and a
+    panel that is missing comes back on a side of its own."""
+    pages = [p for p in layout.pages if p.name in MOVABLE_NAMES]
+    present = {p.name for p in pages}
+    for page in default_layout().pages:
+        if page.name not in present:
+            pages.append(Page(page.name, page.slots))          # no side: the panel gets one of its own
+    return Layout(pages)
+
+
+def shown_layout(layout):
+    """The layout the carousel draws for the movable `layout`: the same panels, and above the top row of every side a Value panel
+    (page indexes from `len(layout.pages)` on, in the order of the sides)."""
+    pages = list(layout.pages)
+    for side, rows in enumerate(layout.sides()):
+        pages.append(Page(PAGE_VALUE, list(VALUE_SLOTS), side, len(rows)))
+    return Layout(pages)
+
+
+def load_layout(known_faces, path=None):
+    """The user's saved layout of the values carousel, or the default one when there is none or it cannot be read."""
+    return complete(lay.load_layout(default_layout(), known_faces, path or user_layout_path()))
+
+
+def user_layout_path():
+    return lay.user_layout_path("values_layout")
 
 
 def nice_ceiling(value):
@@ -125,6 +162,8 @@ class ValueModule:
         self.editor: Optional[ValueEditor] = None
         self.key = None                     # what the editor is bound to (the selected object)
         self.variable_group = 0             # the Variables panel shows the variables 8 * variable_group and the next seven
+        self.item_group = 0                 # the Values panel shows the values from page_size * item_group on
+        self._seen_selected = None          # the picked value the Values panel last followed
         self._variable_age = 0.0
         self.faces = faces()
         self.step = 10.0                    # the step of the stick and the value slider, kept from one object to the next
@@ -149,7 +188,7 @@ class ValueModule:
         """Bind the panels to the editor of an object; `key` names the object."""
         self.close()
         self.editor, self.key = editor, key
-        self.variable_group, self._ranges, self._range_step = 0, {}, None
+        self.variable_group, self.item_group, self._seen_selected, self._ranges, self._range_step = 0, 0, None, {}, None
         self._focus, self._dir = False, 0
         self._refresh_ranges(False)
 
@@ -242,7 +281,37 @@ class ValueModule:
         for slot, fid in enumerate(VARIABLE_IDS):
             entry = self.variable_at(slot)
             labels[fid] = "-" if entry is None else f"{entry[0]} {units.format_length(entry[1], self.editor.system)}"
+        for slot, fid in enumerate(ITEM_IDS):
+            index = self.item_at(slot)
+            if index is None:
+                labels[fid] = "More values" if self._paged and slot == ITEMS - 1 else "-"
+            else:
+                field = self.editor.fields[index]
+                labels[fid] = f"{field.label} {self.editor.text_of(field)}"
         return labels
+
+    @property
+    def _paged(self):
+        """There are more values than the Values panel has faces: its last face then shows the next page of values."""
+        return self.editor is not None and len(self.editor.fields) > ITEMS
+
+    @property
+    def page_size(self):
+        return ITEMS - 1 if self._paged else ITEMS
+
+    def item_at(self, slot):
+        """Index of the value on face `slot` (0 to 11) of the Values panel, or None when the face shows none."""
+        if self.editor is None or slot >= self.page_size:
+            return None
+        index = self.item_group * self.page_size + slot
+        return index if index < len(self.editor.fields) else None
+
+    def picked_actions(self):
+        """Actions of the faces that are lit: the face of the Values panel that shows the picked value."""
+        if self.editor is None:
+            return frozenset()
+        slot = self.editor.selected - self.item_group * self.page_size
+        return frozenset([self.faces[ITEM_IDS[slot]].action]) if 0 <= slot < self.page_size else frozenset()
 
     def variable_at(self, slot):
         """(name, millimetres) of the variable on slot `slot` (0 to 7) of the Variables panel, or None when it shows none."""
@@ -266,6 +335,13 @@ class ValueModule:
             count = max(1, math.ceil(len(editor.variables) / VARIABLES))
             self.variable_group = (self.variable_group + 1) % count
             return True
+        if face_id in ITEM_IDS:
+            slot = ITEM_IDS.index(face_id)
+            if self._paged and slot == ITEMS - 1:
+                self.item_group = (self.item_group + 1) % math.ceil(len(editor.fields) / self.page_size)
+                return True
+            index = self.item_at(slot)
+            return index is not None and editor.select(index)
         if face_id in VARIABLE_IDS:
             entry = self.variable_at(VARIABLE_IDS.index(face_id))
             return entry is not None and editor.key(f"var:{entry[0]}")
@@ -318,6 +394,10 @@ class ValueModule:
         except Exception:                   # the object is gone (deleted, or its document closed)
             self.editor, self.key = None, None
             return result
+        if editor.selected != self._seen_selected:         # the Values panel shows the page of the picked value
+            self._seen_selected = editor.selected
+            self.item_group = editor.selected // self.page_size
+        self.item_group = min(self.item_group, max(0, math.ceil(len(editor.fields) / self.page_size) - 1))
         self._focus_age += frame.dt
         self._variable_age += frame.dt
         if self._variable_age >= VARIABLE_REFRESH:

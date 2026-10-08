@@ -222,9 +222,10 @@ class Layout:
         return cls(pages, hidden)
 
 
-def user_layout_path():
+def user_layout_path(name="layout"):
+    """The file of a saved layout: `layout.json` for the palette carousel, `values_layout.json` for the values carousel."""
     base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), ".config")
-    return os.path.join(base, "BlocksCAD", "layout.json")
+    return os.path.join(base, "BlocksCAD", name + ".json")
 
 
 def load_layout(default, known_faces, path=None):

@@ -32,16 +32,36 @@ class One(Target):
         return [v.Field("r", "Radius", self.values["r"], 0.1)]
 
 
+def page(name, layout=None):
+    return next(p for p in (layout or vm.default_layout()).pages if p.name == name)
+
+
 class PagesTest(unittest.TestCase):
-    def test_the_four_panels_stand_on_one_side_the_value_on_top(self):
-        pages = vm.pages(4)
-        self.assertEqual([(p.name, p.side, p.row) for p in pages],
-                         [("Value", 4, 3), ("Number pad", 4, 2), ("Keys", 4, 1), ("Variables", 4, 0)])
-        self.assertEqual(lay.Layout(pages).sides()[-1], [[3], [2], [1], [0]])      # rows count from the bottom
+    def test_the_default_layout_puts_the_list_on_the_front_side_and_the_keys_on_the_next(self):
+        layout = vm.default_layout()
+        self.assertEqual([(p.name, p.side, p.row) for p in layout.pages],
+                         [("Values", 0, 0), ("Variables", 1, 0), ("Keys", 1, 1), ("Number pad", 1, 2)])    # rows count from the bottom
+        self.assertEqual(layout.sides(), [[[0]], [[1], [2], [3]]])
+
+    def test_the_value_panel_is_fixed_at_the_top_of_every_side(self):
+        layout = vm.default_layout()
+        shown = vm.shown_layout(layout)
+        self.assertEqual([(p.name, p.side, p.row) for p in shown.pages[len(layout.pages):]], [("Value", 0, 1), ("Value", 1, 3)])
+        self.assertEqual(shown.sides(), [[[0], [4]], [[1], [2], [3], [5]]])
+        self.assertTrue(all(p.name != "Value" for p in layout.pages))             # it is no part of what the user rearranges
+
+    def test_a_panel_moved_to_a_new_side_gets_a_value_panel_of_its_own_and_an_emptied_side_loses_it(self):
+        layout = vm.default_layout()
+        layout.move_page(3, 2)                                                       # the Number pad on a side of its own
+        shown = vm.shown_layout(layout)
+        self.assertEqual([p.side for p in shown.pages if p.name == "Value"], [0, 1, 2])
+        layout.move_page(0, 1, 0, None, True)                                        # the list to the keys: its side is gone
+        self.assertEqual(len(vm.shown_layout(layout).sides()), 2)
 
     def test_every_face_of_the_panels_is_known_and_each_is_on_a_panel_once(self):
         known = vm.faces()
-        placed = [f for page in vm.pages(0) for f in page.slots if f]
+        shown = vm.shown_layout(vm.default_layout())
+        placed = [f for page in shown.pages[:-2] for f in page.slots if f] + [f for f in shown.pages[-1].slots if f]
         self.assertEqual(sorted(placed), sorted(known))
         self.assertEqual(len(placed), len(set(placed)))
         for fid in vm.SLIDER_IDS:
@@ -50,24 +70,47 @@ class PagesTest(unittest.TestCase):
         self.assertEqual(known[vm.WHICH].kind, "display")
 
     def test_the_readout_and_the_sliders_are_alone_on_the_rows_of_the_value_panel(self):
-        slots = vm.pages(0)[0].slots
+        slots = vm.shown_layout(vm.default_layout()).pages[-1].slots
         for row, fid in enumerate((vm.READOUT, vm.VALUE_SLIDER, vm.STEP_SLIDER)):
             self.assertEqual(slots[row * lay.COLS], fid)
             self.assertTrue(all(s is None for s in slots[row * lay.COLS + 1:(row + 1) * lay.COLS]))
 
     def test_the_selector_is_a_row_of_the_keys_panel_between_the_operators_and_clear(self):
-        slots = vm.pages(0)[2].slots
+        slots = page("Keys").slots
         self.assertEqual(slots[:4], ["key.0", "key.point", "key.minus", "key.plus"])
         self.assertEqual(slots[8:], [vm.PREV, vm.WHICH, vm.NEXT, "key.clear"])
 
     def test_every_key_of_the_editor_can_be_pressed_from_a_face(self):
-        keys = {vm.KEYS[f][1] for page in vm.pages(0)[1:] for f in page.slots if f in vm.KEYS}
+        keys = {vm.KEYS[f][1] for p in vm.default_layout().pages for f in p.slots if f in vm.KEYS}
         self.assertEqual(keys, set("0123456789.+-*/()") | {"back", "unit", "enter", "clear", "makevar", "unbind"})
 
     def test_the_variables_panel_has_eight_variables_a_group_key_and_the_keys_that_make_and_free(self):
-        slots = vm.pages(0)[3].slots
+        slots = page("Variables").slots
         self.assertEqual(slots[:8], list(vm.VARIABLE_IDS))
         self.assertEqual(slots[8:], ["key.makevar", "key.unbind", vm.VARIABLE_GROUP, None])
+
+    def test_the_values_panel_has_twelve_faces_for_the_values(self):
+        self.assertEqual(page("Values").slots, list(vm.ITEM_IDS))
+
+    def test_a_saved_layout_loses_the_value_panel_and_gets_back_a_panel_that_is_missing(self):
+        saved = vm.default_layout()
+        saved.pages = [p for p in saved.pages if p.name != "Keys"] + [lay.Page("Value", list(vm.VALUE_SLOTS), 0, 1)]
+        fixed = vm.complete(lay.Layout(saved.pages))
+        self.assertEqual(sorted(p.name for p in fixed.pages), sorted(vm.MOVABLE_NAMES))
+        self.assertEqual(len({p.side for p in fixed.pages}), 3)                      # the missing panel has a side of its own
+
+    def test_the_layout_is_saved_and_loaded_without_the_value_panel(self):
+        import os
+        import tempfile
+        layout = vm.default_layout()
+        layout.move_page(3, 0, 0, 0, True)
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "values.json")
+            lay.save_layout(layout, path)
+            loaded = vm.load_layout(set(vm.faces()), path)
+            self.assertEqual([(p.name, p.side, p.row) for p in loaded.pages], [(p.name, p.side, p.row) for p in layout.pages])
+            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.faces()), os.path.join(folder, "none.json")).pages],
+                             [(p.name, p.side, p.row) for p in vm.default_layout().pages])
 
     def test_nice_ceiling(self):
         for value, expected in ((1, 1), (1.1, 2), (2, 2), (3, 5), (5, 5), (5.1, 10), (100, 100), (101, 200), (0.04, 0.05), (999, 1000)):
@@ -343,6 +386,69 @@ class ModuleTest(unittest.TestCase):
         self.assertEqual(self.target.log[-1], "commit")
         self.assertEqual(self.module.key, "other")
         self.assertEqual(self.module.editor.selected, 0)
+
+
+class ValuesPanelTest(unittest.TestCase):
+    def setUp(self):
+        self.sim = SimInput()
+        self.module = vm.ValueModule(tool_hand=1)
+        self.module.open(v.ValueEditor(Wide(), step=10.0))
+        self.module.update(self.sim.frame(0.02))
+
+    def test_the_faces_list_the_values_with_their_numbers_and_a_dash_where_there_is_none(self):
+        labels = self.module.labels()
+        self.assertEqual(labels["val.item.0"], "S0 100 mm")
+        self.assertEqual(labels["val.item.6"], "POS.Z 0 mm")
+        self.assertEqual(labels["val.item.7"], "-")
+
+    def test_a_press_picks_the_value_and_the_picked_face_is_lit(self):
+        self.assertEqual(self.module.picked_actions(), {"values:val.item.0"})
+        self.assertTrue(self.module.activate("val.item.4"))
+        self.assertEqual(self.module.editor.selected, 4)
+        self.assertEqual(self.module.picked_actions(), {"values:val.item.4"})
+        self.assertFalse(self.module.activate("val.item.4"))                         # it is picked already
+        self.assertFalse(self.module.activate("val.item.9"))                         # a face with no value
+
+    def test_the_list_follows_the_selector_and_the_numbers_follow_the_object(self):
+        self.module.activate(vm.NEXT)
+        self.assertEqual(self.module.picked_actions(), {"values:val.item.1"})
+        self.module.editor.target.values["s0"] = 50.0
+        self.module.update(self.sim.frame(0.02))
+        self.assertEqual(self.module.labels()["val.item.0"], "S0 50 mm")
+
+    def test_nothing_is_lit_and_no_value_is_listed_while_nothing_is_bound(self):
+        self.module.close()
+        self.assertEqual((self.module.picked_actions(), self.module.labels()), (frozenset(), {}))
+        self.assertFalse(self.module.activate("val.item.0"))
+
+    def test_more_values_than_faces_make_the_last_face_the_next_page(self):
+        class Many(Target):
+            title = "Sketch"
+
+            def __init__(self):
+                self.values = {f"d{i}": float(i + 1) for i in range(15)}
+                self.log = []
+
+            def fields(self):
+                return [v.Field(n, n.upper(), x, 0.1) for n, x in self.values.items()]
+        module = vm.ValueModule(tool_hand=1)
+        module.open(v.ValueEditor(Many(), step=1.0))
+        module.update(self.sim.frame(0.02))
+        labels = module.labels()
+        self.assertEqual((labels["val.item.0"], labels["val.item.10"], labels["val.item.11"]), ("D0 1 mm", "D10 11 mm", "More values"))
+        self.assertTrue(module.activate("val.item.11"))
+        labels = module.labels()
+        self.assertEqual((labels["val.item.0"], labels["val.item.3"], labels["val.item.4"]), ("D11 12 mm", "D14 15 mm", "-"))
+        self.assertEqual(module.picked_actions(), frozenset())                       # the picked value is on the first page
+        self.assertTrue(module.activate("val.item.2"))
+        self.assertEqual(module.editor.selected, 13)
+        self.assertEqual(module.picked_actions(), {"values:val.item.2"})
+        self.assertTrue(module.activate("val.item.11"))                               # round to the first page again
+        self.assertEqual(module.labels()["val.item.0"], "D0 1 mm")
+        module.activate(vm.PREV)                                                     # the selector brings the list to the picked value
+        module.update(self.sim.frame(0.02))
+        self.assertEqual(module.editor.selected, 12)
+        self.assertEqual(module.picked_actions(), {"values:val.item.1"})
 
 
 class VariablePanelTest(unittest.TestCase):
