@@ -47,6 +47,37 @@ def plan(kind, names):
     return names[0], list(names[1:])
 
 
+def sources_of(obj):
+    """The objects that `obj` is made from: what it refers to (`OutList`) that has a shape of its own, each once, in the order of the
+    feature (the tools of a cut after its base). A spreadsheet of variables or an origin has no shape and is none."""
+    result = []
+    for source in getattr(obj, "OutList", ()):
+        if hasattr(source, "Shape") and source not in result:
+            result.append(source)
+    return result
+
+
+def sources(doc, items):
+    """The sources of the selected objects (`items`: (name, sub-element name) pairs; a selected face, edge or vertex counts for its
+    object), each once, hidden ones included. Returns (text for a toast, names of the sources), the names empty when there is none."""
+    names = []
+    for name, _ in items:
+        if name not in names and doc.getObject(name) is not None:
+            names.append(name)
+    if not names:
+        return "Select a feature first", []
+    found = []
+    for name in names:
+        for source in sources_of(doc.getObject(name)):
+            if source.Name not in found:
+                found.append(source.Name)
+    if not found:
+        return ("This object has no sources" if len(names) == 1 else "These objects have no sources"), []
+    hidden = sum(1 for name in found if not getattr(doc.getObject(name), "Visibility", True))
+    text = "Sources: " + ", ".join(doc.getObject(name).Label for name in found[:3]) + ("" if len(found) <= 3 else f" and {len(found) - 3} more")
+    return text + (f" ({hidden} hidden)" if hidden else ""), found
+
+
 def hide(obj):
     view = getattr(obj, "ViewObject", None)
     if view is not None:

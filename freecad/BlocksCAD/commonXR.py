@@ -551,6 +551,7 @@ class XRwidget(QOpenGLWidget):
             "doc:copy": self.copy_selection,
             "doc:colour": self.colour_selection,
             "doc:extrude": self.extrude_selection,
+            "doc:sources": self.select_sources,
             "doc:fillet": lambda: self.edge_selection("fillet"),
             "doc:chamfer": lambda: self.edge_selection("chamfer"),
             "doc:attach": self.attach_selection,
@@ -722,6 +723,16 @@ class XRwidget(QOpenGLWidget):
         if doc is None:
             return "No document"
         return joints.remove(doc, picking.get_selection(doc))[0]
+
+    def select_sources(self):
+        """Select the objects that the selected features are made from (hidden ones too); returns the text of the toast."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return "No document"
+        text, names = combine.sources(doc, picking.get_selection(doc))
+        if names:
+            picking.set_selection(doc, [(name, "") for name in names])
+        return text
 
     def extrude_selection(self):
         """Extrude the selected sketches into solids in one undo step and select them; returns the text of the toast."""

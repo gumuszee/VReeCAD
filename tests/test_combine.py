@@ -33,6 +33,53 @@ class FakeObject:
         self.Name, self.TypeId = name, type_id
 
 
+class SourcesTest(unittest.TestCase):
+    class Thing:
+        def __init__(self, name, out=(), shape=True, visible=True):
+            self.Name = self.Label = name
+            self.OutList = list(out)
+            self.Visibility = visible
+            if shape:
+                self.Shape = object()
+
+    class Doc:
+        def __init__(self, *things):
+            self.things = {t.Name: t for t in things}
+
+        def getObject(self, name):
+            return self.things.get(name)
+
+    def setUp(self):
+        T = self.Thing
+        self.a, self.b = T("a", visible=False), T("b", visible=False)
+        self.sheet = T("Variables", shape=False)
+        self.cut = T("cut", [self.a, self.b, self.sheet, self.a])
+        self.doc = self.Doc(self.a, self.b, self.sheet, self.cut)
+
+    def test_the_sources_are_what_the_feature_refers_to_that_has_a_shape_in_order_each_once(self):
+        self.assertEqual(combine.sources_of(self.cut), [self.a, self.b])
+        self.assertEqual(combine.sources_of(self.a), [])
+        self.assertEqual(combine.sources_of(object()), [])
+
+    def test_the_text_names_the_sources_and_counts_the_hidden_ones(self):
+        self.assertEqual(combine.sources(self.doc, [("cut", "")]), ("Sources: a, b (2 hidden)", ["a", "b"]))
+        self.assertEqual(combine.sources(self.doc, [("cut", "Face2"), ("cut", "")]), ("Sources: a, b (2 hidden)", ["a", "b"]))
+
+    def test_many_sources_are_counted_and_a_shown_one_is_not_hidden(self):
+        T = self.Thing
+        shown = [T(f"s{i}") for i in range(5)]
+        fuse = T("fuse", shown)
+        doc = self.Doc(fuse, *shown)
+        text, names = combine.sources(doc, [("fuse", "")])
+        self.assertEqual((text, names), ("Sources: s0, s1, s2 and 2 more", ["s0", "s1", "s2", "s3", "s4"]))
+
+    def test_nothing_to_open_says_so(self):
+        self.assertEqual(combine.sources(self.doc, []), ("Select a feature first", []))
+        self.assertEqual(combine.sources(self.doc, [("gone", "")]), ("Select a feature first", []))
+        self.assertEqual(combine.sources(self.doc, [("a", "")]), ("This object has no sources", []))
+        self.assertEqual(combine.sources(self.doc, [("a", ""), ("b", "")]), ("These objects have no sources", []))
+
+
 class FakeDocument:
     def __init__(self, *names):
         self.objects = {n: FakeObject(n, "Part::Box") for n in names}

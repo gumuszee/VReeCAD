@@ -1164,6 +1164,27 @@ class MoveLiveTest(unittest.TestCase):
         from freecad.BlocksCAD.cad import primitives as prim
         return prim.create(self.doc, shape, lo, size)
 
+    def test_the_sources_of_a_boolean_are_selected_even_hidden_and_their_size_is_a_value(self):
+        from freecad.BlocksCAD.cad import combine, values
+        other = self.second_shape()
+        text, name = combine.combine(self.doc, "cut", [(self.box.Name, ""), (other.Name, "")])
+        cut = self.doc.getObject(name)
+        self.box.Visibility = other.Visibility = False                                        # the boolean hides its sources in the GUI
+        text, found = combine.sources(self.doc, [(name, "")])
+        self.assertEqual(found, [self.box.Name, other.Name])                                  # the base first, then the tool
+        self.assertIn("2 hidden", text)
+        key, factory = values.source(self.doc, lambda doc: [(found[0], "")])
+        target = factory()                                                                    # a hidden object has its values
+        self.assertEqual(target.fields()[0].label, "Length")
+        before = cut.Shape.Volume
+        target.set("Length", 300.0)
+        target.commit()
+        self.assertGreater(cut.Shape.Volume, before)                                          # the result follows the source that was edited
+        text, found = combine.sources(self.doc, [(name, "Face1"), (self.box.Name, "")])       # a face counts for its object
+        self.assertEqual(found, [self.box.Name, other.Name])
+        self.assertEqual(combine.sources(self.doc, [(other.Name, "")]), ("This object has no sources", []))
+        self.assertEqual(combine.sources(self.doc, []), ("Select a feature first", []))
+
     def test_a_fuse_is_one_undo_step_keeps_its_sources_and_follows_them(self):
         from freecad.BlocksCAD.cad import combine
         other = self.second_shape()
