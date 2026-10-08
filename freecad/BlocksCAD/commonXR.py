@@ -128,6 +128,7 @@ except ImportError:
 
 
 GUIDE_REACH = 0.008      # metres of hand space within which a point lines up with the points of the model
+INFERENCE_REACH = 0.014  # and with inference, which pulls harder (core/inference.py)
 MODEL_CHECK_FRAMES = 60  # frames between checks for controller models that appeared after the first enumeration
 
 ALL_SEVERITIES = (
@@ -580,6 +581,9 @@ class XRwidget(QOpenGLWidget):
         self.anchor_cache = anchors.Anchors()
         self.depth_order = DepthOrder()             # a fixed winner for faces that share a plane (render/depth_order.py)
         self._depth_synced = (None, 0.0)            # (document name, time) of the last `depth_order.sync`
+        self.edge_cache = anchors.Anchors(per_object=anchors.object_edges, combiner=anchors.combine_edges)   # the straight edges inference snaps to
+        self.snapper = inference.Snapper()
+        self._snap = None                           # the `inference.Snap` of the last `align_point`
         self.inference = inference.Inference()      # which anchors the guides may use when the setting says inference (core/inference.py)
         self._warmed = None                # the name of the document whose caches have been read (`warm_caches`)
         self.ghost = Ghost()      # the preview of a shape being made, in document space (added next to the document scene)
@@ -600,6 +604,7 @@ class XRwidget(QOpenGLWidget):
                                                                         self.input_frame.hands[hand].aim.orientation),
             "mm_per_metre": self.context_mm_per_metre,
             "guides": self.align_point,
+            "feature": self.show_feature,
             "guide_anchors": self.guide_anchors,
             "toast": self.ui.toast,
             "readout": self.ui.set_readout,
@@ -613,7 +618,37 @@ class XRwidget(QOpenGLWidget):
         """(point, guides) for a cursor at `raw` rounded to the grid as `point`: lined up with the vertices and straight edge middles of the
         visible objects (except those in `exclude`) within `GUIDE_REACH` of hand space (docs/ux-design.md, Guides)."""
         anchors, tolerance = self.guide_anchors(exclude)
+        if self.ui.settings.snap_source == "inference":
+            doc = App.ActiveDocument
+            features = inference.Features(anchors, self.edge_cache.get(doc, exclude) if doc is not None else [])
+            snap = self.snapper.snap_to(raw, features, self.context_mm_per_metre())
+            self._snap = snap
+            if snap is not None:                    # on a vertex, a middle or an edge: the point is that feature
+                return snap.point, [guides.Guide("point", -1, snap.point, snap.point)]
+        else:
+            self.snapper.reset()
+            self._snap = None
         return guides.align(raw, point, anchors, tolerance) if anchors else (point, [])
+
+    def show_feature(self, found):
+        """Highlight what drives the guides `found` (inference only): the edge that a snap or a middle lies on, else the vertex."""
+        if self.ui.settings.snap_source != "inference" or not found:
+            self.ghost.hide_feature()
+            return
+        doc = App.ActiveDocument
+        edges, points = [], []
+        lookup = None
+        for guide in found:
+            snap = self._snap if self._snap is not None and tuple(guide.anchor) == tuple(self._snap.point) else None
+            if snap is None:
+                if lookup is None:
+                    lookup = inference.Features([], self.edge_cache.get(doc, ()) if doc is not None else [])
+                snap = lookup.describe(guide.anchor)
+            if snap.edge is not None and snap.edge not in edges:
+                edges.append(snap.edge)
+            if snap.kind != "edge":
+                points.append(snap.point)
+        self.ghost.show_feature(edges, points, INFERENCE_REACH * self.context_mm_per_metre() * 0.6)
 
     def guide_anchors(self, exclude=(), probes=None):
         """(anchors, reach in millimetres) that a tool lines a point up with: the vertices and straight edge middles of the visible
@@ -635,7 +670,7 @@ class XRwidget(QOpenGLWidget):
         elif self.inference.acquired:
             self.inference.reset()
             self.ghost.hide_acquired()
-        return found, GUIDE_REACH * mm
+        return found, (INFERENCE_REACH if self.ui.settings.snap_source == "inference" else GUIDE_REACH) * mm
 
     def context_mm_per_metre(self):
         return 1.0 / (self.doc_xr_transform.scaleFactor.getValue()[0] * self.navigator.world.scale)
@@ -1391,6 +1426,7 @@ class XRwidget(QOpenGLWidget):
         if doc is not None:
             picking.warm(doc)
             self.anchor_cache.get(doc, ())
+            self.edge_cache.get(doc, ())
 
     def update_ui(self, frame):
         """One frame of the user interface: grip navigation, palette ring, haptics, ray and trigger ownership."""

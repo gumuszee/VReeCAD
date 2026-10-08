@@ -41,6 +41,39 @@ def object_points(obj):
     return points or None
 
 
+def object_edges(obj):
+    """The straight edges of one object as ((x, y, z), (x, y, z)) pairs, or None when it has none, no shape or is hidden (inference snaps to
+    them, `core/inference.py`)."""
+    import Part
+    shape = getattr(obj, "Shape", None)
+    if shape is None or shape.isNull() or not getattr(obj, "Visibility", True):
+        return None
+    edges = []
+    for edge in shape.Edges:
+        try:
+            straight = isinstance(edge.Curve, Part.Line)
+        except TypeError:
+            continue
+        if straight and len(edge.Vertexes) == 2:
+            a, b = edge.Vertexes[0].Point, edge.Vertexes[1].Point
+            edges.append(((a.x, a.y, a.z), (b.x, b.y, b.z)))
+    return edges or None
+
+
+def combine_edges(lists, limit=MAX_ANCHORS):
+    """The edges of the `lists`, each edge once, at most `limit`."""
+    seen, edges = set(), []
+    for pairs in lists:
+        for a, b in pairs:
+            key = tuple(sorted((tuple(round(c, 4) for c in a), tuple(round(c, 4) for c in b))))
+            if key not in seen:
+                if len(edges) >= limit:
+                    return edges
+                seen.add(key)
+                edges.append((a, b))
+    return edges
+
+
 def combine(lists, limit=MAX_ANCHORS):
     """The points of the `lists`, each point once, at most `limit`."""
     seen, anchors = set(), []
@@ -94,8 +127,9 @@ class Anchors:
     points of an object are read when it is new or has changed, and the list is made again only when the exclusions or the document
     differ or an object that is not excluded changed. An object that is dragged and excluded costs nothing per frame."""
 
-    def __init__(self, changes=None, per_object=object_points):
+    def __init__(self, changes=None, per_object=object_points, combiner=None):
         self._changes, self._per_object = changes, per_object
+        self._combiner = combiner or combine
         self._cache = None
         self._key = self._found = None
 
@@ -107,5 +141,5 @@ class Anchors:
         key = (doc.Name, tuple(sorted(exclude)))
         if self._found is None or key != self._key or touched is None or any(name not in exclude for name in touched):
             self._key = key
-            self._found = combine(points for name, points in values.items() if name not in exclude)
+            self._found = self._combiner(points for name, points in values.items() if name not in exclude)
         return self._found

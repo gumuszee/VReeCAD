@@ -170,12 +170,18 @@ class Tool:
             if appeared and self.ctx.haptic is not None:
                 self.ctx.haptic(self.ctx.dominant, 0.08, 0.008)
         ghost.show_guides(guides, half)
+        feature = self.ctx.services.get("feature")
+        if feature is not None:
+            feature(guides)                      # the host highlights what drives them (inference)
 
     def hide_guides(self):
         self._guide_key = None
         ghost = self.ctx.services.get("ghost")
         if ghost is not None:
             ghost.hide_guides()
+        feature = self.ctx.services.get("feature")
+        if feature is not None:
+            feature(())
 
     def disc_slots(self):
         """The six `DiscSlot`s of the option disc, clockwise from the top (the stick up), or None for a tool without a disc."""

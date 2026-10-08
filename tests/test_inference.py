@@ -70,5 +70,82 @@ class SelectTest(unittest.TestCase):
         self.assertEqual(self.inference.acquired, [FAR])
 
 
+EDGE_X = ((0.0, 0.0, 0.0), (100.0, 0.0, 0.0))
+EDGE_Y = ((0.0, 0.0, 0.0), (0.0, 100.0, 0.0))
+
+
+def features(*edges):
+    anchors = []
+    for a, b in edges:
+        for p in (a, b, tuple((x + y) / 2 for x, y in zip(a, b))):
+            if p not in anchors:
+                anchors.append(p)
+    return inference.Features(anchors, list(edges))
+
+
+class SnapTest(unittest.TestCase):
+    def setUp(self):
+        self.snapper = inference.Snapper()
+        self.model = features(EDGE_X, EDGE_Y)
+
+    def test_a_vertex_and_a_middle_are_snapped_to_with_the_kind_that_says_what_drives_it(self):
+        snap = self.snapper.snap_to((4.0, 6.0, 0.0), self.model, MM)
+        self.assertEqual((snap.point, snap.kind, snap.edge), ((0.0, 0.0, 0.0), "vertex", None))
+        self.snapper.reset()
+        snap = self.snapper.snap_to((52.0, 5.0, 0.0), self.model, MM)
+        self.assertEqual((snap.point, snap.kind, snap.edge), ((50.0, 0.0, 0.0), "middle", EDGE_X))
+
+    def test_an_edge_is_snapped_to_at_its_nearest_point_within_its_own_reach(self):
+        snap = self.snapper.snap_to((30.0, 9.0, 4.0), self.model, MM)
+        self.assertEqual((snap.kind, snap.edge), ("edge", EDGE_X))
+        self.assertEqual(snap.point, (30.0, 0.0, 0.0))
+        self.snapper.reset()
+        self.assertIsNone(self.snapper.snap_to((30.0, 12.0, 0.0), self.model, MM))        # the reach of an edge is smaller than that of a vertex
+        self.assertIsNone(self.snapper.snap_to((300.0, 300.0, 0.0), self.model, MM))
+
+    def test_a_vertex_wins_over_an_edge_that_is_nearer(self):
+        snap = self.snapper.snap_to((3.0, 0.5, 0.0), self.model, MM)                  # on both an edge and near the corner
+        self.assertEqual((snap.kind, snap.point), ("vertex", (0.0, 0.0, 0.0)))
+        self.snapper.reset()
+        self.snapper.snap_to((30.0, 2.0, 0.0), self.model, MM)                         # held on the edge
+        snap = self.snapper.snap_to((2.0, 2.0, 0.0), self.model, MM)
+        self.assertEqual(snap.kind, "vertex")                                          # the vertex takes over from the held edge
+
+    def test_a_feature_is_held_until_the_cursor_is_much_further_away(self):
+        self.snapper.snap_to((30.0, 8.0, 0.0), self.model, MM)
+        snap = self.snapper.snap_to((30.0, 15.0, 0.0), self.model, MM)                 # 15 mm: beyond the reach of 11 mm, within the hold of 17.6 mm
+        self.assertEqual((snap.kind, snap.point), ("edge", (30.0, 0.0, 0.0)))
+        self.assertIsNone(self.snapper.snap_to((30.0, 25.0, 0.0), self.model, MM))
+        self.assertIsNone(self.snapper.held)
+        self.assertIsNone(self.snapper.snap_to((30.0, 15.0, 0.0), self.model, MM))     # and it has to be caught again
+
+    def test_a_held_vertex_is_kept_beyond_its_reach_and_the_nearer_of_two_takes_over(self):
+        lone = inference.Features([(0.0, 0.0, 0.0)], [])
+        self.assertEqual(self.snapper.snap_to((10.0, 0.0, 0.0), lone, MM).point, (0.0, 0.0, 0.0))
+        self.assertEqual(self.snapper.snap_to((20.0, 0.0, 0.0), lone, MM).point, (0.0, 0.0, 0.0))      # held: 20 mm is within 1.6 times 14 mm
+        self.assertIsNone(self.snapper.snap_to((30.0, 0.0, 0.0), lone, MM))
+        self.snapper.reset()
+        model = features(((0.0, 0.0, 0.0), (20.0, 0.0, 0.0)))
+        self.assertEqual(self.snapper.snap_to((4.0, 2.0, 0.0), model, MM).point, (0.0, 0.0, 0.0))
+        self.assertEqual(self.snapper.snap_to((9.0, 2.0, 0.0), model, MM).point, (10.0, 0.0, 0.0))       # the middle is nearer now
+
+    def test_the_reaches_are_measured_in_hand_space(self):
+        self.assertIsNone(self.snapper.snap_to((30.0, 9.0, 0.0), self.model, 500.0))      # 9 mm of the document are 18 mm of hand space
+        self.assertIsNotNone(self.snapper.snap_to((30.0, 9.0, 0.0), self.model, 2000.0))
+
+    def test_describe_tells_a_middle_from_a_vertex_by_its_place(self):
+        model = features(EDGE_X)
+        self.assertEqual(model.describe((50.0, 0.0, 0.0)).kind, "middle")
+        self.assertEqual(model.describe((100.0, 0.0, 0.0)).kind, "vertex")
+        self.assertEqual(model.describe((50.0000004, 0.0, 0.0)).edge, EDGE_X)
+
+
+class SegmentTest(unittest.TestCase):
+    def test_the_nearest_point_of_a_segment_is_clamped_to_its_ends(self):
+        self.assertEqual(inference.nearest_on_segment((50, 10, 0), *EDGE_X), ((50.0, 0.0, 0.0), 10.0))
+        self.assertEqual(inference.nearest_on_segment((-30, 40, 0), *EDGE_X), ((0.0, 0.0, 0.0), 50.0))
+        self.assertEqual(inference.nearest_on_segment((7, 0, 0), (5, 5, 5), (5, 5, 5))[0], (5, 5, 5))
+
+
 if __name__ == "__main__":
     unittest.main()

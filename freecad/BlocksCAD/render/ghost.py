@@ -34,6 +34,8 @@ EDGE_WIDTH = 2.0
 OUTLINE = (0.95, 0.65, 0.10)
 MARKER = (0.95, 0.65, 0.10)
 ACQUIRED = (0.35, 0.85, 0.95)        # the cross on a point that inference has acquired
+FEATURE = (0.55, 1.0, 0.45)          # the edge or the point that drives a guide or a snap (inference)
+FEATURE_WIDTH = 5.0
 GUIDE_COLOURS = {0: (0.95, 0.35, 0.35), 1: (0.40, 0.85, 0.40), 2: (0.45, 0.60, 1.0), 3: (0.85, 0.85, 0.85), -1: MARKER}   # X, Y and Z of the document, a direction of a face, a point
 GUIDE_WIDTH = 2.0
 GUIDE_DIM = 0.45          # the part of a guide that lies behind the model is this much darker
@@ -158,6 +160,21 @@ class Ghost:
         self._acquired.addChild(acquired)
         self.root.addChild(self._acquired)
 
+        self._feature = coin.SoSwitch()              # the feature that drives a guide or a snap (inference): its edge and a cross, over the model
+        self._feature.whichChild = coin.SO_SWITCH_NONE
+        feature = coin.SoSeparator()
+        feature.addChild(_no_depth_test())
+        feature.addChild(style.color(FEATURE))
+        feature_style = coin.SoDrawStyle()
+        feature_style.lineWidth = FEATURE_WIDTH
+        feature.addChild(feature_style)
+        self._feature_points = coin.SoCoordinate3()
+        feature.addChild(self._feature_points)
+        self._feature_lines = coin.SoIndexedLineSet()
+        feature.addChild(self._feature_lines)
+        self._feature.addChild(feature)
+        self.root.addChild(self._feature)
+
         self._guides = coin.SoSwitch()               # one line set per kind of guide, each drawn dim behind the model and bright in front
         self._guides.whichChild = coin.SO_SWITCH_NONE
         self._guide_sets = {}
@@ -190,6 +207,31 @@ class Ghost:
 
     def hide_marker(self):
         self._marker.whichChild = coin.SO_SWITCH_NONE
+
+    def show_feature(self, edges, points, half):
+        """Highlight the feature that drives a guide: the `edges` ((a, b) pairs) as thick lines and a cross with arms of `half`
+        millimetres on each of the `points`; nothing for no edge and no point."""
+        if not edges and not points:
+            self.hide_feature()
+            return
+        coords, indices = [], []
+        for a, b in edges:
+            base = len(coords)
+            coords += [a, b]
+            indices += [base, base + 1, -1]
+        for a in points:
+            base = len(coords)
+            coords += [(a[0] - half, a[1], a[2]), (a[0] + half, a[1], a[2]), (a[0], a[1] - half, a[2]), (a[0], a[1] + half, a[2]),
+                       (a[0], a[1], a[2] - half), (a[0], a[1], a[2] + half)]
+            indices += [base, base + 1, -1, base + 2, base + 3, -1, base + 4, base + 5, -1]
+        self._feature_points.point.setValues(0, len(coords), coords)
+        self._feature_points.point.setNum(len(coords))
+        self._feature_lines.coordIndex.setValues(0, len(indices), indices)
+        self._feature_lines.coordIndex.setNum(len(indices))
+        self._feature.whichChild = coin.SO_SWITCH_ALL
+
+    def hide_feature(self):
+        self._feature.whichChild = coin.SO_SWITCH_NONE
 
     def show_acquired(self, points, half):
         """A cross with arms of `half` millimetres on each acquired point (inference); nothing for an empty list."""
@@ -278,3 +320,4 @@ class Ghost:
         self.hide_marker()
         self.hide_guides()
         self.hide_acquired()
+        self.hide_feature()

@@ -2673,6 +2673,46 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.recompute()
         self.assertEqual(len(anchors.collect(self.doc)), 20 + 3)                              # a cylinder: the two seam vertices and the middle of the seam line, its circles are no anchors
 
+    def test_the_straight_edges_of_the_objects_are_what_inference_snaps_to(self):
+        from freecad.BlocksCAD.cad import anchors, primitives as prim
+        edges = anchors.object_edges(self.box)
+        self.assertEqual(len(edges), 12)                                                      # a box has twelve straight edges
+        self.assertIn(((0.0, 0.0, 0.0), (100.0, 0.0, 0.0)), [tuple(sorted(e)) for e in edges])
+        cylinder = prim.create(self.doc, "Cylinder", (300.0, 0.0, 0.0), (80.0, 80.0, 60.0))
+        self.assertEqual(len(anchors.object_edges(cylinder)), 1)                              # the seam: the circles are no straight edges
+        self.box.Visibility = False
+        self.assertIsNone(anchors.object_edges(self.box))                                     # a hidden object offers nothing
+        self.box.Visibility = True
+        found = anchors.combine_edges([anchors.object_edges(self.box), anchors.object_edges(self.box)])
+        self.assertEqual(len(found), 12)                                                      # each edge once
+        self.assertEqual(len(anchors.combine_edges([anchors.object_edges(self.box)], limit=5)), 5)
+
+    def test_the_ghost_highlights_the_feature_that_drives_a_guide_and_hides_it(self):
+        from pivy import coin
+        from freecad.BlocksCAD.render.ghost import Ghost
+        ghost = Ghost()
+        ghost.show_feature([((0.0, 0.0, 0.0), (10.0, 0.0, 0.0))], [(5.0, 0.0, 0.0)], 2.0)
+        self.assertEqual(ghost._feature.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        self.assertEqual(ghost._feature_points.point.getNum(), 2 + 6)                         # the edge and the cross of the point
+        ghost.show_feature([], [], 2.0)
+        self.assertEqual(ghost._feature.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        ghost.show_feature([], [(1.0, 1.0, 1.0)], 2.0)
+        ghost.hide()
+        self.assertEqual(ghost._feature.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
+    def test_the_tools_ask_the_host_to_highlight_what_drives_their_guides(self):
+        from freecad.BlocksCAD.core import guides
+        from freecad.BlocksCAD.tools import base
+        calls = []
+        ctx = base.ToolContext()
+        ctx.services.update({"feature": lambda found: calls.append(list(found)), "ghost": type("G", (), {
+            "show_guides": lambda self, g, h: None, "hide_guides": lambda self: None})()})
+        tool = base.Tool(ctx)
+        found = [guides.Guide("point", -1, (1.0, 2.0, 3.0), (1.0, 2.0, 3.0))]
+        tool.show_guides(found, 1.0)
+        tool.hide_guides()
+        self.assertEqual(calls, [found, []])
+
     def test_the_ghost_draws_guides_of_every_kind_and_hides_them(self):
         from freecad.BlocksCAD.core import guides
         from freecad.BlocksCAD.render.ghost import Ghost
