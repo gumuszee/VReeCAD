@@ -60,7 +60,7 @@ def plane_square(plane, centre, half):
 class SketchTool(TouchTool):
     name = "sketch"
     label = "Sketch"
-    controls = (("Trigger", "drag a shape (an arc: press again)"), ("A", "hold: off the grid"), ("Stick click", "other page of the disc"))
+    controls = (("Trigger", "drag a shape (an arc: press again)"), ("A", "trigger held: snap, grid, free"), ("Stick click", "other page of the disc"))
     hint = "Drag a line, rectangle or circle on a plane or a face; Edit drags a point or dimensions a line"
     options = (ToolOption("mode", "Mode", "choice", default=MODES[1], choices=MODES),
                ToolOption("plane", "Plane", "choice", default=sketching.PLANES[0], choices=sketching.PLANES))
@@ -211,9 +211,12 @@ class SketchTool(TouchTool):
         """((x, y), guides) for a cursor at `local` (x and y of `frame`): the grid point lined up with the points of the model and of the
         sketch (service `guide_anchors`; a sketch is left out of the model's points and read live: the point `apart_from` of it, and those
         that move with it, are not anchors). The guides are in the document; the same grid point and no guides without the service."""
+        mode = self.placement
+        if mode == "free":
+            return (local[0], local[1]), []
         snapped = self._snap2(local)
         service = self._service("guide_anchors")
-        if service is None or frame is None:
+        if service is None or frame is None or mode == "grid":
             return snapped, []
         sk = self._sk()
         anchors, tolerance = service((sketch.Name,) if sketch is not None else ())
@@ -295,14 +298,11 @@ class SketchTool(TouchTool):
         `line_from` (the start of a line being drawn) the point also moves to where the line is exactly parallel or perpendicular to a
         slanted line of the sketch when it is nearly so, and to the length of a line of the sketch when it is nearly as long (the drawn
         line then gets that constraint)."""
-        if hand.down("button1"):
-            self.hide_guides()
-            return (local[0], local[1])
         sk = self._sk()
         frame = sk.placement(sketch)
         point, found = self._align2(frame, local, sketch, apart_from)
         service = self._service("guide_anchors")
-        if line_from is not None and service is not None:
+        if line_from is not None and service is not None and self.placement == "snap":
             reach = service(())[1]
             point, relation = guides.align_direction(line_from, point, sk.slanted_lines(sketch), reach)
             found = list(found)
@@ -476,7 +476,7 @@ class SketchTool(TouchTool):
         centre = sk.centre_of(sketch, state["radius"])
         distance = ((local[0] - centre[0]) ** 2 + (local[1] - centre[1]) ** 2) ** 0.5
         wanted = state["r0"] + distance - state["d0"]       # the radius follows the distance of the hand from the centre, from where it was pressed
-        radius = max(wanted, MIN_RADIUS) if hand.down("button1") else max(snapping.snap(wanted, self.grid), self.grid)
+        radius = max(wanted, MIN_RADIUS) if self.placement == "free" else max(snapping.snap(wanted, self.grid), self.grid)
         if abs(radius - state["now"]) > 1e-9:
             error = sk.set_dimension(sketch, state["index"], radius)
             if error is not None:

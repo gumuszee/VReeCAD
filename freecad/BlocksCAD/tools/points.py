@@ -33,7 +33,6 @@ Services besides those of `TouchTool`: `blocks`, an object with the functions of
 
 from freecad.BlocksCAD.cad import blockgeom
 from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 from freecad.BlocksCAD.tools.touch import TouchTool
@@ -49,7 +48,7 @@ class PointsTool(TouchTool):
     name = "points"
     label = "Points"
     hint = "Press on a point of a block and drag it; the stick switches to splitting an edge or removing a point"
-    controls = (("Trigger", "drag, split or remove a point"), ("A", "hold: off the grid"), ("Stick click", "back to Move, Free faces"))
+    controls = (("Trigger", "drag, split or remove a point"), ("A", "trigger held: snap, grid, free"), ("Stick click", "back to Move, Free faces"))
     options = (ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),
                ToolOption("faces", "Faces", "choice", default=FACES[0], choices=FACES))
 
@@ -243,13 +242,11 @@ class PointsTool(TouchTool):
                 self._readout(f"Point {state['index']}")
                 return
             state["moving"] = True
-        free = hand.down("button1")                         # the A button leaves the point off the grid
-        if free:
-            target = raw
-            self.hide_guides()
-        else:
-            target, guides = self.align(raw, snapping.snap_point(raw, self.grid), (state["name"],))
+        target, guides = self.place(raw, (state["name"],))   # by the placement: the A button changes it while the trigger is held
+        if guides:
             self.show_guides(guides, self.grid * 0.5)
+        else:
+            self.hide_guides()
         local = tuple(blocks.to_local(obj, target))
         if state["planes"]:
             local = blockgeom.constrain_to_planes(local, state["planes"])

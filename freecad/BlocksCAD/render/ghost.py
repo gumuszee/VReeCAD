@@ -33,6 +33,7 @@ EDGE_HIDDEN = (0.25, 0.4, 0.65)
 EDGE_WIDTH = 2.0
 OUTLINE = (0.95, 0.65, 0.10)
 MARKER = (0.95, 0.65, 0.10)
+ACQUIRED = (0.35, 0.85, 0.95)        # the cross on a point that inference has acquired
 GUIDE_COLOURS = {0: (0.95, 0.35, 0.35), 1: (0.40, 0.85, 0.40), 2: (0.45, 0.60, 1.0), 3: (0.85, 0.85, 0.85), -1: MARKER}   # X, Y and Z of the document, a direction of a face, a point
 GUIDE_WIDTH = 2.0
 GUIDE_DIM = 0.45          # the part of a guide that lies behind the model is this much darker
@@ -145,6 +146,18 @@ class Ghost:
         self._marker.addChild(marker)
         self.root.addChild(self._marker)
 
+        self._acquired = coin.SoSwitch()             # the points that inference has acquired: a cross on each, over the model
+        self._acquired.whichChild = coin.SO_SWITCH_NONE
+        acquired = coin.SoSeparator()
+        acquired.addChild(_no_depth_test())
+        acquired.addChild(style.color(ACQUIRED))
+        self._acquired_points = coin.SoCoordinate3()
+        acquired.addChild(self._acquired_points)
+        self._acquired_lines = coin.SoIndexedLineSet()
+        acquired.addChild(self._acquired_lines)
+        self._acquired.addChild(acquired)
+        self.root.addChild(self._acquired)
+
         self._guides = coin.SoSwitch()               # one line set per kind of guide, each drawn dim behind the model and bright in front
         self._guides.whichChild = coin.SO_SWITCH_NONE
         self._guide_sets = {}
@@ -177,6 +190,26 @@ class Ghost:
 
     def hide_marker(self):
         self._marker.whichChild = coin.SO_SWITCH_NONE
+
+    def show_acquired(self, points, half):
+        """A cross with arms of `half` millimetres on each acquired point (inference); nothing for an empty list."""
+        if not points:
+            self.hide_acquired()
+            return
+        coords, indices = [], []
+        for a in points:
+            base = len(coords)
+            coords += [(a[0] - half, a[1], a[2]), (a[0] + half, a[1], a[2]), (a[0], a[1] - half, a[2]), (a[0], a[1] + half, a[2]),
+                       (a[0], a[1], a[2] - half), (a[0], a[1], a[2] + half)]
+            indices += [base, base + 1, -1, base + 2, base + 3, -1, base + 4, base + 5, -1]
+        self._acquired_points.point.setValues(0, len(coords), coords)
+        self._acquired_points.point.setNum(len(coords))
+        self._acquired_lines.coordIndex.setValues(0, len(indices), indices)
+        self._acquired_lines.coordIndex.setNum(len(indices))
+        self._acquired.whichChild = coin.SO_SWITCH_ALL
+
+    def hide_acquired(self):
+        self._acquired.whichChild = coin.SO_SWITCH_NONE
 
     def show_guides(self, guides, half):
         """The alignment guides (`core.guides.Guide`): a line from the anchor to the point of every axis guide and a cross with arms of
@@ -244,3 +277,4 @@ class Ghost:
         self.hide_shape()
         self.hide_marker()
         self.hide_guides()
+        self.hide_acquired()

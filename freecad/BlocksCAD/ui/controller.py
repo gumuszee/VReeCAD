@@ -29,7 +29,7 @@ from typing import Callable, Dict, List, Optional
 from pivy import coin
 
 from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.core import units
+from freecad.BlocksCAD.core import snapping, units
 from freecad.BlocksCAD.core import values as value_editing
 from freecad.BlocksCAD.core.navigation import Navigator
 from freecad.BlocksCAD.profiling import PROFILER as prof
@@ -312,6 +312,7 @@ class UiController:
             "pointer.angle": f"Angle {s.tip_angle:.0f}\u00b0",
             "pointer.length": "Length " + units.format_length(s.tip_length * 1000.0, self.system),
             "pointer.submm": "Small: " + ("0.1 mm" if s.sub_mm == "mm" else "100 µm"),
+            "settings.snapping": "Snapping: " + ("Inference" if s.snap_source == "inference" else "Guides"),
             "settings.grid": "Grid " + units.format_length(s.grid, self.system),
             "settings.angle": f"Angle step {s.angle:.0f}°",
         }
@@ -368,6 +369,13 @@ class UiController:
         self.apply_handedness()
         return f"Tool hand: {self.settings.tool_hand}"
 
+    def cycle_placement(self, out):
+        """The A button while the trigger holds a gesture: the next placement (snap, grid, free); the choice is saved."""
+        placement = self.settings.cycle_placement()
+        self._save_settings()
+        self.toast("Placement: " + snapping.PLACEMENT_LABELS[placement])
+        out.haptics.append((self.tool_hand, 0.3, 0.02))
+
     def toggle_sub_mm(self):
         """Lengths under a millimetre change between decimals of a millimetre and micrometres; the choice is saved. Returns the text for a toast."""
         self.settings.sub_mm = "um" if self.settings.sub_mm == "mm" else "mm"
@@ -394,6 +402,10 @@ class UiController:
             self.toast(self.swap_hands())
         elif action == "units:submm":
             self.toast(self.toggle_sub_mm())
+        elif action == "settings:snapping":
+            self.settings.toggle_snapping()
+            self._save_settings()
+            self.toast("Snapping: " + ("inference of the points near the hand" if self.settings.snap_source == "inference" else "guides to every point"))
         elif action == "help:toggle":
             shown = self.help.toggle()
             self.toast("Controls shown" if shown else "Controls hidden")
@@ -432,6 +444,8 @@ class UiController:
         if ("trigger" in frame.hands[self.palette_hand].pressed and not getattr(self.active_tool, "busy", False)
                 and not self.navigator.navigating and self.swap_carousels()):
             out.haptics.append((self.palette_hand, 0.3, 0.025))
+        if getattr(self.active_tool, "busy", False) and "button1" in frame.hands[self.tool_hand].pressed:
+            self.cycle_placement(out)            # a gesture runs, so the quick radial is closed and A is free for the placement
         prof.lap("ui_values")
         self.pointer_poses = [pointing.pointer_pose(h.aim, s.pointer_mode, s.tip_angle, s.tip_length) for h in frame.hands]
         # in tip mode the world is held with the tips: it pivots about them and the ruler measures between them

@@ -51,6 +51,8 @@ class MigrationTest(unittest.TestCase):
         """A layout as it was saved before the pointer got a panel: the panel called Session holds the pointer faces."""
         layout = defaults.default_layout(TOOLS)
         layout.pages = [p for p in layout.pages if p.name not in ("Pointer", "Settings")]
+        for page in layout.pages:
+            page.slots = [None if f == "app.close" else f for f in page.slots]       # Close VR was on the Session panel
         layout.pages.append(lay.Page("Session", ["pointer.mode", "app.close", "pointer.hands", "pointer.submm", "pointer.angle", None, None, None,
                                                  "pointer.length"]))
         layout.normalize()

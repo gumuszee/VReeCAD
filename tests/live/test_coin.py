@@ -1072,6 +1072,35 @@ class MoveLiveTest(unittest.TestCase):
         from freecad.BlocksCAD.render import highlight
         self.assertLess(highlight.DEPTH_RANGE[1], highlight.DEPTH_RANGE[0])      # the hover is nearer to the viewer
 
+    def test_the_a_button_changes_the_placement_only_while_a_gesture_runs_and_the_placement_stays(self):
+        s = self.session()
+        self.assertEqual(s.ui.settings.placement, "snap")
+        self.hand(1, (50.0, 50.0, 96.0), button1=True)                       # no gesture: A is the quick radial
+        self.assertTrue(s.ui.radial.is_open)
+        self.hand(1, (50.0, 50.0, 96.0), button1=False)
+        self.assertEqual(s.ui.settings.placement, "snap")
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)                        # a grab runs
+        for expected in ("grid", "free", "snap"):
+            self.hand(1, (50.0, 50.0, 96.0), trigger=1.0, button1=True)
+            self.assertEqual(s.ui.settings.placement, expected)
+            self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Placement: " + expected.capitalize())
+            self.assertFalse(s.ui.radial.is_open)
+            self.hand(1, (50.0, 50.0, 96.0), trigger=1.0, button1=False)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0, button1=True)
+        self.hand(1, (50.0, 50.0, 96.0), trigger=0.0, button1=False)
+        self.assertEqual(s.ui.settings.placement, "grid")                    # it stays for the next gesture
+
+    def test_the_snapping_face_toggles_the_guides_and_the_inference(self):
+        import types
+        s = self.session()
+        face = s.ui.faces["settings.snapping"]
+        self.assertEqual(face.action, "settings:snapping")
+        self.assertEqual(s.ui.labels()["settings.snapping"], "Snapping: Guides")
+        s.ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        self.assertEqual((s.ui.settings.snap_source, s.ui.labels()["settings.snapping"]), ("inference", "Snapping: Inference"))
+        s.ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        self.assertEqual(s.ui.settings.snap_source, "guides")
+
     def test_a_drag_moves_the_object_freely_and_in_grid_steps_while_a_is_held_in_one_undo_step(self):
         s = self.session()
         self.hand(1, (50.0, 50.0, 96.0))
@@ -1097,7 +1126,7 @@ class MoveLiveTest(unittest.TestCase):
         from freecad.BlocksCAD.cad import anchors, primitives as prim
         prim.create(self.doc, "Box", (300.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         s = self.session()
-        s.tool_manager.active.ctx.services["guide_anchors"] = lambda exclude: (anchors.collect(self.doc, exclude), 8.0)
+        s.tool_manager.active.ctx.services["guide_anchors"] = lambda exclude, probes=None: (anchors.collect(self.doc, exclude), 8.0)
         self.hand(1, (50.0, 50.0, 96.0))
         self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
         self.hand(1, (244.0, 53.0, 96.0), trigger=1.0)                     # 194 mm along X and 3 mm along Y by hand

@@ -216,13 +216,14 @@ class SketchToolTest(unittest.TestCase):
         self.doc = FakeDocument()
         self.sk = FakeSketching(self.doc)
         self.cursor = [0.0, 0.0, 0.0]
+        self.placement = "snap"                                                      # the A button changes it while the trigger is held
         self.selection, self.toasts, self.readouts = [], [], []
         self.ghost = FakeGhost()
         ctx = base.ToolContext(dominant=1)
         ctx.services.update({
             "cursor": lambda hand: tuple(self.cursor), "to_document": lambda p: p, "document": lambda: self.doc, "ghost": self.ghost,
             "toast": self.toasts.append, "readout": self.readouts.append, "highlight": FakeHighlights(), "sketching": self.sk,
-            "mm_per_metre": lambda: 1000.0, "get_selection": lambda doc: list(self.selection),
+            "mm_per_metre": lambda: 1000.0, "placement": lambda: self.placement, "get_selection": lambda doc: list(self.selection),
             "set_selection": lambda doc, items: self.selection.__init__(items), "clear_selection": lambda: self.selection.clear()})
         self.tool = SketchTool(ctx)
 
@@ -285,9 +286,10 @@ class SketchToolTest(unittest.TestCase):
         self.drag((0.0, 0.0, 0.0), (2.0, 1.0, 0.0))
         self.assertEqual(self.sketches(), [])
 
-    def test_the_a_button_leaves_the_end_off_the_grid_and_a_grip_cancels(self):
+    def test_the_free_placement_leaves_the_end_off_the_grid_and_a_grip_cancels(self):
         self.tool.values["mode"] = "Line"
-        self.drag((0.0, 0.0, 0.0), (43.0, 7.0, 0.0), button1=True)
+        self.placement = "free"
+        self.drag((0.0, 0.0, 0.0), (43.0, 7.0, 0.0))
         self.assertEqual(self.sketches()[0].shapes, [("Line", (0.0, 0.0), (43.0, 7.0))])
         self.drag((10.0, 10.0, 0.0), (50.0, 50.0, 0.0), release=False)
         self.sim.set_hand(1, grip=1.0)
@@ -448,13 +450,15 @@ class SketchToolTest(unittest.TestCase):
         self.release()
         self.assertEqual((solid.radius, self.doc.log[-1], self.toasts[-1]), (80.0, ("commit",), "Radius 80 mm"))
 
-    def test_the_a_button_leaves_the_radius_off_the_grid_and_a_radius_the_sketch_refuses_stays_at_the_last_good_one(self):
+    def test_the_free_placement_leaves_the_radius_off_the_grid_and_a_radius_the_sketch_refuses_stays_at_the_last_good_one(self):
         solid = self.circle_press(radius_index=0)
-        self.pull((33.3, 0.0, 0.0), button1=True)
+        self.placement = "free"
+        self.pull((33.3, 0.0, 0.0))
         self.assertAlmostEqual(solid.radius, 33.3)
         self.pull((900.0, 0.0, 0.0))
         self.assertEqual(self.readouts[-1], "The sketch cannot take that value")
         self.assertAlmostEqual(solid.radius, 33.3)
+        self.placement = "grid"
         self.pull((0.0, 2.0, 0.0))                                                   # the smallest radius is one grid step
         self.assertEqual(solid.radius, 10.0)
 
@@ -467,7 +471,7 @@ class SketchToolTest(unittest.TestCase):
         self.sim.set_hand(0, grip=0.0)
 
     def with_anchors(self, anchors, reach=5.0):
-        self.tool.ctx.services["guide_anchors"] = lambda exclude: (anchors, reach)
+        self.tool.ctx.services["guide_anchors"] = lambda exclude, probes=None: (anchors, reach)
 
     def test_a_line_that_is_nearly_parallel_to_a_slanted_line_is_made_exactly_so_with_a_guide(self):
         self.with_anchors([], 5.0)
@@ -496,7 +500,7 @@ class SketchToolTest(unittest.TestCase):
         self.assertEqual([g.text for g in self.ghost.guide_calls[-1] if g.label], ["Equal length"])
         self.assertEqual(self.ghost.guide_calls[-1][-1].anchor, (20.0, 0.0, 0.0))     # from the middle of the line it equals
 
-    def test_a_line_across_a_slanted_line_is_perpendicular_and_the_a_button_leaves_it_alone(self):
+    def test_a_line_across_a_slanted_line_is_perpendicular_and_the_free_placement_leaves_it_alone(self):
         self.with_anchors([], 5.0)
         self.tool.values["mode"] = "Line"
         self.tool.ctx.services["grid"] = lambda: 1.0
@@ -507,7 +511,8 @@ class SketchToolTest(unittest.TestCase):
         self.assertEqual([g.text for g in self.ghost.guide_calls[-1] if g.label], ["Perpendicular", "Equal length"])
         self.sim.set_hand(1, trigger=0.0, button1=False)
         self.tool.update(self.sim.frame(0.02))
-        self.drag((10.0, 50.0, 0.0), (49.0, 71.0, 0.0), release=False, button1=True)   # A held: exactly where the hand is
+        self.placement = "free"
+        self.drag((10.0, 50.0, 0.0), (49.0, 71.0, 0.0), release=False)               # free: exactly where the hand is
         self.assertEqual(self.tool._gesture["now"], (49.0, 71.0))
 
     def test_the_start_and_the_end_of_a_rectangle_line_up_with_the_model_and_the_guides_are_drawn(self):
@@ -521,15 +526,16 @@ class SketchToolTest(unittest.TestCase):
         (guide,) = self.ghost.guide_calls[-1]
         self.assertEqual((guide.kind, guide.axis, guide.anchor), ("axis", 0, (7.0, 0.0, 0.0)))
 
-    def test_the_cursor_of_a_new_sketch_shows_the_guides_and_the_a_button_leaves_them(self):
+    def test_the_cursor_of_a_new_sketch_shows_the_guides_and_the_free_placement_leaves_them(self):
         self.with_anchors([(7.0, 0.0, 0.0)])
         self.cursor = [8.0, 41.0, 0.0]
         self.sim.set_hand(1, trigger=0.0, button1=False)
         self.frames()
         self.assertEqual(self.ghost.markers[-1], (7.0, 40.0, 0.0))
         self.assertEqual(len(self.ghost.guide_calls[-1]), 1)
-        self.drag((8.0, 41.0, 0.0), (61.0, 73.0, 0.0), button1=True)
-        self.assertEqual(self.sketches()[0].shapes, [("Rectangle", (7.0, 40.0), (61.0, 73.0))])      # the start is on the guides, the end is free
+        self.placement = "free"
+        self.drag((8.0, 41.0, 0.0), (61.0, 73.0, 0.0))
+        self.assertEqual(self.sketches()[0].shapes, [("Rectangle", (8.0, 41.0), (61.0, 73.0))])      # free: exactly where the hand is
         self.assertEqual(self.ghost.guide_calls[-1], [])
 
     def test_a_point_of_the_sketch_lines_up_with_the_points_of_the_sketch_but_not_with_itself(self):

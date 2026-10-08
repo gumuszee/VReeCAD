@@ -36,7 +36,7 @@ from freecad.BlocksCAD.tools.touch import TouchTool
 class PushPullTool(TouchTool):
     name = "pushpull"
     label = "Push/Pull"
-    controls = (("Trigger", "press a face, move along it"),)
+    controls = (("Trigger", "press a face, move along it"), ("A", "trigger held: snap, grid, free"))
     hint = "Press on a flat face and move the hand along it to push or pull"
     pick_kind = "face"
 
@@ -128,9 +128,12 @@ class PushPullTool(TouchTool):
     def _align(self, state, obj, raw_distance):
         """(distance, anchor): the distance rounded to the grid, or the one that puts the face level with a point of the model (the
         service `guide_anchors`, without the object itself; a point already in the plane of the face is no anchor) and that point."""
+        mode = self.placement
+        if mode == "free":
+            return raw_distance, None
         grid = pushpull.snapped(raw_distance, self.grid)
         service = self._service("guide_anchors")
-        if service is None:
+        if service is None or mode == "grid":
             return grid, None
         anchors, tolerance = service((obj.Name,))
         if state["source"] is not anchors:

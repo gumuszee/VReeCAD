@@ -138,23 +138,24 @@ class Layout:
         first slot. Returns whether anything was added."""
         present = {f for p in self.pages for f in p.slots if f} | set(self.hidden)
         changed = False
-        for default_page in default.pages:
-            for face in default_page.slots:
-                if not face or face in present:
-                    continue
-                home = [p for p in self.pages if p.name == default_page.name]
-                for page in home + self.pages:
-                    if face in wide:
-                        rows = [r for r in range(ROWS) if all(s is None for s in page.slots[r * COLS:(r + 1) * COLS])]
-                        slot = rows[0] * COLS if rows else None
-                    else:
-                        free = [i for i, f in enumerate(page.slots) if f is None and not _slider_row(page, i, wide)]
-                        slot = free[0] if free else None
-                    if slot is not None:
-                        page.slots[slot] = face
-                        present.add(face)
-                        changed = True
-                        break
+        wanted = [(default_page, face) for default_page in default.pages for face in default_page.slots if face]
+        wanted.sort(key=lambda pair: pair[1] not in wide)             # the sliders first: they need a whole free row
+        for default_page, face in wanted:
+            if face in present:
+                continue
+            home = [p for p in self.pages if p.name == default_page.name]
+            for page in home + self.pages:
+                if face in wide:
+                    rows = [r for r in range(ROWS) if all(s is None for s in page.slots[r * COLS:(r + 1) * COLS])]
+                    slot = rows[0] * COLS if rows else None
+                else:
+                    free = [i for i, f in enumerate(page.slots) if f is None and not _slider_row(page, i, wide)]
+                    slot = free[0] if free else None
+                if slot is not None:
+                    page.slots[slot] = face
+                    present.add(face)
+                    changed = True
+                    break
         return changed
 
     def face_at(self, page, slot):

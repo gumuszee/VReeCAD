@@ -47,7 +47,7 @@ class MoveTool(TouchTool):
     name = "move"
     label = "Move"
     hint = "Touch to highlight, tap to select, hold the trigger to move; the other trigger scales"
-    controls = (("Trigger", "tap: select, hold: move and turn"), ("Other trigger", "scale"), ("A", "hold: lock to grid and angles"))
+    controls = (("Trigger", "tap: select, hold: move and turn"), ("Other trigger", "scale"), ("A", "trigger held: snap, grid, free"))
     options = (ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),)
 
     def __init__(self, ctx):
@@ -134,7 +134,8 @@ class MoveTool(TouchTool):
         other = frame.hands[other_index]
         two_hands = other.down("trigger") and edit.scalable(obj.TypeId)
         position, hand_rotation = self._hand_pose(self.ctx.dominant, raw)
-        locked = self._locked = hand.down("button1")                    # the A button locks to the grid and the angles
+        mode = self.placement                                           # the A button changes it while the trigger is held
+        locked = self._locked = mode == "grid"                          # on the grid: the move and the turn go in whole steps
         if not hand.down("trigger"):                    # released: the change stays as the last frame left it (A may let go in the same frame)
             self._finish(doc, obj)
             return
@@ -155,10 +156,10 @@ class MoveTool(TouchTool):
             rotate = self.values["mode"] == MODES[0]
             base, rotation = state["grab"].at(position, hand_rotation, rotate, self.grid if locked else None,
                                               self.angle if locked else None)
-            if locked:
-                self.hide_guides()
-            else:
+            if mode == "snap":
                 base = self._align(state, obj, base, rotation)
+            else:
+                self.hide_guides()
             if (base, rotation) != state["now"]:
                 edit.set_placement(obj, base, rotation)
                 state["now"] = (base, rotation)
@@ -174,12 +175,12 @@ class MoveTool(TouchTool):
         service = self._service("guide_anchors")
         if service is None:
             return base
-        anchors, tolerance = service((state["name"],))
-        if state["source"] is not anchors:
-            state["source"], state["index"] = anchors, guides.index_anchors(anchors)
         if state["points"] is None:
             state["points"] = self._service("object_points", model_anchors.local_points)(obj)
         points = [mu.add(base, mu.rotate(rotation, p)) for p in state["points"]]
+        anchors, tolerance = service((state["name"],), points[:9])        # the box of the object is where inference looks for points
+        if state["source"] is not anchors:
+            state["source"], state["index"] = anchors, guides.index_anchors(anchors)
         shift, found = guides.align_translation(points, state["index"], tolerance)
         self.show_guides(found, self.grid * 0.5)
         return mu.add(base, shift)

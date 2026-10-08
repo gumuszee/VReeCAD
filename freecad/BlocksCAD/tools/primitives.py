@@ -41,7 +41,7 @@ class PrimitiveTool(Tool):
     name = "primitive"
     label = "Create"
     hint = "Drag a box in space to make a shape, tap to place one"
-    controls = (("Trigger", "drag out a shape, tap: place one"), ("Stick click", "other shapes"))
+    controls = (("Trigger", "drag out a shape, tap: place one"), ("A", "trigger held: snap, grid, free"), ("Stick click", "other shapes"))
     options = (ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES + (primitives.BLOCK,)),)
 
     def __init__(self, ctx):
@@ -105,7 +105,7 @@ class PrimitiveTool(Tool):
             return
         hand = frame.hands[self.ctx.dominant]
         raw = to_document(cursor(self.ctx.dominant))
-        point, guides = self.align(raw, snapping.snap_point(raw, self.grid))
+        point, guides = self.place(raw)
         gripping = any(h.down("grip") for h in frame.hands)
         if self._start is not None:
             if gripping:

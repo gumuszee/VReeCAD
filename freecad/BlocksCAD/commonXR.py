@@ -30,7 +30,7 @@ from freecad.BlocksCAD.input import InputTracker, Pose
 from freecad.BlocksCAD.tools import ToolManager, ToolContext
 from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.tools import base as tools_base
-from freecad.BlocksCAD.core import guides, stage, units
+from freecad.BlocksCAD.core import guides, inference, stage, units
 from freecad.BlocksCAD.cad import anchors, attach, colour, combine, duplicate, edges, edit, joints, picking, sketching, values as object_values
 from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.render.highlight import Highlights
@@ -62,6 +62,7 @@ from pivy.coin import SoSceneManager
 from pivy.coin import SbColor
 from pivy.coin import SoSeparator
 import ctypes
+import time
 import logging
 
 try:
@@ -576,6 +577,7 @@ class XRwidget(QOpenGLWidget):
     def setup_tool_services(self):
         """What the tools may use besides the input frame (docs/design.md, Architecture): the cursor, the document, the ghost."""
         self.anchor_cache = anchors.Anchors()
+        self.inference = inference.Inference()      # which anchors the guides may use when the setting says inference (core/inference.py)
         self._warmed = None                # the name of the document whose caches have been read (`warm_caches`)
         self.ghost = Ghost()      # the preview of a shape being made, in document space (added next to the document scene)
         self.highlights = Highlights()      # what the hand touches and what is selected, also in document space
@@ -600,6 +602,7 @@ class XRwidget(QOpenGLWidget):
             "readout": self.ui.set_readout,
             "format_length": lambda mm: units.format_length(mm, self.ui.system),
             "grid": lambda: self.ui.settings.grid,
+            "placement": lambda: self.ui.settings.placement,
             "angle": lambda: self.ui.settings.angle,
         })
 
@@ -609,13 +612,27 @@ class XRwidget(QOpenGLWidget):
         anchors, tolerance = self.guide_anchors(exclude)
         return guides.align(raw, point, anchors, tolerance) if anchors else (point, [])
 
-    def guide_anchors(self, exclude=()):
+    def guide_anchors(self, exclude=(), probes=None):
         """(anchors, reach in millimetres) that a tool lines a point up with: the vertices and straight edge middles of the visible
         objects of the active document except those in `exclude`."""
         doc = App.ActiveDocument
         if doc is None:
             return [], 0.0
-        return self.anchor_cache.get(doc, exclude), GUIDE_REACH * self.context_mm_per_metre()
+        found = self.anchor_cache.get(doc, exclude)
+        mm = self.context_mm_per_metre()
+        if self.ui.settings.snap_source == "inference":
+            if probes is None:
+                hand = self.tools.ctx.dominant
+                probes = [stage.to_document(self.navigator.world, self.ui.cursor(self.input_frame.hands[hand]),
+                                            self.doc_xr_transform.scaleFactor.getValue()[0])]
+            found, fresh = self.inference.select(found, probes, mm, time.monotonic())
+            self.ghost.show_acquired(self.inference.acquired, GUIDE_REACH * mm)
+            if fresh:
+                self._ui_haptic(self.tools.ctx.dominant, 0.12, 0.012)
+        elif self.inference.acquired:
+            self.inference.reset()
+            self.ghost.hide_acquired()
+        return found, GUIDE_REACH * mm
 
     def context_mm_per_metre(self):
         return 1.0 / (self.doc_xr_transform.scaleFactor.getValue()[0] * self.navigator.world.scale)

@@ -30,6 +30,7 @@ from freecad.BlocksCAD.ui.layout import current_face
 MODES = ("laser", "tip")
 SUB_MM = ("mm", "um")         # lengths under a millimetre as decimals of mm (0.25 mm) or as micrometres (250 um)
 SIDES = ("left", "right")
+SNAPPING = ("guides", "inference")   # the alignment guides use every point of the model, or only those near the hand and those it has dwelt on
 ANGLE_RANGE = (-90.0, 90.0)
 LENGTH_RANGE = (0.0, 0.4)
 
@@ -57,6 +58,8 @@ class Settings:
     sub_mm: str = "mm"            # how lengths under a millimetre are written, one of `SUB_MM`
     grid: float = snapping.DEFAULT_GRID      # the grid step of every tool in millimetres, one of `snapping.GRID_STEPS`
     angle: float = snapping.DEFAULT_ANGLE    # the angle step of a locked turn in degrees, one of `snapping.ANGLE_STEPS`
+    placement: str = "snap"       # how a tool places a point, one of `snapping.PLACEMENTS`; the A button changes it while the trigger is held
+    snap_source: str = "guides"      # which points the guides line up with, one of `SNAPPING`
 
     def __post_init__(self):
         if self.pointer_mode not in MODES:
@@ -71,6 +74,19 @@ class Settings:
             self.sub_mm = "mm"
         self.grid = _nearest(self.grid, snapping.GRID_STEPS, snapping.DEFAULT_GRID)
         self.angle = _nearest(self.angle, snapping.ANGLE_STEPS, snapping.DEFAULT_ANGLE)
+        if self.placement not in snapping.PLACEMENTS:
+            self.placement = "snap"
+        if self.snap_source not in SNAPPING:
+            self.snap_source = "guides"
+
+    def cycle_placement(self):
+        """The next placement (snap, grid, free, snap ...); returns it."""
+        order = snapping.PLACEMENTS
+        self.placement = order[(order.index(self.placement) + 1) % len(order)]
+        return self.placement
+
+    def toggle_snapping(self):
+        self.snap_source = "inference" if self.snap_source == "guides" else "guides"
 
     def toggle_mode(self):
         self.pointer_mode = "tip" if self.pointer_mode == "laser" else "laser"
@@ -81,7 +97,7 @@ class Settings:
     @classmethod
     def from_json(cls, text):
         data = json.loads(text)
-        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length", "recent", "onboarded", "tool_hand", "sub_mm", "grid", "angle") if k in data}
+        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length", "recent", "onboarded", "tool_hand", "sub_mm", "grid", "angle", "placement", "snap_source") if k in data}
         return cls(**known)
 
 

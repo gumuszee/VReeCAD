@@ -156,6 +156,7 @@ class SimSession:
             "readout": self.ui.set_readout,
             "format_length": lambda mm: units.format_length(mm, self.ui.system),
             "grid": lambda: self.ui.settings.grid,
+            "placement": lambda: self.ui.settings.placement,
             "angle": lambda: self.ui.settings.angle,
         })
         self.tool_manager = tools.ToolManager(context)

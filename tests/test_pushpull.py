@@ -189,7 +189,7 @@ class PushPullToolTest(unittest.TestCase):
 
     def with_anchors(self, anchors, reach=5.0):
         self.asked = []
-        self.tool.ctx.services["guide_anchors"] = lambda exclude: (self.asked.append(exclude) or anchors, reach)
+        self.tool.ctx.services["guide_anchors"] = lambda exclude, probes=None: (self.asked.append(exclude) or anchors, reach)
 
     def test_a_face_lines_up_level_with_a_point_of_the_model_and_the_guide_is_drawn(self):
         self.with_anchors([(80.0, 5.0, 37.0), (0.0, 0.0, 90.0)])

@@ -131,6 +131,22 @@ class Tool:
         service = self.ctx.services.get("angle")
         return float(service()) if service is not None else snapping.DEFAULT_ANGLE
 
+    @property
+    def placement(self):
+        """How a point is placed: "snap" (rounded to the grid and lined up with the model), "grid" (rounded to the grid) or "free". The
+        setting of the Settings panel that the A button changes while the trigger is held (the service `placement`)."""
+        service = self.ctx.services.get("placement")
+        return service() if service is not None else "snap"
+
+    def place(self, raw, exclude=()):
+        """(point, guides) for a cursor at `raw` by the placement: `raw` itself when free, the grid point when on the grid, the grid
+        point lined up with the model when snapping."""
+        mode = self.placement
+        if mode == "free":
+            return tuple(raw), []
+        point = snapping.snap_point(raw, self.grid)
+        return (point, []) if mode == "grid" else self.align(raw, point, exclude)
+
     def grid_text(self):
         """The grid step as text, in the measurement system of the document."""
         format_length = self.ctx.services.get("format_length")

@@ -121,13 +121,14 @@ class PointsToolTest(unittest.TestCase):
         self.block = FakeBlock("block")
         self.doc = FakeDocument(self.block)
         self.cursor = [100.0, 0.0, 0.0]
+        self.placement = "snap"                                                      # the A button changes it while the trigger is held
         self.selection, self.toasts, self.readouts = [], [], []
         self.highlights = FakeHighlights()
         ctx = base.ToolContext(dominant=1)
         ctx.services.update({
             "cursor": lambda hand: tuple(self.cursor), "to_document": lambda p: p, "document": lambda: self.doc,
             "toast": self.toasts.append, "readout": self.readouts.append, "highlight": self.highlights,
-            "blocks": FakeBlocks(self.doc), "mm_per_metre": lambda: 1000.0,
+            "blocks": FakeBlocks(self.doc), "mm_per_metre": lambda: 1000.0, "placement": lambda: self.placement,
             "get_selection": lambda doc: list(self.selection), "set_selection": lambda doc, items: self.selection.__init__(items),
             "clear_selection": lambda: self.selection.clear()})
         self.tool = PointsTool(ctx)
@@ -156,9 +157,13 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(self.selection, [("block", "")])
         self.assertEqual(self.tool.ctx.services["blocks"].picked, ("block", 1))     # the value panels show the point
 
-    def test_the_a_button_leaves_the_point_off_the_grid(self):
-        self.drag((123.0, -4.0, 17.0), button1=True)
+    def test_the_free_placement_leaves_the_point_off_the_grid_and_the_grid_placement_has_no_guides(self):
+        self.placement = "free"
+        self.drag((123.0, -4.0, 17.0))
         self.assertEqual(self.block.vertices[1], (123.0, -4.0, 17.0))
+        self.placement = "grid"
+        self.drag((143.0, -4.0, 17.0))
+        self.assertEqual(self.block.vertices[1], (140.0, 0.0, 20.0))
 
     def test_a_position_the_block_cannot_take_is_refused_and_the_point_stays_at_the_last_good_one(self):
         blocks = self.tool.ctx.services["blocks"]

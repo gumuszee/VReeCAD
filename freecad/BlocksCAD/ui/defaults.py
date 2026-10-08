@@ -15,7 +15,7 @@
 # ***************************************************************************
 """The faces and the default layout. Tool faces are generated from the tool registry; the other faces are fixed.
 Action ids: "tool:<name>", "view:reset", "scene:reload", "doc:undo", "doc:redo", "doc:delete", "doc:fuse", "doc:cut", "doc:common",
-"doc:copy", "doc:fillet", "doc:chamfer", "doc:attach", "doc:detach", "doc:joint_<kind>", "doc:unjoint", "doc:mirror_<axis>", "doc:pattern_<axis>", "doc:colour", "doc:extrude", "doc:sources", "app:close", and, handled by the UI controller itself,
+"doc:copy", "doc:fillet", "doc:chamfer", "doc:attach", "doc:detach", "doc:joint_<kind>", "doc:unjoint", "doc:mirror_<axis>", "doc:pattern_<axis>", "doc:colour", "doc:extrude", "doc:sources", "app:close", "settings:snapping", and, handled by the UI controller itself,
 "layout:reset", "layout:show_hidden", "help:toggle", "hands:swap" and "pointer:mode".
 A slider is a face of kind "slider" (action "slider:<setting>"): it takes a whole row of its panel, so it sits in the first slot of a
 row and the other slots of that row stay empty. `SLIDERS` holds the range and step of each slider by face id."""
@@ -97,6 +97,7 @@ def build_faces(tool_names, tool_label, tool_hint=None):
         Face("settings.tutorial", "Tutorial", "help:toggle", tip="Show what the buttons of the controllers do"),
         Face("pointer.angle", "Angle", "slider:tip_angle", "slider", "Hold the trigger and drag"),
         Face("pointer.length", "Length", "slider:tip_length", "slider", "Hold the trigger and drag"),
+        Face("settings.snapping", "Snapping", "settings:snapping", tip="Line points up with every point of the model (Guides) or only with those near the hand and those it has dwelt on (Inference)"),
         Face("settings.grid", "Grid", "slider:grid", "slider", "The grid step of every tool: hold the trigger and drag"),
         Face("settings.angle", "Angle step", "slider:angle", "slider", "The angle step of a locked turn: hold the trigger and drag"),
     ]
@@ -112,11 +113,11 @@ def default_layout(tool_names):
                         "doc.pattern_x", "doc.pattern_y", "doc.pattern_z"]),
         Page("Shape", ["doc.extrude", "doc.fillet", "doc.chamfer", "doc.attach", "doc.detach",
                        "doc.joint_fixed", "doc.joint_revolute", "doc.joint_slider", "doc.joint_ball", "doc.unjoint", "doc.sources"]),
-        Page("View", ["view.reset", "view.reload", "view.layout", "view.hidden"]),
+        Page("View", ["view.reset", "view.reload", "view.layout", "view.hidden", "app.close"]),
         Page("Pointer", ["pointer.mode", None, None, None,
                          "pointer.angle", None, None, None,
                          "pointer.length"]),
-        Page("Settings", ["app.close", "pointer.hands", "pointer.submm", "settings.tutorial",
+        Page("Settings", ["pointer.hands", "pointer.submm", "settings.tutorial", "settings.snapping",
                           "settings.grid", None, None, None,
                           "settings.angle"]),
     ])
