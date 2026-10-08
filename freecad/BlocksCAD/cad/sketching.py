@@ -273,7 +273,7 @@ def dimensions(sketch):
     """(constraint index, name, kind, millimetres) of every named driving length of a sketch."""
     found = []
     for index, c in enumerate(sketch.Constraints):
-        if c.Name and c.Driving and c.Type in LENGTH_DIMENSIONS:
+        if c.Name and not c.Name.startswith("lock") and c.Driving and c.Type in LENGTH_DIMENSIONS:
             found.append((index, c.Name, c.Type, float(c.Value)))
     return found
 
@@ -445,6 +445,38 @@ def display(sketch, sub):
         if g == geo:
             polylines.append([to_world(sketch, (x, y, 0.0)) for x, y in sketchinfer.arc_points(centre, radius, first, last)])
     return Display(polylines=polylines)
+
+
+LOCK = "lock"                # constraints that fix a point are named lock_<geometry>_<point>_x and _y: they are no values of the panels
+
+
+def point_locked(sketch, geo, pos):
+    """Whether the point `pos` of the geometry `geo` is fixed by the constraints that `lock_point` makes."""
+    return any(c.Name.startswith(LOCK) and c.First == geo and c.FirstPos == pos for c in sketch.Constraints)
+
+
+def lock_point(doc, sketch, geo, pos):
+    """Fix the point `pos` of `geo` where it is (its distances from the origin along x and y become constraints); returns whether the
+    solver accepted them."""
+    x, y = point_position(sketch, geo, pos)
+    first = len(sketch.Constraints)
+    sketch.addConstraint([_constraint(("DistanceX", geo, pos, x)), _constraint(("DistanceY", geo, pos, y))])
+    sketch.renameConstraint(first, f"{LOCK}_{geo}_{pos}_x")
+    sketch.renameConstraint(first + 1, f"{LOCK}_{geo}_{pos}_y")
+    if solved(sketch):
+        return True
+    sketch.delConstraint(first + 1)
+    sketch.delConstraint(first)
+    sketch.solve()
+    return False
+
+
+def unlock_point(sketch, geo, pos):
+    """Release a point that `lock_point` fixed."""
+    for index in sorted((i for i, c in enumerate(sketch.Constraints) if c.Name.startswith(LOCK) and c.First == geo and c.FirstPos == pos),
+                        reverse=True):
+        sketch.delConstraint(index)
+    sketch.solve()
 
 
 def point_position(sketch, geo, pos):

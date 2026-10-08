@@ -150,6 +150,29 @@ def expressions(obj):
     return found
 
 
+FIXED = "FixedPoints"
+
+
+def is_point_fixed(obj, index):
+    """Whether point `index` of the block is fixed: the Points tool does not move it."""
+    return index in (getattr(obj, FIXED, None) or [])
+
+
+def set_point_fixed(obj, index, value):
+    """Fix or release point `index` (the caller owns the transaction); the property is made when a point is first fixed."""
+    if FIXED not in obj.PropertiesList:
+        obj.addProperty("App::PropertyIntegerList", FIXED, "Block points", "Points held in place: the Points tool does not move them")
+    points = set(getattr(obj, FIXED) or [])
+    points.add(index) if value else points.discard(index)
+    setattr(obj, FIXED, sorted(points))
+
+
+def renumber_fixed(obj, removed):
+    """The fixed points after point `removed` was taken out of the block: the points after it are numbered one lower."""
+    if FIXED in obj.PropertiesList:
+        setattr(obj, FIXED, sorted(i - 1 if i > removed else i for i in obj.FixedPoints if i != removed))
+
+
 def has_bound_points(obj):
     """Whether a coordinate of a point of the block is bound to an expression (the points would change their numbers if one went)."""
     return bool(expressions(obj))

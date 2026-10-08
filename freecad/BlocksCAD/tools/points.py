@@ -48,7 +48,7 @@ class PointsTool(TouchTool):
     name = "points"
     label = "Points"
     hint = "Press on a point of a block and drag it; the stick switches to splitting an edge or removing a point"
-    controls = (("Trigger", "drag, split or remove a point"), ("A", "trigger held: snap, grid, free"), ("Stick click", "back to Move, Free faces"))
+    controls = (("Trigger", "drag, split or remove a point"), ("A", "trigger held: snap, grid, free"), ("B", "held: fix it, else tap: undo, hold: redo"), ("Stick click", "back to Move, Free faces"))
     options = (ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),
                ToolOption("faces", "Faces", "choice", default=FACES[0], choices=FACES))
 
@@ -166,6 +166,9 @@ class PointsTool(TouchTool):
         if removing and getattr(blocks, "has_bound_points", lambda o: False)(obj):
             self._toast("Unbind the points of the block first")
             return
+        if removing and getattr(blocks, "is_point_fixed", lambda o, i: False)(obj, what):
+            self._toast(f"Point {what} is fixed: press B while holding it to release it")
+            return
         doc.openTransaction(f"{'Remove point' if removing else 'Move point' if kind == 'point' else 'Split edge'} of {obj.Label}")
         convert = getattr(blocks, "convert_box", None)
         if convert is not None and obj.TypeId == "Part::Box":      # a box becomes a block as the press starts: one undo step with the move
@@ -194,8 +197,10 @@ class PointsTool(TouchTool):
         else:
             label = "Moved"
         planes = blockgeom.face_planes(vertices, faces, what) if self.values["faces"] == "Flat" else []
+        fixed = getattr(blocks, "is_point_fixed", lambda o, i: False)(obj, what)
         self._drag = {"name": obj.Name, "label": obj.Label, "index": what, "now": vertices[what], "changed": label == "Split",
-                      "verb": label, "planes": planes, "start": tuple(raw), "moving": label == "Split"}
+                      "verb": label, "planes": planes, "start": tuple(raw), "moving": label == "Split", "fixed": fixed, "fix_changed": False,
+                      "rebase": False}
         self._forget_hover()
         blocks.set_picked(obj, what)                        # the value panels show this point
         self._select(doc, [(obj.Name, "")])
@@ -215,6 +220,7 @@ class PointsTool(TouchTool):
             doc.abortTransaction()
             self._toast("Cannot remove that point: " + error[0].lower() + error[1:])
             return
+        getattr(blocks, "renumber_fixed", lambda o, i: None)(obj, index)
         doc.commitTransaction()
         self._forget_hover()
         blocks.set_picked(obj, None)
@@ -226,6 +232,20 @@ class PointsTool(TouchTool):
     def _edge_point(vertices, a, b, local):
         return None, blockgeom.inner_point_on_segment(local, vertices[a], vertices[b]), None
 
+    def toggle_fixed(self):
+        """B while a point is held: the point is fixed (the tool does not move it), or released when it was fixed."""
+        state = self._drag
+        doc = self._service("document", lambda: None)()
+        blocks = self._blocks()
+        obj = doc.getObject(state["name"]) if state is not None and doc is not None else None
+        setter = getattr(blocks, "set_point_fixed", None)
+        if obj is None or setter is None:
+            return None
+        state["fixed"] = not state["fixed"]
+        setter(obj, state["index"], state["fixed"])
+        state["fix_changed"], state["rebase"] = True, True
+        return f"Fixed point {state['index']}" if state["fixed"] else f"Released point {state['index']}"
+
     def _follow(self, doc, hand, raw):
         blocks = self._blocks()
         state = self._drag
@@ -235,6 +255,11 @@ class PointsTool(TouchTool):
             return
         if not hand.down("trigger"):
             self._finish(doc)
+            return
+        if state["rebase"]:                                 # fixed or released: the hand goes on from where it is
+            state["rebase"], state["start"], state["moving"] = False, tuple(raw), False
+        if state["fixed"]:
+            self._readout(f"Point {state['index']} is fixed (B releases)")
             return
         if not state["moving"]:                             # a tap picks the point: it moves only once the hand has left the place of the press
             mm = self._service("mm_per_metre", lambda: 1000.0)()
@@ -270,9 +295,12 @@ class PointsTool(TouchTool):
         state, self._drag = self._drag, None
         self._readout(None)
         self.hide_guides()
-        if state["changed"]:
+        if state["changed"] or state["fix_changed"]:
             doc.commitTransaction()
-            self._toast(f"{state['verb']} point {state['index']} of {state['label']}")
+            if state["fix_changed"] and not state["changed"]:
+                self._toast(f"{'Fixed' if state['fixed'] else 'Released'} point {state['index']} of {state['label']}")
+            else:
+                self._toast(f"{state['verb']} point {state['index']} of {state['label']}")
             self._haptic(0.4, 0.03)
         else:
             doc.abortTransaction()

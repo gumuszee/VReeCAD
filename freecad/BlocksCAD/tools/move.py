@@ -33,6 +33,7 @@ import math
 from freecad.BlocksCAD.cad import anchors as model_anchors
 from freecad.BlocksCAD.cad import edit
 from freecad.BlocksCAD.core import grab as grabbing
+from freecad.BlocksCAD.cad import fixing
 from freecad.BlocksCAD.core import guides
 from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
@@ -47,7 +48,7 @@ class MoveTool(TouchTool):
     name = "move"
     label = "Move"
     hint = "Touch to highlight, tap to select, hold the trigger to move; the other trigger scales"
-    controls = (("Trigger", "tap: select, hold: move and turn"), ("Other trigger", "scale"), ("A", "trigger held: snap, grid, free"))
+    controls = (("Trigger", "tap: select, hold: move and turn"), ("Other trigger", "scale"), ("A", "trigger held: snap, grid, free"), ("B", "held: fix it, else tap: undo, hold: redo"))
     options = (ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),)
 
     def __init__(self, ctx):
@@ -115,14 +116,33 @@ class MoveTool(TouchTool):
         base, rotation = edit.placement(obj)
         position, hand_rotation = self._hand_pose(self.ctx.dominant, raw)
         doc.openTransaction(f"Move {obj.Label}")
-        self._grab = {"pick": pick, "name": pick.name, "label": obj.Label, "start": (base, rotation),
+        self._grab = {"pick": pick, "name": pick.name, "label": obj.Label, "start": (base, rotation), "fix_changed": False, "rebase": False,
                       "grab": grabbing.Grab(position, hand_rotation, base, rotation), "now": (base, rotation),
                       "cell": tuple(round(c / self.grid) for c in base), "scaling": False, "scaled": False, "size0": None, "points": None, "source": None, "index": None}
         self._locked = False
         self._hover = None
+        self._grab["held"] = self._held_by(obj)
         self._select(doc, [(pick.name, "")])             # the object is selected as the grab starts, so it shows as selected at once
         self._show_hover(doc, None)
         self._haptic(0.3, 0.02)
+
+    def _held_by(self, obj):
+        """The label of the fixed body that keeps `obj` where it is (`obj` itself, or a body attached to it), or None."""
+        held = fixing.blocker(obj)
+        return None if held is None else held.Label
+
+    def toggle_fixed(self):
+        """B during a grab: the grabbed body is fixed, or released when it was fixed. A fixed body does not follow the hand (nor does the
+        body that it is attached to); releasing it makes it follow the hand again from where it stands."""
+        state = self._grab
+        doc = self._service("document", lambda: None)()
+        obj = doc.getObject(state["name"]) if state is not None and doc is not None else None
+        if obj is None:
+            return None
+        fixing.set_fixed(obj, not fixing.is_fixed(obj))
+        state["fix_changed"], state["rebase"] = True, True
+        state["held"] = self._held_by(obj)
+        return f"Fixed {state['label']}" if fixing.is_fixed(obj) else f"Released {state['label']}"
 
     def _drag(self, doc, frame, hand, raw, to_document, cursor):
         state = self._grab
@@ -138,6 +158,14 @@ class MoveTool(TouchTool):
         locked = self._locked = mode == "grid"                          # on the grid: the move and the turn go in whole steps
         if not hand.down("trigger"):                    # released: the change stays as the last frame left it (A may let go in the same frame)
             self._finish(doc, obj)
+            return
+        if state["rebase"]:                             # fixed or released: the hand goes on from the pose the body has
+            state["rebase"] = False
+            base, rotation = edit.placement(obj)
+            state["grab"] = grabbing.Grab(position, hand_rotation, base, rotation)
+            state["now"], state["scaling"] = (base, rotation), False
+        if state["held"] is not None:
+            self._readout(f"Fixed: {state['held']} (B releases)" if state["held"] == state["label"] else f"{state['held']} is fixed to it (B releases it)")
             return
         if two_hands and not state["scaling"]:
             mine, theirs = to_document(cursor(self.ctx.dominant)), to_document(cursor(other_index))
@@ -218,12 +246,15 @@ class MoveTool(TouchTool):
         self._locked = False
         self._readout(None)
         self.hide_guides()
-        changed = state["scaled"] or state["now"] != state["start"]
+        changed = state["scaled"] or state["now"] != state["start"] or state["fix_changed"]
         if changed:
             doc.recompute()
             doc.commitTransaction()
             self._select(doc, [(state["name"], "")])
-            if state["scaled"]:
+            if state["fix_changed"] and state["now"] == state["start"] and not state["scaled"]:
+                held = doc.getObject(state["name"])
+                self._toast(f"Fixed {state['label']}" if held is not None and fixing.is_fixed(held) else f"Released {state['label']}")
+            elif state["scaled"]:
                 self._toast(f"Scaled {state['label']}")
             else:
                 turned = state["now"][1] != state["start"][1]

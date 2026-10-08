@@ -42,7 +42,7 @@ def tool_card(label, controls):
     """(title, lines) of the card of the tool hand for the tool called `label` that declares `controls` ((control, text) pairs)."""
     declared = list(controls)
     names = {name for name, _ in declared}
-    lines = declared + [entry for entry in TOOL_HAND_DEFAULT if entry[0] not in names] + list(TOOL_HAND_COMMON)
+    lines = declared + [entry for entry in TOOL_HAND_DEFAULT if entry[0] not in names] + [e for e in TOOL_HAND_COMMON if e[0] not in names]
     return f"{label}: tool hand", [f"{name}: {text}" for name, text in lines]
 
 

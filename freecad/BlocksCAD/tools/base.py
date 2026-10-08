@@ -185,6 +185,11 @@ class Tool:
         """The lines of text in the middle of the option disc."""
         return []
 
+    def toggle_fixed(self):
+        """The B button was pressed while a gesture runs (`busy`): fix what the gesture holds, or release it when it is fixed already.
+        Returns the text of a toast, or None when the tool fixes nothing."""
+        return None
+
     def stick_click(self):
         """The stick of the tool hand was clicked; returns a short text for a toast when the tool used the click, else None."""
         return None

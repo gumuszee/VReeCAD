@@ -60,7 +60,7 @@ def plane_square(plane, centre, half):
 class SketchTool(TouchTool):
     name = "sketch"
     label = "Sketch"
-    controls = (("Trigger", "drag a shape (an arc: press again)"), ("A", "trigger held: snap, grid, free"), ("Stick click", "other page of the disc"))
+    controls = (("Trigger", "drag a shape (an arc: press again)"), ("A", "trigger held: snap, grid, free"), ("B", "held: fix it, else tap: undo, hold: redo"), ("Stick click", "other page of the disc"))
     hint = "Drag a line, rectangle or circle on a plane or a face; Edit drags a point or dimensions a line"
     options = (ToolOption("mode", "Mode", "choice", default=MODES[1], choices=MODES),
                ToolOption("plane", "Plane", "choice", default=sketching.PLANES[0], choices=sketching.PLANES))
@@ -422,7 +422,7 @@ class SketchTool(TouchTool):
             return
         doc.openTransaction(f"Move point of {sketch.Label}")
         self._gesture = {"sketch": sketch.Name, "edit": (geo, pos), "changed": False, "kind": "Edit",
-                         "now": sk.point_position(sketch, geo, pos)}
+                         "now": sk.point_position(sketch, geo, pos), "locked": sk.point_locked(sketch, geo, pos), "fix_changed": False}
         self._forget_hover()
         self._select(doc, [(sketch.Name, "")])
         self._haptic(0.3, 0.02)
@@ -487,6 +487,25 @@ class SketchTool(TouchTool):
             self._haptic(0.08, 0.008)
         self._readout(f"Radius: {self._format(state['now'])}")
 
+    def toggle_fixed(self):
+        """B while a point of a sketch is held: the point is fixed where it is (as constraints of the sketch: it stays put while other
+        points are dragged or the sketch is changed), or released when it was fixed."""
+        state = self._gesture
+        doc = self._service("document", lambda: None)()
+        sketch = doc.getObject(state["sketch"]) if state is not None and doc is not None else None
+        if sketch is None or state.get("edit") is None:
+            return None
+        sk = self._sk()
+        geo, pos = state["edit"]
+        if state["locked"]:
+            sk.unlock_point(sketch, geo, pos)
+        elif not sk.lock_point(doc, sketch, geo, pos):
+            return "The sketch cannot fix that point"
+        state["locked"] = not state["locked"]
+        state["fix_changed"] = True
+        doc.recompute()
+        return "Fixed the point" if state["locked"] else "Released the point"
+
     def _follow_edit(self, doc, hand, sketch, local):
         sk = self._sk()
         state = self._gesture
@@ -494,15 +513,21 @@ class SketchTool(TouchTool):
             self._gesture = None
             self._readout(None)
             self.hide_guides()
-            if state["changed"]:
+            if state["changed"] or state["fix_changed"]:
                 doc.commitTransaction()
-                self._toast(f"Moved a point of {sketch.Label}")
+                if state["fix_changed"] and not state["changed"]:
+                    self._toast(f"{'Fixed' if state['locked'] else 'Released'} a point of {sketch.Label}")
+                else:
+                    self._toast(f"Moved a point of {sketch.Label}")
                 self._haptic(0.4, 0.03)
             else:
                 doc.abortTransaction()
             self._select(doc, [(sketch.Name, "")])
             return
         geo, pos = state["edit"]
+        if state["locked"]:
+            self._readout("The point is fixed (B releases)")
+            return
         target = self._place(sketch, local, hand, (geo, pos))
         error = sk.move_point(doc, sketch, geo, pos, target)
         if error is not None:

@@ -1072,6 +1072,150 @@ class MoveLiveTest(unittest.TestCase):
         from freecad.BlocksCAD.render import highlight
         self.assertLess(highlight.DEPTH_RANGE[1], highlight.DEPTH_RANGE[0])      # the hover is nearer to the viewer
 
+    def test_b_during_a_grab_fixes_the_body_in_one_undo_step_and_a_fixed_body_is_not_moved(self):
+        from freecad.BlocksCAD.cad import fixing
+        s = self.session()
+        self.hand(1, (50.0, 50.0, 96.0))
+        self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (84.0, 50.0, 96.0), trigger=1.0)                                       # 34 mm along
+        calls = []
+        s.actions["doc:undo"] = lambda: calls.append("undo")
+        self.hand(1, (84.0, 50.0, 96.0), trigger=1.0, button2=True)                         # B: fix it where it is
+        self.hand(1, (84.0, 50.0, 96.0), trigger=1.0, button2=False)
+        self.assertEqual(calls, [])                                                         # B is no undo during a gesture
+        self.assertTrue(fixing.is_fixed(self.box))
+        self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Fixed " + self.box.Label)
+        self.hand(1, (150.0, 50.0, 96.0), trigger=1.0)
+        self.assertEqual(round(self.box.Placement.Base.x, 6), 34.0)                         # the hand moves on, the body stays
+        self.assertTrue(s.ui.gesture_text.startswith("Fixed:"))
+        self.hand(1, (150.0, 50.0, 96.0), trigger=0.0)
+        self.assertTrue(fixing.is_fixed(self.box))
+        # a new grab does not move it; B releases it and it follows again from where the hand is
+        self.hand(1, (84.0, 50.0, 96.0))
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (84.0, 50.0, 96.0), trigger=1.0)
+        self.hand(1, (120.0, 50.0, 96.0), trigger=1.0)
+        self.assertEqual(round(self.box.Placement.Base.x, 6), 34.0)
+        self.hand(1, (120.0, 50.0, 96.0), trigger=1.0, button2=True)
+        self.assertFalse(fixing.is_fixed(self.box))
+        self.hand(1, (120.0, 50.0, 96.0), trigger=1.0, button2=False)
+        self.hand(1, (150.0, 50.0, 96.0), trigger=1.0)
+        self.assertEqual(round(self.box.Placement.Base.x, 6), 64.0)                         # 30 mm more, from the pose it had
+        self.hand(1, (150.0, 50.0, 96.0), trigger=0.0)
+        self.doc.undo()                                                                     # the second grab: moved and released
+        self.assertEqual(round(self.box.Placement.Base.x, 6), 34.0)
+        self.assertTrue(fixing.is_fixed(self.box))
+        self.doc.undo()                                                                     # the first grab with its fixing
+        self.assertEqual(round(self.box.Placement.Base.x, 6), 0.0)
+        self.assertFalse(fixing.is_fixed(self.box))
+
+    def test_a_body_attached_to_a_fixed_body_holds_its_support(self):
+        from freecad.BlocksCAD.cad import attach, fixing
+        other = self.doc.addObject("Part::Box", "Other")
+        other.Length, other.Width, other.Height = 50.0, 40.0, 30.0
+        self.doc.recompute()
+        attach.attach(self.doc, [(other.Name, "Face5"), (self.box.Name, "Face6")])         # the other box stands on the top of the box
+        self.assertIsNone(fixing.blocker(self.box))
+        fixing.set_fixed(other, True)
+        self.assertEqual(fixing.blocker(self.box).Name, other.Name)                         # the fixed one would move with its support
+        self.assertEqual(fixing.blocker(other).Name, other.Name)
+        s = self.session()
+        count = self.doc.UndoCount
+        self.hand(1, (50.0, 50.0, 60.0))
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (50.0, 50.0, 60.0), trigger=1.0)
+        self.hand(1, (120.0, 50.0, 60.0), trigger=1.0)
+        self.assertEqual(tuple(round(c, 6) for c in self.box.Placement.Base), (0.0, 0.0, 0.0))
+        self.assertIn("is fixed to it", s.ui.gesture_text)
+        self.hand(1, (120.0, 50.0, 60.0), trigger=0.0)
+        self.assertEqual(self.doc.UndoCount, count)                                         # nothing was done
+        fixing.set_fixed(other, False)
+        self.assertIsNone(fixing.blocker(self.box))
+
+    def test_b_during_a_point_drag_of_a_sketch_makes_the_constraints_that_fix_it(self):
+        from freecad.BlocksCAD.cad import sketching
+        s = self.session()
+        s.select_tool("sketch")
+        s.tool_manager.active.values["mode"] = "Rectangle"
+        self.hand(1, (300.0, 0.0, 0.0))
+        self.hand(1, (300.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (360.0, 40.0, 0.0), trigger=1.0)
+        self.hand(1, (360.0, 40.0, 0.0), trigger=0.0)
+        (sketch,) = [o for o in self.doc.Objects if sketching.is_sketch(o)]
+        s.tool_manager.active.values["mode"] = "Edit"
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (360.0, 40.0, 0.0))                                                    # hold the far corner and fix it
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (360.0, 40.0, 0.0), trigger=1.0)
+        self.hand(1, (360.0, 40.0, 0.0), trigger=1.0, button2=True)
+        self.hand(1, (400.0, 80.0, 0.0), trigger=1.0, button2=False)
+        self.hand(1, (400.0, 80.0, 0.0), trigger=0.0)
+        locks = [c for c in sketch.Constraints if c.Name.startswith("lock")]
+        self.assertEqual(sorted(c.Type for c in locks), ["DistanceX", "DistanceY"])
+        self.assertEqual(sketching.dimensions(sketch), [])                                  # the locks are no values of the panels
+        box = sketch.Shape.BoundBox
+        self.assertEqual((box.XMax, box.YMax), (360.0, 40.0))                               # the fixed corner did not follow the hand
+        self.assertEqual([t.text for t in s.ui.toasts.items][-1], f"Fixed a point of {sketch.Label}")
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (300.0, 0.0, 0.0))                                                     # the opposite corner is dragged: the fixed one stays
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (300.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (280.0, -20.0, 0.0), trigger=1.0)
+        self.hand(1, (280.0, -20.0, 0.0), trigger=0.0)
+        box = sketch.Shape.BoundBox
+        self.assertEqual((box.XMin, box.XMax, box.YMax), (280.0, 360.0, 40.0))
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (360.0, 40.0, 0.0))                                                    # release it: B on the held fixed point
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (360.0, 40.0, 0.0), trigger=1.0)
+        self.hand(1, (360.0, 40.0, 0.0), trigger=1.0, button2=True)
+        self.hand(1, (360.0, 40.0, 0.0), trigger=1.0, button2=False)
+        self.hand(1, (360.0, 40.0, 0.0), trigger=0.0)
+        self.assertEqual([c for c in sketch.Constraints if c.Name.startswith("lock")], [])
+
+    def test_b_during_a_point_drag_of_a_block_fixes_the_point_and_a_removal_renumbers_the_fixed_points(self):
+        from freecad.BlocksCAD.cad import block
+        made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        s = self.session()
+        s.select_tool("points")
+        self.hand(1, (500.0, 100.0, 100.0))
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (500.0, 100.0, 100.0), trigger=1.0)
+        self.hand(1, (500.0, 100.0, 100.0), trigger=1.0, button2=True)
+        self.hand(1, (600.0, 150.0, 100.0), trigger=1.0, button2=False)
+        self.hand(1, (600.0, 150.0, 100.0), trigger=0.0)
+        self.assertEqual(list(made.FixedPoints), [6])
+        self.assertEqual(block.read(made)[0][6], (500.0, 100.0, 100.0))                     # it did not follow
+        self.assertTrue(block.is_point_fixed(made, 6))
+        self.assertEqual([t.text for t in s.ui.toasts.items][-1], f"Fixed point 6 of {made.Label}")
+        s.tool_manager.active.values["mode"] = "Remove"
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (500.0, 100.0, 100.0))
+        self.hand(1, (500.0, 100.0, 100.0), trigger=1.0)
+        self.hand(1, (500.0, 100.0, 100.0), trigger=0.0)
+        self.assertEqual(len(made.Vertices), 8)                                             # a fixed point is not removed
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (400.0, 0.0, 0.0))
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (400.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (400.0, 0.0, 0.0), trigger=0.0)                                        # point 0 goes
+        self.assertEqual((len(made.Vertices), list(made.FixedPoints)), (7, [5]))
+        self.doc.undo()
+        self.assertEqual((len(made.Vertices), list(made.FixedPoints)), (8, [6]))
+        block.set_picked(made, None)                                                        # the picked point is kept per name: forget it
+
     def test_the_a_button_changes_the_placement_only_while_a_gesture_runs_and_the_placement_stays(self):
         s = self.session()
         self.assertEqual(s.ui.settings.placement, "snap")

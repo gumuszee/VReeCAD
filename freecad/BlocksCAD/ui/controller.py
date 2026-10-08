@@ -446,6 +446,11 @@ class UiController:
             out.haptics.append((self.palette_hand, 0.3, 0.025))
         if getattr(self.active_tool, "busy", False) and "button1" in frame.hands[self.tool_hand].pressed:
             self.cycle_placement(out)            # a gesture runs, so the quick radial is closed and A is free for the placement
+        if getattr(self.active_tool, "busy", False) and "button2" in frame.hands[self.tool_hand].pressed and not self.navigator.navigating:
+            text = self.active_tool.toggle_fixed()       # and B fixes what the gesture holds (undo is for outside a gesture)
+            if text:
+                self.toast(text)
+                out.haptics.append((self.tool_hand, 0.4, 0.03))
         prof.lap("ui_values")
         self.pointer_poses = [pointing.pointer_pose(h.aim, s.pointer_mode, s.tip_angle, s.tip_length) for h in frame.hands]
         # in tip mode the world is held with the tips: it pivots about them and the ruler measures between them
@@ -596,7 +601,7 @@ class UiController:
     def _tool_hand_buttons(self, frame, blocked, out):
         """Undo and redo on button2 of the tool hand and the options of the active tool on its stick.
         Returns (whether the tool owns the stick, the text of the readout or None)."""
-        undo = self.undo_button.update(frame, blocked)
+        undo = self.undo_button.update(frame, blocked or bool(getattr(self.active_tool, "busy", False)))
         if undo.action is not None:
             self._run("doc:" + undo.action, out)
         out.haptics += undo.haptics

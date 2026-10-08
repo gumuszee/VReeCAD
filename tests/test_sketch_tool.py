@@ -139,6 +139,18 @@ class FakeSketching:
     def point_position(self, sketch, geo, pos):
         return sketch.points[(geo, pos)]
 
+    def point_locked(self, sketch, geo, pos):
+        return (geo, pos) in getattr(sketch, "locks", set())
+
+    def lock_point(self, doc, sketch, geo, pos):
+        if getattr(sketch, "refuse_lock", False):
+            return False
+        sketch.locks = getattr(sketch, "locks", set()) | {(geo, pos)}
+        return True
+
+    def unlock_point(self, sketch, geo, pos):
+        sketch.locks = getattr(sketch, "locks", set()) - {(geo, pos)}
+
     def move_point(self, doc, sketch, geo, pos, target):
         if target[0] < -100:
             return "The sketch cannot take that move"
@@ -379,6 +391,54 @@ class SketchToolTest(unittest.TestCase):
         self.assertEqual(sketch.points[(0, 2)], (70.0, 20.0))
         self.assertEqual(self.doc.log, [("open", f"Move point of {sketch.Label}"), ("commit",)])
         self.assertEqual(self.toasts[-1], f"Moved a point of {sketch.Label}")
+
+    def edit_line_end(self):
+        self.tool.values["mode"] = "Line"
+        self.drag((0.0, 0.0, 0.0), (50.0, 0.0, 0.0))
+        self.tool.values["mode"] = "Edit"
+        self.doc.log.clear()
+        self.drag((50.0, 0.0, 0.0), (50.0, 0.0, 0.0), release=False)                 # the point is held
+        return self.sketches()[0]
+
+    def test_b_while_a_point_is_held_fixes_it_and_the_point_stays_while_the_hand_moves(self):
+        sketch = self.edit_line_end()
+        self.assertEqual(self.tool.toggle_fixed(), "Fixed the point")
+        self.assertTrue(sketch.locks)
+        self.cursor = [90.0, 40.0, 0.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(sketch.points[(0, 2)], (50.0, 0.0))
+        self.assertEqual(self.readouts[-1], "The point is fixed (B releases)")
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.doc.log, [("open", f"Move point of {sketch.Label}"), ("commit",)])     # the constraint is one undo step
+        self.assertEqual(self.toasts[-1], f"Fixed a point of {sketch.Label}")
+
+    def test_a_fixed_point_does_not_move_when_pressed_and_b_releases_it_and_it_follows_again(self):
+        self.tool.values["mode"] = "Line"
+        self.drag((0.0, 0.0, 0.0), (50.0, 0.0, 0.0))
+        sketch = self.sketches()[0]
+        sketch.locks = {(0, 2)}
+        self.tool.values["mode"] = "Edit"
+        self.drag((50.0, 0.0, 0.0), (90.0, 40.0, 0.0), release=False)
+        self.assertEqual(sketch.points[(0, 2)], (50.0, 0.0))                          # fixed: the hand does not move it
+        self.assertEqual(self.tool.toggle_fixed(), "Released the point")
+        self.assertFalse(sketch.locks)
+        self.cursor = [93.0, 44.0, 0.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(sketch.points[(0, 2)], (90.0, 40.0))
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.toasts[-1], f"Moved a point of {sketch.Label}")
+
+    def test_a_point_the_solver_cannot_fix_is_refused_and_nothing_held_has_nothing_to_fix(self):
+        self.assertIsNone(self.tool.toggle_fixed())                                  # no gesture
+        sketch = self.edit_line_end()
+        sketch.refuse_lock = True
+        self.assertEqual(self.tool.toggle_fixed(), "The sketch cannot fix that point")
+        self.assertFalse(sketch.locks if hasattr(sketch, "locks") else False)
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.doc.log[-1], ("abort",))                               # nothing changed
 
     def test_a_move_the_sketch_cannot_take_is_refused_and_a_release_that_moved_nothing_keeps_nothing(self):
         self.tool.values["mode"] = "Line"

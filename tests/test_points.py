@@ -22,6 +22,7 @@ class FakeBlock:
     def __init__(self, name):
         self.Name, self.Label, self.Shape = name, name.upper(), FakeShape()
         self.vertices, self.faces = bg.box((0, 0, 0), (100, 100, 100))
+        self.fixed = set()
 
 
 class FakeDocument:
@@ -80,6 +81,15 @@ class FakeBlocks:
 
     def set_picked(self, obj, index):
         self.picked = (obj.Name, index)
+
+    def is_point_fixed(self, obj, index):
+        return index in obj.fixed
+
+    def set_point_fixed(self, obj, index, value):
+        obj.fixed = obj.fixed | {index} if value else obj.fixed - {index}
+
+    def renumber_fixed(self, obj, removed):
+        obj.fixed = {i - 1 if i > removed else i for i in obj.fixed if i != removed}
 
     def to_local(self, obj, point):
         return tuple(point)
@@ -306,6 +316,52 @@ class PointsToolTest(unittest.TestCase):
         self.cursor = [104.0, 4.0, 0.0]                                              # once moving, it goes on even near the first place
         self.tool.update(self.sim.frame(0.02))
         self.assertEqual(self.block.vertices[1], (100.0, 0.0, 0.0))
+
+    def hold_point(self, at=(100.0, 0.0, 0.0)):
+        self.cursor = list(at)
+        self.sim.set_hand(1, trigger=0.0, button1=False)
+        self.frames()
+        self.sim.set_hand(1, trigger=1.0)
+        self.tool.update(self.sim.frame(0.02))
+
+    def test_b_while_a_point_is_held_fixes_it_and_it_stays_while_the_hand_moves(self):
+        self.assertIsNone(self.tool.toggle_fixed())                                  # nothing is held
+        self.hold_point()
+        self.assertEqual(self.tool.toggle_fixed(), "Fixed point 1")
+        self.assertEqual(self.block.fixed, {1})
+        self.cursor = [160.0, 40.0, 0.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.block.vertices[1], (100.0, 0.0, 0.0))
+        self.assertEqual(self.readouts[-1], "Point 1 is fixed (B releases)")
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.doc.log[-1], ("commit",))
+        self.assertEqual(self.toasts[-1], "Fixed point 1 of BLOCK")
+
+    def test_a_fixed_point_does_not_move_and_b_releases_it_so_that_it_follows_after_the_hand_has_left(self):
+        self.block.fixed = {1}
+        self.hold_point()
+        self.cursor = [160.0, 40.0, 0.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.block.vertices[1], (100.0, 0.0, 0.0))
+        self.assertEqual(self.tool.toggle_fixed(), "Released point 1")
+        self.tool.update(self.sim.frame(0.02))                                       # the hand goes on from here
+        self.assertEqual(self.block.vertices[1], (100.0, 0.0, 0.0))
+        self.cursor = [220.0, 40.0, 0.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.block.vertices[1], (220.0, 40.0, 0.0))
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.toasts[-1], "Moved point 1 of BLOCK")
+
+    def test_a_fixed_point_is_not_removed_and_the_numbers_of_the_fixed_points_follow_a_removal(self):
+        self.block.fixed = {1, 5}
+        self.remove((100.0, 0.0, 0.0))
+        self.assertEqual(len(self.block.vertices), 8)
+        self.assertIn("is fixed", self.toasts[-1])
+        self.remove((0.0, 0.0, 0.0))                                                 # point 0 goes: the points after it are one lower
+        self.assertEqual(len(self.block.vertices), 7)
+        self.assertEqual(self.block.fixed, {0, 4})
 
     def test_nothing_is_touched_far_from_the_points(self):
         self.cursor = [50.0, 50.0, 50.0]
