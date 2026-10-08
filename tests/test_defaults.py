@@ -90,6 +90,37 @@ class MigrationTest(unittest.TestCase):
         self.assertEqual(lay.default_hue("Tools"), 0.38)
         self.assertIn(lay.default_hue("Anything else"), lay.SPARE_HUES)
 
+    def test_a_panel_has_a_grid_of_its_own_that_grows_and_shrinks_without_losing_a_face(self):
+        page = lay.Page("A", ["a", "b", None, None, "c"], cols=2, rows=3)
+        self.assertEqual((page.cols, page.rows, len(page.slots)), (2, 3, 6))
+        self.assertEqual(page.slots, ["a", "b", None, None, "c", None])
+        self.assertTrue(page.resize(4, 4))                                         # every face keeps its row and column
+        self.assertEqual(page.slots[:9], ["a", "b", None, None, None, None, None, None, "c"])
+        self.assertEqual(len(page.slots), 16)
+        self.assertFalse(page.resize(1, 4))                                        # b would be cut off
+        self.assertEqual((page.cols, page.rows), (4, 4))
+        self.assertTrue(page.resize(3, 3))
+        self.assertEqual(page.slots, ["a", "b", None, None, None, None, "c", None, None])
+        self.assertFalse(page.resize(0, 3))
+        self.assertFalse(page.resize(3, lay.MAX_ROWS + 1))
+        self.assertFalse(page.resize(lay.MAX_COLS + 1, 3))
+
+    def test_the_grid_of_a_panel_is_kept_in_the_file_and_the_default_grid_is_not_written(self):
+        layout = lay.Layout([lay.Page("Wide", ["x"], 0, 0, None, 10, 4), lay.Page("Plain", ["y"], 1, 0)])
+        text = layout.to_json()
+        self.assertEqual(text.count('"cols"'), 1)
+        loaded = lay.Layout.from_json(text)
+        self.assertEqual([(p.cols, p.rows, len(p.slots)) for p in loaded.pages], [(10, 4, 40), (4, 3, 12)])
+        odd = lay.Layout.from_json('{"version": 5, "pages": [{"name": "A", "cols": "x", "rows": 99, "slots": ["a"]}]}')
+        self.assertEqual((odd.pages[0].cols, odd.pages[0].rows), (4, lay.MAX_ROWS))
+
+    def test_missing_faces_are_placed_by_the_grid_of_the_panel_and_a_slider_keeps_its_whole_row(self):
+        page = lay.Page("W", ["s"] + [None] * 5 + ["b"] + [None] * 4, cols=6, rows=2)
+        default = lay.Layout([lay.Page("W", ["s", None, None, None, None, None, "t", "b", None, None, None, None], cols=6, rows=2)])
+        self.assertTrue(lay.Layout([page]).add_missing(default, {"s"}))
+        self.assertEqual(page.slots[7], "t")                                        # the first free slot outside the row of the slider
+        self.assertEqual(page.slots[:6], ["s"] + [None] * 5)
+
     def test_a_layout_that_has_the_pointer_panel_is_left_alone(self):
         layout = defaults.default_layout(TOOLS)
         self.assertFalse(defaults.migrate(layout, defaults.default_layout(TOOLS)))

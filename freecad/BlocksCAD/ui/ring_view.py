@@ -33,7 +33,6 @@ from freecad.BlocksCAD.ui import value_module
 
 DEPTH = 0.004
 TITLE_H = rg.TITLE_Y[1] - rg.TITLE_Y[0]
-TITLE_CENTRE = (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2
 TEXT_LIFT = DEPTH * 0.5 + 0.0005      # text lies this far in front of the plane of the plates
 MARKER_LIFT = 0.003
 RAISE = 0.005                         # a hovered, active or dragged face stands this far (0.5 cm) in front of its panel
@@ -160,10 +159,11 @@ class _Place:
 class _Cell:
     """A face of a panel: its rectangle is in the plates of the panel, its text is a node of its own."""
 
-    def __init__(self, parent, x, y, face_label, palette, plates):
+    def __init__(self, parent, x, y, face_label, palette, plates, base=None):
         self.palette = palette
+        self.base = base if base is not None else palette.face          # the colour of the face at rest: a face may wear a colour of its own
         self.x, self.y = x, y
-        self.plate = plates.add(rg.CELL, rg.CELL, palette.face if face_label is not None else palette.empty, x, y, DEPTH * 0.5)
+        self.plate = plates.add(rg.CELL, rg.CELL, self.base if face_label is not None else palette.empty, x, y, DEPTH * 0.5)
         self.raised = False
         self.text_color = None
         self.label = face_label
@@ -199,7 +199,7 @@ class _Cell:
         """`lifted`: the face is held in the hand (its place is dimmed); `target`: a lifted face would land here; `inert`: the face
         only shows something, it is never lit by the pointer."""
         color = (self.palette.empty if not has_face or lifted else style.GRAB if target else self.palette.picked if inert
-                 else style.ACTIVE if active else style.HOVER if hover else self.palette.face)
+                 else style.ACTIVE if active else style.HOVER if hover else self.base)
         self.plate.set(color)
         raised = has_face and not lifted and not inert and (hover or active or target)
         if raised != self.raised:
@@ -219,16 +219,17 @@ class _SliderRow:
     TRACK_Y = -0.009
     HANDLE = (0.007, 0.019)
 
-    def __init__(self, parent, y, palette, plates):
-        self.low, self.high = -rg.GRID_W / 2 + rg.SLIDER_PAD, rg.GRID_W / 2 - rg.SLIDER_PAD
+    def __init__(self, parent, y, palette, plates, grid_w=rg.GRID_W):
+        self.low, self.high = -grid_w / 2 + rg.SLIDER_PAD, grid_w / 2 - rg.SLIDER_PAD
         self.palette = palette
         self.y = y
-        self.plate_color = plates.add(rg.GRID_W, rg.CELL, palette.face, 0.0, y, DEPTH * 0.5)
+        self.grid_w = grid_w
+        self.plate_color = plates.add(grid_w, rg.CELL, palette.face, 0.0, y, DEPTH * 0.5)
         self.track_color = plates.add(self.high - self.low, self.TRACK_H, palette.plate, 0.0, y + self.TRACK_Y, DEPTH)
         self.handle_color = plates.add(self.HANDLE[0], self.HANDLE[1], style.TEXT, self.low, y + self.TRACK_Y, DEPTH * 1.5)
         self._handle_x = self.low
         label = style.cached(coin.SoSeparator())
-        move = _at(-rg.GRID_W / 2 + 0.009, y + 0.008, TEXT_LIFT)
+        move = _at(-grid_w / 2 + 0.009, y + 0.008, TEXT_LIFT)
         self._label_at = move.translation
         self.raised = False
         label.addChild(move)
@@ -259,7 +260,7 @@ class _SliderRow:
             self.plate_color.lift(DEPTH * 0.5 + lift)
             self.track_color.lift(DEPTH + lift)
             self.handle_color.lift(DEPTH * 1.5 + lift)
-            self._label_at.setValue(-rg.GRID_W / 2 + 0.009, self.y + 0.008, TEXT_LIFT + lift)
+            self._label_at.setValue(-self.grid_w / 2 + 0.009, self.y + 0.008, TEXT_LIFT + lift)
 
 
 class _ReadoutRow:
@@ -269,10 +270,10 @@ class _ReadoutRow:
     SMALL = 0.7
     LARGE = ((14, 1.9), (21, 1.3), (999, 0.88))    # (longest text, size) for the large line
 
-    def __init__(self, parent, y, palette, plates):
+    def __init__(self, parent, y, palette, plates, grid_w=rg.GRID_W):
         self.palette = palette
-        self.plate_color = plates.add(rg.GRID_W, rg.CELL, palette.picked, 0.0, y, DEPTH * 0.5)
-        x = -rg.GRID_W / 2 + 0.009
+        self.plate_color = plates.add(grid_w, rg.CELL, palette.picked, 0.0, y, DEPTH * 0.5)
+        x = -grid_w / 2 + 0.009
         self.small, self.small_color, _ = self._line(parent, x, y + self.SMALL_Y, self.SMALL)
         self.large, self.large_color, self._large_scale = self._line(parent, x, y + self.LARGE_Y, self.LARGE[0][1])
         self.texts = (None, None)
@@ -322,7 +323,9 @@ class _Panel:
         outer = coin.SoSeparator()
         self.place = _Place(outer)
         back = _Plates()                        # the plate behind everything: all that shows when the panel is seen from behind
-        self.back_color = back.add(rg.PANEL_W, rg.PANEL_H, palette.plate, 0.0, 0.0, -DEPTH * 0.5)
+        dim = rg.dims(page.cols, page.rows)
+        centre = dim.title_centre
+        self.back_color = back.add(dim.panel_w, dim.panel_h, palette.plate, 0.0, 0.0, -DEPTH * 0.5)
         self._back = back
         outer.addChild(back.build())
         # everything in front of the plate: seen from behind it is hidden by the plate, so it is not drawn then
@@ -334,43 +337,45 @@ class _Panel:
         self.front.addChild(sep)
         outer.addChild(self.front)
         self.plates = _Plates()
-        self.title_color = self.plates.add(rg.GRID_W, TITLE_H, palette.title, 0.0, TITLE_CENTRE, DEPTH * 0.5)
-        self.grooves = [self.plates.add(0.012, 0.0012, palette.groove, rg.GRID_W / 2 - 0.012, TITLE_CENTRE + i * 0.0045, DEPTH)
+        self.title_color = self.plates.add(dim.grid_w, TITLE_H, palette.title, 0.0, centre, DEPTH * 0.5)
+        self.grooves = [self.plates.add(0.012, 0.0012, palette.groove, dim.grid_w / 2 - 0.012, centre + i * 0.0045, DEPTH)
                         for i in (-1, 0, 1)]        # grooves: the title bar is the handle for lifting the panel, a tap on them opens its editor
         self.menu_hover = False
         plates_at = sep.getNumChildren()
         sep.addChild(coin.SoSeparator())         # the place of the plates, which are built once every row has added its rectangles
-        self.title = _text(sep, [page.name], -rg.GRID_W / 2 + 0.006, TITLE_CENTRE, TEXT_LIFT, palette.title_text,
+        self.title = _text(sep, [page.name], -dim.grid_w / 2 + 0.006, centre, TEXT_LIFT, palette.title_text,
                            coin.SoText3.LEFT, style.PANEL_TEXT)
         self._title_string = self.title.string
         self.title_text = page.name
         self.hide_state = 0                      # the hide slot in the title bar: 0 none, 1 offered while a face is lifted, 2 the face is over it
-        hide_x = (rg.HIDE_X[0] + rg.HIDE_X[1]) / 2
-        self.hide_color = self.plates.add(rg.HIDE_X[1] - rg.HIDE_X[0], TITLE_H - 0.004, palette.title, hide_x, TITLE_CENTRE, DEPTH)
-        self._hide_text = _text(sep, [""], hide_x, TITLE_CENTRE, TEXT_LIFT, style.TEXT, coin.SoText3.CENTER, style.PANEL_TEXT)
+        hide_x = (dim.hide_x[0] + dim.hide_x[1]) / 2
+        self.hide_color = self.plates.add(dim.hide_x[1] - dim.hide_x[0], TITLE_H - 0.004, palette.title, hide_x, centre, DEPTH)
+        self._hide_text = _text(sep, [""], hide_x, centre, TEXT_LIFT, style.TEXT, coin.SoText3.CENTER, style.PANEL_TEXT)
         self._hide_string = self._hide_text.string
         self.cells = []
         self.sliders = {}          # row of the grid -> (slider view, face id)
         self.readouts = {}         # row of the grid -> (readout view, face id)
-        for row in range(lay.ROWS):
-            face = faces.get(page.slots[row * lay.COLS]) if page.slots[row * lay.COLS] else None
-            y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
+        for row in range(page.rows):
+            face = faces.get(page.slots[row * page.cols]) if page.slots[row * page.cols] else None
+            y = ((page.rows - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
             if face is not None and face.kind == "slider":
-                self.sliders[row] = (_SliderRow(sep, y, palette, self.plates), face.id)
+                self.sliders[row] = (_SliderRow(sep, y, palette, self.plates, dim.grid_w), face.id)
             elif face is not None and face.kind == "readout":
-                self.readouts[row] = (_ReadoutRow(sep, y, palette, self.plates), face.id)
+                self.readouts[row] = (_ReadoutRow(sep, y, palette, self.plates, dim.grid_w), face.id)
         for slot, face_id in enumerate(page.slots):
-            col, row = slot % lay.COLS, slot // lay.COLS
-            x = (col - (lay.COLS - 1) / 2) * (rg.CELL + rg.GAP)
-            y = ((lay.ROWS - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
+            col, row = slot % page.cols, slot // page.cols
+            x = (col - (page.cols - 1) / 2) * (rg.CELL + rg.GAP)
+            y = ((page.rows - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
             face = faces.get(face_id) if face_id else None
             if row in self.sliders or row in self.readouts:    # the row belongs to its slider or readout
                 self.cells.append((None, None))
                 continue
-            self.cells.append((_Cell(sep, x, y, face.label if face else None, palette, self.plates), face))
+            base = style.tinted(face.tint).face if face is not None and face.tint is not None else None
+            self.cells.append((_Cell(sep, x, y, face.label if face else None, palette, self.plates, base), face))
         sep.replaceChild(plates_at, self.plates.build())
         self.switch.addChild(outer)
         self.key = None            # what the contents were last made for (`RingView.update`)
+        self.cols = page.cols
 
     def set_facing(self, facing):
         """Draw the contents of the panel only while the head is in front of its plate."""
@@ -479,12 +484,13 @@ class _Marker:
         self._key = None
 
     def show(self, pose, zone, fade):
-        key = (pose.lcentre, pose.lu, zone, fade)
+        key = (pose.lcentre, pose.lu, zone, fade, pose.dims.cols, pose.dims.rows)
         if key != self._key:
             self._key = key
-            half = (rg.PANEL_W / 2 + rg.PANEL_GAP / 2, rg.PANEL_H / 2 + rg.PANEL_GAP / 2)
-            x, y, w, h = {"left": (-half[0], 0.0, self.BAR, rg.PANEL_H), "right": (half[0], 0.0, self.BAR, rg.PANEL_H),
-                          "above": (0.0, half[1], rg.PANEL_W, self.BAR), "below": (0.0, -half[1], rg.PANEL_W, self.BAR)}[zone]
+            d = pose.dims
+            half = (d.panel_w / 2 + rg.PANEL_GAP / 2, d.panel_h / 2 + rg.PANEL_GAP / 2)
+            x, y, w, h = {"left": (-half[0], 0.0, self.BAR, d.panel_h), "right": (half[0], 0.0, self.BAR, d.panel_h),
+                          "above": (0.0, half[1], d.panel_w, self.BAR), "below": (0.0, -half[1], d.panel_w, self.BAR)}[zone]
             self._width.setValue(w)
             self._height.setValue(h)
             centre = mu.add(pose.lcentre, mu.add(mu.mul(pose.lu, x), mu.mul(pose.lv, y)))
@@ -528,7 +534,7 @@ class RingView:
 
     @staticmethod
     def _signature(layout):
-        return id(layout), tuple((p.name, tuple(p.slots), p.hue) for p in layout.pages)
+        return id(layout), tuple((p.name, tuple(p.slots), p.hue, p.cols) for p in layout.pages)
 
     def build(self, layout, faces):
         """(Re)build the panel nodes for a layout; `faces` maps face id to `layout.Face`."""
@@ -549,9 +555,9 @@ class RingView:
         view.set_title((titles or {}).get(name, name))
         for row, (slider_view, face_id) in view.sliders.items():
             fraction, text, *picked = (sliders or {}).get(face_id, (0.0, "-"))
-            hovered = result.hover == (index, row * lay.COLS)
+            hovered = result.hover == (index, row * view.cols)
             slider_view.set(fraction, text, hovered, hovered and ring.slider_drag is not None, bool(picked and picked[0]),
-                            result.bar_hover == (index, row * lay.COLS))
+                            result.bar_hover == (index, row * view.cols))
         for row, (readout_view, face_id) in view.readouts.items():
             readout_view.set(*(readouts or {}).get(face_id, ("-", "-", False)))
         for slot, (cell, face) in enumerate(view.cells):

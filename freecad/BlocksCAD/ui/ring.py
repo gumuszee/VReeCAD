@@ -39,14 +39,43 @@ from freecad.BlocksCAD.ui.layout import COLS, ROWS
 
 CELL = 0.036           # metres, face edge
 GAP = 0.005
-GRID_W = COLS * CELL + (COLS - 1) * GAP
-GRID_H = ROWS * CELL + (ROWS - 1) * GAP
-PANEL_W = GRID_W + 0.014
-PANEL_H = GRID_H + 0.034
 GRID_Y = -0.010        # centre of the grid of faces in panel coordinates (origin at the centre of the panel plate)
-TITLE_Y = (GRID_Y + GRID_H / 2 + 0.003, GRID_Y + GRID_H / 2 + 0.024)   # title bar, the handle for lifting a panel
-MENU_X = GRID_W / 2 - 0.024      # from here to the right end of the title bar is the menu mark: a tap on it opens the editor of the panel
-HIDE_X = (GRID_W / 2 - 0.046, GRID_W / 2 - 0.026)    # the hide slot in the title bar while a face is lifted: where a face dropped is hidden (x on the panel)
+
+
+class Dims:
+    """The geometry of a panel with `cols` columns and `rows` rows of faces (metres, in panel coordinates: x right, y up from the centre
+    of the plate): the grid, the plate, the title bar (the handle for lifting a panel), the menu mark at its right end (a tap on it opens
+    the editor of the panel) and the hide slot in it (where a face dropped while lifting is hidden)."""
+    __slots__ = ("cols", "rows", "grid_w", "grid_h", "panel_w", "panel_h", "title_y", "menu_x", "hide_x")
+
+    def __init__(self, cols, rows):
+        self.cols, self.rows = cols, rows
+        self.grid_w = cols * CELL + (cols - 1) * GAP
+        self.grid_h = rows * CELL + (rows - 1) * GAP
+        self.panel_w, self.panel_h = self.grid_w + 0.014, self.grid_h + 0.034
+        self.title_y = (GRID_Y + self.grid_h / 2 + 0.003, GRID_Y + self.grid_h / 2 + 0.024)
+        self.menu_x = self.grid_w / 2 - 0.024
+        self.hide_x = (self.grid_w / 2 - 0.046, self.grid_w / 2 - 0.026)
+
+    @property
+    def title_centre(self):
+        return (self.title_y[0] + self.title_y[1]) / 2
+
+
+_DIMS = {}
+
+
+def dims(cols=COLS, rows=ROWS):
+    """The (shared) `Dims` of a grid size."""
+    key = (cols, rows)
+    if key not in _DIMS:
+        _DIMS[key] = Dims(cols, rows)
+    return _DIMS[key]
+
+
+DEFAULT = dims()
+GRID_W, GRID_H, PANEL_W, PANEL_H = DEFAULT.grid_w, DEFAULT.grid_h, DEFAULT.panel_w, DEFAULT.panel_h      # of a panel of the default grid
+TITLE_Y, MENU_X, HIDE_X = DEFAULT.title_y, DEFAULT.menu_x, DEFAULT.hide_x
 PANEL_GAP = 0.008
 FORWARD = 0.09         # distance of the carousel centre in front of the grip point, along the controller
 RADIUS_MIN = 0.09      # distance of the side planes from the controller axis
@@ -92,13 +121,14 @@ class Frame:
 class PanelPose:
     """Where a panel (or the empty slot of a side) is. The local fields (`lcentre`, `lu`, `lv`, `ln`) are in the frame of the carousel
     and change only when the carousel turns or its panels change, the room fields (`centre`, `u`, `v`, `n`) are worked out when asked."""
-    __slots__ = ("lcentre", "lu", "lv", "ln", "cos", "side", "row", "_frame", "_centre", "_u", "_v", "_n")
+    __slots__ = ("lcentre", "lu", "lv", "ln", "cos", "side", "row", "dims", "_frame", "_centre", "_u", "_v", "_n")
 
-    def __init__(self, local, cos, side, row, frame):
+    def __init__(self, local, cos, side, row, frame, dims=DEFAULT):
         self.lcentre, self.lu, self.lv, self.ln = local
         self.cos = cos                 # cosine of the angle of its side from the front: 1 = facing up from the controller
         self.side = side               # carousel side the panel stands on
         self.row = row                 # row on the side
+        self.dims = dims               # the `Dims` of the panel
         self._frame = frame
         self._centre = self._u = self._v = self._n = None
 
@@ -172,30 +202,36 @@ class RingResult:
     consume_trigger: bool = False                # the tool hand's trigger belongs to the carousel this frame
 
 
-def slider_along(x):
-    """The position along the track (0 to 1) of a slider for a local x on its panel (metres from the panel centre)."""
-    low, high = -GRID_W / 2 + SLIDER_PAD, GRID_W / 2 - SLIDER_PAD
+def slider_along(x, grid_w=GRID_W):
+    """The position along the track (0 to 1) of a slider for a local x on its panel (metres from the panel centre) whose grid is
+    `grid_w` wide."""
+    low, high = -grid_w / 2 + SLIDER_PAD, grid_w / 2 - SLIDER_PAD
     return min(max((x - low) / (high - low), 0.0), 1.0)
 
 
-def side_layout(rows):
+def side_layout(rows, dims_of=None):
     """Centres of the panels of one side in side coordinates (x right, y forward, metres), the half width and the half height.
-    Rows are centred on the side, the first row is at the bottom."""
+    Rows are centred on the side, the first row is at the bottom. `dims_of` gives the `Dims` of a page (the default grid for none)."""
+    dims_of = dims_of or (lambda page: DEFAULT)
     centres = {}
-    half_w, n = 0.0, len(rows)
+    widths = [sum(dims_of(p).panel_w for p in row) + (len(row) - 1) * PANEL_GAP for row in rows]
+    heights = [max(dims_of(p).panel_h for p in row) for row in rows]
+    total = sum(heights) + max(len(rows) - 1, 0) * PANEL_GAP
+    y = -total / 2
     for r, row in enumerate(rows):
-        width = len(row) * PANEL_W + (len(row) - 1) * PANEL_GAP
-        half_w = max(half_w, width / 2)
-        y = (r - (n - 1) / 2) * (PANEL_H + PANEL_GAP)
-        for k, page in enumerate(row):
-            centres[page] = (-width / 2 + PANEL_W / 2 + k * (PANEL_W + PANEL_GAP), y)
-    half_h = (n * PANEL_H + max(n - 1, 0) * PANEL_GAP) / 2 if n else PANEL_H / 2
-    return centres, max(half_w, PANEL_W / 2), half_h
+        x = -widths[r] / 2
+        for page in row:
+            d = dims_of(page)
+            centres[page] = (x + d.panel_w / 2, y + heights[r] / 2)
+            x += d.panel_w + PANEL_GAP
+        y += heights[r] + PANEL_GAP
+    return centres, max(max(widths, default=0.0) / 2, PANEL_W / 2), (total / 2 if rows else PANEL_H / 2)
 
 
 class PaletteRing:
     def __init__(self, sides, palette_hand=0, tool_hand=1):
         self.sides = [[list(r) for r in s] for s in sides]   # page indexes: side -> rows -> pages
+        self.page_dims = {}            # page index -> (columns, rows) of its grid, for the pages that differ from the default
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
         self.index = 0                 # side at the front (unbounded, modulo the number of sides)
         self.angle = 0.0               # displayed carousel angle (radians), eases towards the target
@@ -242,6 +278,17 @@ class PaletteRing:
             self.sides = sides
             self._sides_version += 1
 
+    def set_dims(self, grids):
+        """The grid (columns, rows) of each page that has more or fewer faces than the default (page index -> (cols, rows))."""
+        if grids != self.page_dims:
+            self.page_dims = dict(grids)
+            self._sides_version += 1
+
+    def _dim(self, page):
+        """The `Dims` of a page (the default for a page without a grid of its own and for the empty side of a lifted panel)."""
+        grid = self.page_dims.get(page)
+        return DEFAULT if grid is None else dims(*grid)
+
     def display_sides(self):
         """The sides as drawn: without the lifted page, and while lifting a page with one empty side at the end to start a new side."""
         if self.lifted is None:
@@ -284,7 +331,7 @@ class PaletteRing:
         if version != self._structure_version:
             self._structure_version = version
             self._shown = self.display_sides()
-            self._layouts = [side_layout(rows) for rows in self._shown]
+            self._layouts = [side_layout(rows, self._dim) for rows in self._shown]
             self._count = max(1, len(self._shown))
             half = max([lo[1] for lo in self._layouts] or [PANEL_W / 2])
             self.radius = max(RADIUS_MIN, half / math.tan(math.pi / self._count)) if self._count >= 3 else RADIUS_MIN
@@ -321,18 +368,18 @@ class PaletteRing:
         frame = self._frame_for(pose)
         if self._laid is None or self._laid[0] is not frame or self._laid[1] is not self._locals or self._laid[2] is not self._local_ghosts:
             self._laid = (frame, self._locals, self._local_ghosts)
-            self.poses = {page: PanelPose(local, cos, side, row, frame) for page, (local, cos, side, row) in self._locals.items()}
+            self.poses = {page: PanelPose(local, cos, side, row, frame, self._dim(page)) for page, (local, cos, side, row) in self._locals.items()}
             self.ghosts = {side: PanelPose(local, cos, side, row, frame) for side, (local, cos, side, row) in self._local_ghosts.items()}
         return self._shown
 
     @staticmethod
-    def locate_slot(x, y):
-        """Slot index for local coordinates (metres from the grid centre, y up), or None outside the grid."""
+    def locate_slot(x, y, dim=DEFAULT):
+        """Slot index for local coordinates (metres from the grid centre, y up), or None outside the grid (of grid size `dim`)."""
         pitch = CELL + GAP
-        col = math.floor((x + GRID_W / 2 + GAP / 2) / pitch)
-        row = math.floor((GRID_H / 2 + GAP / 2 - y) / pitch)
-        if 0 <= col < COLS and 0 <= row < ROWS and abs(x) <= GRID_W / 2 + GAP / 2 and abs(y) <= GRID_H / 2 + GAP / 2:
-            return row * COLS + col
+        col = math.floor((x + dim.grid_w / 2 + GAP / 2) / pitch)
+        row = math.floor((dim.grid_h / 2 + GAP / 2 - y) / pitch)
+        if 0 <= col < dim.cols and 0 <= row < dim.rows and abs(x) <= dim.grid_w / 2 + GAP / 2 and abs(y) <= dim.grid_h / 2 + GAP / 2:
+            return row * dim.cols + col
         return None
 
     def slot_centre(self, page, slot):
@@ -340,10 +387,11 @@ class PaletteRing:
         pose = self.poses.get(page)
         if pose is None:
             return None
-        row = slot // COLS
+        dim = pose.dims
+        row = slot // dim.cols
         wide = row in self.slider_rows.get(page, ()) or row in self.readout_rows.get(page, ())
-        x = 0.0 if wide else (slot % COLS - (COLS - 1) / 2) * (CELL + GAP)
-        y = ((ROWS - 1) / 2 - row) * (CELL + GAP) + GRID_Y
+        x = 0.0 if wide else (slot % dim.cols - (dim.cols - 1) / 2) * (CELL + GAP)
+        y = ((dim.rows - 1) / 2 - row) * (CELL + GAP) + GRID_Y
         return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.u, pose.v
 
     @staticmethod
@@ -357,26 +405,27 @@ class PaletteRing:
     def _make_hit(self, page, pose, point, distance):
         """The `Hit` for a point on the plane of a panel (or ghost), or None when it lies outside the plate."""
         x, y = self._locate(pose, point)
-        if abs(x) > PANEL_W / 2 or abs(y) > PANEL_H / 2:
+        dim = pose.dims
+        if abs(x) > dim.panel_w / 2 or abs(y) > dim.panel_h / 2:
             return None
-        fy = y / (PANEL_H / 2)
+        fy = y / (dim.panel_h / 2)
         zone = "above" if fy > EDGE_ZONE else "below" if fy < -EDGE_ZONE else "left" if x < 0 else "right"
         if page is None:
             return Hit("ghost", pose.side, 0, None, None, point, distance, zone)
-        if TITLE_Y[0] <= y <= TITLE_Y[1]:
-            if self.lifted_face is not None and HIDE_X[0] <= x <= HIDE_X[1]:
+        if dim.title_y[0] <= y <= dim.title_y[1]:
+            if self.lifted_face is not None and dim.hide_x[0] <= x <= dim.hide_x[1]:
                 return Hit("hide", pose.side, pose.row, page, None, point, distance, zone)
-            if self.lifted_face is None and self.lifted is None and x >= MENU_X:
+            if self.lifted_face is None and self.lifted is None and x >= dim.menu_x:
                 return Hit("menu", pose.side, pose.row, page, None, point, distance, zone)
             return Hit("title", pose.side, pose.row, page, None, point, distance, zone)
-        slot = self.locate_slot(x, y - GRID_Y)
-        if slot is not None and slot // COLS in self.slider_rows.get(page, ()):
-            row = slot // COLS
-            dy = (y - GRID_Y) - ((ROWS - 1) / 2 - row) * (CELL + GAP)
-            return Hit("slider", pose.side, pose.row, page, row * COLS, point, distance, zone, slider_along(x),
+        slot = self.locate_slot(x, y - GRID_Y, dim)
+        if slot is not None and slot // dim.cols in self.slider_rows.get(page, ()):
+            row = slot // dim.cols
+            dy = (y - GRID_Y) - ((dim.rows - 1) / 2 - row) * (CELL + GAP)
+            return Hit("slider", pose.side, pose.row, page, row * dim.cols, point, distance, zone, slider_along(x, dim.grid_w),
                        BAR_BAND[0] <= dy <= BAR_BAND[1])
-        if slot is not None and slot // COLS in self.readout_rows.get(page, ()):
-            slot = slot // COLS * COLS                   # a readout is one face over its whole row
+        if slot is not None and slot // dim.cols in self.readout_rows.get(page, ()):
+            slot = slot // dim.cols * dim.cols           # a readout is one face over its whole row
         return Hit("face" if slot is not None else "body", pose.side, pose.row, page, slot, point, distance, zone)
 
     def hit_test(self, origin, direction):
@@ -400,7 +449,7 @@ class PaletteRing:
         return self.fixed_from is not None and page is not None and page >= self.fixed_from
 
     def _slider_id(self, hit):
-        return self.slider_rows.get(hit.page, {}).get(hit.slot // COLS)
+        return self.slider_rows.get(hit.page, {}).get(hit.slot // self._dim(hit.page).cols)
 
     def hit_tip(self, tip, front=TIP_FRONT):
         """The panel a tip point touches: within `front` in front of its plate or `TIP_BEHIND` behind it. Returns the `Hit`
@@ -450,7 +499,7 @@ class PaletteRing:
                     t = mu.dot(mu.sub(pose.centre, pointer.position), pose.n) / denom
                     point = mu.add(pointer.position, mu.mul(pointer.direction, t)) if t > 0 else None
             if point is not None:
-                result.slider = (page, slot, slider_along(self._locate(pose, point)[0]))
+                result.slider = (page, slot, slider_along(self._locate(pose, point)[0], pose.dims.grid_w))
                 result.ray_end = point
         else:
             result.slider_done = (page, slot)

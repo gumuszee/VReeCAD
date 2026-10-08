@@ -635,6 +635,65 @@ class RingTest(unittest.TestCase):
         self.sim.set_hand(1, trigger=0.0)
         self.assertIsNone(self.run_frames(1).activated)                       # a long press is not a tap
 
+    def wide_slot_point(self, slot, page=0):
+        pose = self.ring.poses[page]
+        d = pose.dims
+        x = (slot % d.cols - (d.cols - 1) / 2) * (rg.CELL + rg.GAP)
+        y = ((d.rows - 1) / 2 - slot // d.cols) * (rg.CELL + rg.GAP) + rg.GRID_Y
+        return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.n
+
+    def test_a_panel_with_a_grid_of_its_own_is_as_large_as_its_grid_and_every_face_of_it_is_hit(self):
+        self.ring.set_dims({0: (10, 4)})
+        self.run_frames()
+        d = self.ring.poses[0].dims
+        self.assertEqual((d.cols, d.rows), (10, 4))
+        self.assertAlmostEqual(d.grid_w, 10 * rg.CELL + 9 * rg.GAP)
+        self.assertAlmostEqual(d.panel_h, 4 * rg.CELL + 3 * rg.GAP + 0.034)
+        self.assertEqual((self.ring.poses[1].dims.cols, self.ring.poses[1].dims.rows), (4, 3))      # the other panels keep the default grid
+        for slot in (0, 9, 10, 25, 39):
+            point, n = self.wide_slot_point(slot)
+            self.aim_at(point, n)
+            r = self.run_frames(1)
+            self.assertEqual(r.hover, (0, slot), slot)
+        centre, _, _ = self.ring.slot_centre(0, 39)
+        point, _ = self.wide_slot_point(39)
+        self.assertTrue(all(abs(a - b) < 1e-9 for a, b in zip(centre, point)))
+
+    def test_the_title_bar_of_a_wide_panel_has_its_menu_mark_and_hide_slot_at_its_own_right_end(self):
+        self.ring.set_dims({0: (10, 4)})
+        self.run_frames()
+        pose = self.ring.poses[0]
+        d = pose.dims
+        y = (d.title_y[0] + d.title_y[1]) / 2
+        for x, expected in (((d.menu_x + d.grid_w / 2) / 2, 0), (0.0, None)):
+            point = mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y)))
+            self.aim_at(point, pose.n)
+            self.assertEqual(self.run_frames(1).menu_hover, expected)
+        self.assertGreater(d.menu_x, rg.MENU_X)                                      # further right than on a panel of the default grid
+
+    def test_a_slider_of_a_wide_panel_runs_along_its_whole_row(self):
+        self.ring.set_dims({0: (10, 4)})
+        self.ring.slider_rows = {0: {1: "s"}}
+        self.run_frames()
+        point, n = self.wide_slot_point(10 + 9)
+        pose = self.ring.poses[0]
+        x = (pose.dims.grid_w / 2 - rg.SLIDER_PAD)
+        self.assertAlmostEqual(rg.slider_along(x, pose.dims.grid_w), 1.0)
+        self.assertAlmostEqual(rg.slider_along(0.0, pose.dims.grid_w), 0.5)
+        self.assertLess(rg.slider_along(x, rg.GRID_W), 1.0 + 1e-9)
+
+    def test_the_side_layout_puts_panels_of_different_sizes_side_by_side_and_one_over_the_other(self):
+        sizes = {0: rg.dims(10, 4), 1: rg.dims(4, 3), 2: rg.dims(4, 3)}
+        centres, half_w, half_h = rg.side_layout([[0], [1, 2]], sizes.get)
+        self.assertAlmostEqual(half_w, sizes[0].panel_w / 2)                         # the keyboard row is the wider one
+        total = sizes[0].panel_h + rg.PANEL_GAP + sizes[1].panel_h
+        self.assertAlmostEqual(half_h, total / 2)
+        self.assertAlmostEqual(centres[0][1], -total / 2 + sizes[0].panel_h / 2)       # the first row is the bottom row
+        self.assertAlmostEqual(centres[1][1], total / 2 - sizes[1].panel_h / 2)
+        self.assertLess(centres[1][0], 0.0)
+        self.assertGreater(centres[2][0], 0.0)
+        self.assertAlmostEqual(centres[2][0] - centres[1][0], sizes[1].panel_w + rg.PANEL_GAP)
+
     def hide_slot_point(self, page=0):
         pose = self.ring.poses[page]
         x = (rg.HIDE_X[0] + rg.HIDE_X[1]) / 2

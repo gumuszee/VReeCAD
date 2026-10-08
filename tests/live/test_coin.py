@@ -384,10 +384,11 @@ class SimUiTest(unittest.TestCase):
         self.settle()
 
     def aim_at_slot(self, slot, page=0):
-        from freecad.BlocksCAD.ui import layout as lay, ring as rg
+        from freecad.BlocksCAD.ui import ring as rg
         pose = self.s.ui.ring.poses[page]
-        x = (slot % lay.COLS - (lay.COLS - 1) / 2) * (rg.CELL + rg.GAP)
-        y = ((lay.ROWS - 1) / 2 - slot // lay.COLS) * (rg.CELL + rg.GAP) + rg.GRID_Y
+        shown = self.s.ui.shown_layout().pages[page]
+        x = (slot % shown.cols - (shown.cols - 1) / 2) * (rg.CELL + rg.GAP)
+        y = ((shown.rows - 1) / 2 - slot // shown.cols) * (rg.CELL + rg.GAP) + rg.GRID_Y
         point = tuple(c + u * x + v * y for c, u, v in zip(pose.centre, pose.u, pose.v))
         self.s.input.set_hand(1, position=tuple(c + n * 0.3 for c, n in zip(point, pose.n)), point_at=point)
         self.s.frame(0.02)

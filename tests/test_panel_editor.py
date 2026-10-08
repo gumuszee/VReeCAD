@@ -13,13 +13,16 @@ def press(editor, text):
 
 
 class PagesTest(unittest.TestCase):
-    def test_the_keyboard_is_three_panels_in_a_row_that_read_across_and_the_name_and_colour_stand_over_it(self):
+    def test_the_keyboard_is_one_wide_panel_in_qwerty_order_and_the_name_and_colour_stand_over_it(self):
         layout = pe.layout(0.5)
-        self.assertEqual([(p.name, p.side, p.row) for p in layout.pages],
-                         [("A to L", 0, 0), ("M to X", 0, 0), ("Y to 9", 0, 0), ("Name", 0, 1), ("Colour", 0, 1)])
-        self.assertEqual(layout.sides(), [[[0, 1, 2], [3, 4]]])
-        rows = ["".join(face[-1] for k in range(3) for face in layout.pages[k].slots[r * 4:(r + 1) * 4]) for r in range(3)]
-        self.assertEqual(rows, [pe.KEY_ROWS[0].lower(), pe.KEY_ROWS[1].lower(), pe.KEY_ROWS[2].lower()])
+        self.assertEqual([(p.name, p.side, p.row, p.cols, p.rows) for p in layout.pages],
+                         [("Keyboard", 0, 0, 10, 4), ("Name", 0, 1, 4, 3), ("Colour", 0, 1, 4, 3)])
+        self.assertEqual(layout.sides(), [[[0], [1, 2]]])
+        keys = layout.pages[0].slots
+        rows = ["".join(f[-1] if f.startswith("ed.key.") else "." for f in keys[r * 10:(r + 1) * 10] if f) for r in range(4)]
+        self.assertEqual(rows, ["1234567890", "qwertyuiop", "asdfghjkl.", "zxcvbnm..."])
+        self.assertEqual((keys[29], keys[37], keys[38], keys[39]), (pe.BACK, pe.CASE, pe.SPACE, pe.CLEAR))
+        self.assertEqual(keys[28 + 1 - 1], "ed.key.l")                                  # the delete key follows the nine letters of the home row
         self.assertTrue(all(p.hue == 0.5 for p in layout.pages))
 
     def test_every_face_is_known_once_and_the_readout_has_a_row_of_its_own(self):
@@ -31,8 +34,14 @@ class PagesTest(unittest.TestCase):
         self.assertEqual(known[pe.READOUT].kind, "readout")
         name = next(p for p in layout.pages if p.name == "Name")
         self.assertEqual(name.slots[:4], [pe.READOUT, None, None, None])
-        self.assertTrue(all(len(p.slots) == lay.SLOTS for p in layout.pages))
+        self.assertEqual(name.slots[4:8], list(pe.SIZE_IDS))
+        self.assertTrue(all(len(p.slots) == p.cols * p.rows for p in layout.pages))
         self.assertEqual(len(pe.HUES), lay.SLOTS)                                    # Auto and eleven hues fill the Colour panel
+
+    def test_the_colour_faces_wear_the_colour_they_give_and_auto_has_a_label_instead(self):
+        known = pe.faces()
+        self.assertEqual([known[f].tint for f in pe.HUE_IDS], [h for _, h in pe.HUES])
+        self.assertEqual([known[f].label for f in pe.HUE_IDS], ["Auto"] + [""] * 11)
 
 
 class TypingTest(unittest.TestCase):
@@ -41,7 +50,7 @@ class TypingTest(unittest.TestCase):
         editor.activate(pe.CLEAR)
         press(editor, "my parts 2")
         self.assertEqual(editor.text, "My Parts 2")
-        self.assertEqual(editor.readouts()[pe.READOUT], ("Name", "My Parts 2|", True))
+        self.assertEqual(editor.readouts()[pe.READOUT], ("Name, panel of 4 x 3 faces", "My Parts 2|", True))
 
     def test_a_name_that_is_edited_goes_on_in_small_letters_and_the_case_key_makes_capitals(self):
         editor = pe.PanelEditor(0, "Tools", None)
@@ -105,7 +114,8 @@ class ResultTest(unittest.TestCase):
     def test_the_editor_starts_with_the_name_and_the_colour_of_the_panel(self):
         editor = pe.PanelEditor(0, "Tools", 0.68)
         self.assertEqual((editor.text, editor.hue_index, editor.hue), ("Tools", 4, 0.68))
-        self.assertIn("editor:" + pe.HUE_IDS[4], editor.lit_actions())
+        self.assertEqual(editor.labels()[pe.HUE_IDS[4]], "*")                         # the chosen colour is marked, not lit: it keeps its colour
+        self.assertNotIn(pe.HUE_IDS[3], editor.labels())
         auto = pe.PanelEditor(0, "Tools", None)
         self.assertEqual((auto.hue_index, auto.hue), (0, None))
         self.assertEqual(auto.preview_hue(), lay.default_hue("Tools"))              # the colour the name gives
@@ -119,6 +129,36 @@ class ResultTest(unittest.TestCase):
         editor = pe.PanelEditor(0, "Tools", 0.68)
         editor.activate(pe.HUE_IDS[0])
         self.assertEqual(editor.result(), ("Tools", None))
+
+
+class SizeTest(unittest.TestCase):
+    def test_the_size_grows_and_shrinks_by_one_column_or_row_within_the_limits(self):
+        editor = pe.PanelEditor(0, "Tools", None, 4, 3, [None] * 12)
+        self.assertEqual(editor.size, (4, 3))
+        editor.activate("ed.cols_inc")
+        editor.activate("ed.rows_inc")
+        self.assertEqual(editor.size, (5, 4))
+        self.assertEqual(editor.readouts()[pe.READOUT][0], "Name, panel of 5 x 4 faces")
+        editor.activate("ed.cols_dec")
+        editor.activate("ed.rows_dec")
+        self.assertEqual(editor.size, (4, 3))
+        for _ in range(lay.MAX_COLS):
+            step = editor.activate("ed.cols_inc")
+        self.assertEqual(editor.size[0], lay.MAX_COLS)
+        self.assertEqual(step.message, "The panel is as large as it can be")
+        for _ in range(lay.MAX_COLS + 2):
+            step = editor.activate("ed.cols_dec")
+        self.assertEqual(editor.size[0], 1)
+
+    def test_a_size_that_would_cut_off_a_face_is_refused(self):
+        slots = ["a", None, None, None, None, None, None, "b", None, None, None, None]        # a in the corner, b at the end of the second row
+        editor = pe.PanelEditor(0, "Tools", None, 4, 3, slots)
+        step = editor.activate("ed.cols_dec")
+        self.assertEqual((editor.size, step.message), ((4, 3), "Faces stand there: move them away first"))
+        editor.activate("ed.rows_dec")                                                       # the last row is empty
+        self.assertEqual(editor.size, (4, 2))
+        step = editor.activate("ed.rows_dec")
+        self.assertEqual((editor.size, step.message), ((4, 2), "Faces stand there: move them away first"))
 
 
 if __name__ == "__main__":

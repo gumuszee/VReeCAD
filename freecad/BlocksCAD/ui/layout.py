@@ -27,8 +27,9 @@ import zlib
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-COLS, ROWS = 4, 3
+COLS, ROWS = 4, 3          # the grid of a panel to begin with; a panel may have more columns and rows (`Page.cols`, `Page.rows`)
 SLOTS = COLS * ROWS
+MAX_COLS, MAX_ROWS = 12, 8
 RENAMED_FACES = {"tool.grab": "tool.move", "view.controls": "settings.tutorial"}    # ids that saved layouts and settings may hold, and the faces they stand for
 RENAMED_PAGES = {"Session": "Settings"}       # names of panels that saved layouts may hold, and the panels they stand for
 
@@ -56,6 +57,7 @@ class Face:
     action: str
     kind: str = "button"   # "button", "slider" or "readout" (these two take a whole row of their panel) or "display" (a cell that only shows a text)
     tip: str = ""          # one line shown as a tooltip while the face is hovered
+    tint: Optional[float] = None   # a hue (0 to 1): the face is drawn in the colour that a panel of this hue gives its faces (the colours of the panel editor)
 
 
 @dataclass
@@ -65,14 +67,31 @@ class Page:
     side: Optional[int] = None   # carousel side; None puts the page on a side of its own
     row: Optional[int] = None    # row on the side; None puts the page in the bottom row
     hue: Optional[float] = None  # the tint the user gave the panel (0 to 1); None leaves it to the name (`default_hue`)
+    cols: int = COLS             # the faces stand in a grid of `cols` columns and `rows` rows, row by row; the panel grows with it
+    rows: int = ROWS
 
     def __post_init__(self):
-        self.slots = (list(self.slots) + [None] * SLOTS)[:SLOTS]
+        self.cols = min(max(int(self.cols), 1), MAX_COLS)
+        self.rows = min(max(int(self.rows), 1), MAX_ROWS)
+        count = self.cols * self.rows
+        self.slots = (list(self.slots) + [None] * count)[:count]
+
+    def resize(self, cols, rows):
+        """Give the panel a grid of `cols` columns and `rows` rows: every face keeps its row and column. Returns whether it was done;
+        nothing changes when the size is out of range or would cut off a face (a slider keeps its row only while its row is there)."""
+        if not (1 <= cols <= MAX_COLS and 1 <= rows <= MAX_ROWS):
+            return False
+        cells = {(i // self.cols, i % self.cols): f for i, f in enumerate(self.slots) if f}
+        if any(r >= rows or c >= cols for r, c in cells):
+            return False
+        self.cols, self.rows = cols, rows
+        self.slots = [cells.get((i // cols, i % cols)) for i in range(cols * rows)]
+        return True
 
 
 def _slider_row(page, slot, wide):
     """Whether a slot lies in a row of its page that belongs to a slider (`wide` holds the ids of the sliders)."""
-    first = page.slots[slot // COLS * COLS]
+    first = page.slots[slot // page.cols * page.cols]
     return first is not None and first in wide
 
 
@@ -160,8 +179,8 @@ class Layout:
             home = [p for p in self.pages if p.name == default_page.name]
             for page in home + self.pages:
                 if face in wide:
-                    rows = [r for r in range(ROWS) if all(s is None for s in page.slots[r * COLS:(r + 1) * COLS])]
-                    slot = rows[0] * COLS if rows else None
+                    rows = [r for r in range(page.rows) if all(s is None for s in page.slots[r * page.cols:(r + 1) * page.cols])]
+                    slot = rows[0] * page.cols if rows else None
                 else:
                     free = [i for i, f in enumerate(page.slots) if f is None and not _slider_row(page, i, wide)]
                     slot = free[0] if free else None
@@ -217,7 +236,8 @@ class Layout:
 
     def to_json(self):
         return json.dumps({"version": VERSION, "hidden": self.hidden,
-                           "pages": [{"name": p.name, "side": p.side, "row": p.row, "slots": p.slots, **({"hue": p.hue} if p.hue is not None else {})}
+                           "pages": [{"name": p.name, "side": p.side, "row": p.row, "slots": p.slots, **({"hue": p.hue} if p.hue is not None else {}),
+                                      **({"cols": p.cols, "rows": p.rows} if (p.cols, p.rows) != (COLS, ROWS) else {})}
                                      for p in self.pages]}, indent=1)
 
     @classmethod
@@ -231,10 +251,12 @@ class Layout:
             slots = [current_face(s) if (isinstance(s, str) and (known_faces is None or current_face(s) in known_faces)) else None
                      for s in page.get("slots", [])]
             side, row = page.get("side"), page.get("row")
-            hue = page.get("hue")
+            hue, cols, rows = page.get("hue"), page.get("cols", COLS), page.get("rows", ROWS)
             pages.append(Page(RENAMED_PAGES.get(str(page["name"]), str(page["name"])), slots, side if isinstance(side, int) else None,
                               row if isinstance(row, int) else None,
-                              min(max(float(hue), 0.0), 1.0) if isinstance(hue, (int, float)) and not isinstance(hue, bool) else None))
+                              min(max(float(hue), 0.0), 1.0) if isinstance(hue, (int, float)) and not isinstance(hue, bool) else None,
+                              cols if isinstance(cols, int) and not isinstance(cols, bool) else COLS,
+                              rows if isinstance(rows, int) and not isinstance(rows, bool) else ROWS))
         if not pages:
             raise ValueError("layout without pages")
         hidden = [current_face(f) for f in data.get("hidden", []) if isinstance(f, str) and (known_faces is None or current_face(f) in known_faces)]

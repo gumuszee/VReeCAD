@@ -261,7 +261,7 @@ class UiController:
         if self.carousel != "tools" or self.panel_editor is not None or not 0 <= page < len(self.layout.pages):
             return False
         chosen = self.layout.pages[page]
-        self.panel_editor = panel_editor.PanelEditor(page, chosen.name, chosen.hue)
+        self.panel_editor = panel_editor.PanelEditor(page, chosen.name, chosen.hue, chosen.cols, chosen.rows, chosen.slots)
         self._return_to = "tools"
         self._front["editor"] = 0
         self._show_carousel("editor")
@@ -276,6 +276,7 @@ class UiController:
             name, hue = editor.result()
             chosen = self.layout.pages[editor.page]
             chosen.name, chosen.hue = name, hue
+            chosen.resize(*editor.size)
             self._save_layout()
             self.toast(f"Panel: {name}")
         target = self._return_to if self._return_to == "tools" or self.module.is_open else "tools"
@@ -364,8 +365,8 @@ class UiController:
         """Pages and grid rows that hold a face of `kind` that takes the whole row, a "slider" or a "readout": page -> row -> face id."""
         rows = {}
         for p, page in enumerate(self.shown_layout().pages):
-            for r in range(lay.ROWS):
-                face_id = page.slots[r * lay.COLS]
+            for r in range(page.rows):
+                face_id = page.slots[r * page.cols]
                 face = self.view_faces.get(face_id) if face_id else None
                 if face is not None and face.kind == kind:
                     rows.setdefault(p, {})[r] = face_id
@@ -519,6 +520,7 @@ class UiController:
         else:
             self.ring.fixed_from = len(self.values_layout.pages) if carousel is not self.layout else None
         self.ring.set_sides(carousel.sides())
+        self.ring.set_dims({i: (p.cols, p.rows) for i, p in enumerate(carousel.pages) if (p.cols, p.rows) != (lay.COLS, lay.ROWS)})
         self.ring.slider_rows = self.slider_rows()
         self.ring.readout_rows = self.slider_rows("readout")
         self.ring.hold_visible = self.module.engaged       # the stick works the value slider: the carousel stays whatever the head sees
