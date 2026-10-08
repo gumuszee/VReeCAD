@@ -686,7 +686,7 @@ class XRwidget(QOpenGLWidget):
             return "No document"
         text, names = edges.make(doc, picking.get_selection(doc), kind)
         if names:
-            picking.set_selection(doc, [(name, "") for name in names])
+            picking.set_selection(doc, edges.selection_after(doc, names))
         return text
 
     def attach_selection(self):

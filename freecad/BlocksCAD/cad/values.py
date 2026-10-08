@@ -116,9 +116,14 @@ class ObjectValues(ValueTarget):
         self._write(name, value)
         self.doc.recompute()
         if not self.obj.isValid():                      # the feature cannot be built with this value: back to what it was
+            message = self._refusal(value)
             self._write(name, before)
             self.doc.recompute()
-            raise ValueError("The shape cannot take that value")
+            raise ValueError(message)
+
+    def _refusal(self, value):
+        """The text that tells why the object cannot take `value` (it is invalid with it)."""
+        return "The shape cannot take that value"
 
     def _set_variable(self, expression, value):
         """The value is bound: when it is bound to one variable alone, the variable takes the new value (and with it everything else that
@@ -269,6 +274,10 @@ class EdgeValues(ObjectValues):
 
     def _write(self, name, value):
         edges.set_size(self.obj, value)
+
+    def _refusal(self, value):
+        best = edges.largest_feasible(self.doc, [self.obj], value)
+        return "The edges cannot take that size" + ("" if best is None else f", the largest is {best:g} mm")
 
     def bind(self, name, expression, value):
         raise ValueError("The size of an edge feature cannot be bound")

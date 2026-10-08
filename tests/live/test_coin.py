@@ -1936,8 +1936,9 @@ class MoveLiveTest(unittest.TestCase):
         target.set("edge.size", 10.0)
         target.commit()
         self.assertAlmostEqual(rounded.Shape.Volume, 1.0e6 - 2 * (1 - math.pi / 4) * 100.0 * 100.0, places=3)
-        with self.assertRaises(ValueError):                                       # a radius larger than the box is taken back
+        with self.assertRaises(ValueError) as refused:                            # a radius larger than the box is taken back
             target.set("edge.size", 400.0)
+        self.assertRegex(str(refused.exception), r"the largest is \d+(\.\d)? mm")        # and the largest radius that the edges take is named
         self.assertAlmostEqual(edges.size_of(rounded), 10.0)
         target.cancel()
         self.doc.undo()                                                                       # the size edit
@@ -1946,9 +1947,30 @@ class MoveLiveTest(unittest.TestCase):
         text, names = edges.make(self.doc, [(self.box.Name, "Edge1")], "chamfer", 10.0)
         self.assertEqual(self.doc.getObject(names[0]).TypeId, "Part::Chamfer")
         self.assertAlmostEqual(self.doc.getObject(names[0]).Shape.Volume, 1.0e6 - 50.0 * 100.0, places=3)
-        text, names = edges.make(self.doc, [(self.box.Name, "Edge1")], "fillet", 400.0)
-        self.assertEqual(names, [])
+        text, names = edges.make(self.doc, [(self.box.Name, "Edge1")], "fillet", 400.0)     # too large: the largest radius that builds is used
         self.assertIn("too large", text)
+        largest = edges.size_of(self.doc.getObject(names[0]))
+        self.assertTrue(10.0 < largest < 100.0)
+        self.assertTrue(self.doc.getObject(names[0]).isValid())
+
+    def test_the_faces_that_a_fillet_or_a_chamfer_adds_are_selected_and_the_panels_follow(self):
+        from freecad.BlocksCAD.cad import edges, values
+        text, names = edges.make(self.doc, [(self.box.Name, "Edge1"), (self.box.Name, "Edge3")], "fillet", 5.0)
+        rounded = self.doc.getObject(names[0])
+        self.assertEqual(len(rounded.Shape.Faces), 8)                                         # the box has six faces and each rounded edge adds one
+        added = edges.new_faces(self.box.Shape, rounded.Shape)
+        self.assertEqual(len(added), 2)
+        self.assertTrue(all(type(rounded.Shape.Faces[n - 1].Surface).__name__ == "Cylinder" for n in added))
+        selection = edges.selection_after(self.doc, names)
+        self.assertEqual(selection, [(rounded.Name, f"Face{n}") for n in added])
+        self.assertEqual(values.source(self.doc, lambda doc: selection)[0][1], rounded.Name)    # the value panels follow the faces
+        text, names = edges.make(self.doc, [(self.box.Name, "Edge1")], "chamfer", 10.0)
+        chamfer = self.doc.getObject(names[0])
+        added = edges.new_faces(self.box.Shape, chamfer.Shape)
+        self.assertEqual(len(added), 1)
+        self.assertEqual(type(chamfer.Shape.Faces[added[0] - 1].Surface).__name__, "Plane")
+        self.assertAlmostEqual(chamfer.Shape.Faces[added[0] - 1].Area, 10.0 * 2 ** 0.5 * 100.0, places=3)
+        self.assertEqual(edges.new_faces(self.box.Shape, self.box.Shape), [])
 
     def test_attaching_mates_two_faces_and_the_object_follows_its_support(self):
         import FreeCAD as App
