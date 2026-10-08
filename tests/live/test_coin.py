@@ -1566,6 +1566,21 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(s.ui.module.editor.target.title, made.Label + " point 6")
         self.assertEqual(s.ui.module.readouts()["val.readout"], ("Point X", "500 mm", False))
 
+    def test_a_vertex_chosen_with_the_select_tool_is_the_point_of_the_value_panels(self):
+        from freecad.BlocksCAD.cad import block, values
+        made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        names = [f"Vertex{i + 1}" for i, v in enumerate(made.Shape.Vertexes)]
+        corner = next(n for n, v in zip(names, made.Shape.Vertexes) if (v.X, v.Y, v.Z) == (500.0, 100.0, 100.0))
+        key, factory = values.source(self.doc, lambda doc: [(made.Name, corner)])
+        self.assertEqual(key, (self.doc.Name, made.Name, 6))
+        self.assertEqual(factory().fields()[0].label, "Point X")
+        self.assertEqual(factory().fields()[0].value, 500.0)
+        origin = next(n for n, v in zip(names, made.Shape.Vertexes) if (v.X, v.Y, v.Z) == (400.0, 0.0, 0.0))
+        self.assertEqual(values.source(self.doc, lambda doc: [(made.Name, origin)])[0][2], 0)
+        self.assertEqual(block.point_of_vertex(made, "Face1"), None)
+        self.assertEqual(block.point_of_vertex(made, "VertexX"), None)
+        block.set_picked(made, None)                                                          # the picked point is kept per name: forget it
+
     def test_the_remove_mode_of_the_points_tool_cuts_a_corner_off_a_real_block_in_one_undo_step(self):
         from freecad.BlocksCAD.cad import block
         made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))

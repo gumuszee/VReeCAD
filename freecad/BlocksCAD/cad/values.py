@@ -51,14 +51,20 @@ def source(doc, get_selection=None):
     if doc is None:
         return None
     get_selection = get_selection or picking.get_selection
-    for name, _ in get_selection(doc):
+    for name, sub in get_selection(doc):
         obj = doc.getObject(name)
         if editable(obj):
             if sketching.is_sketch(obj):
                 return (doc.Name, name), (lambda d=doc, o=obj: SketchValues(d, o))
             if edges.is_edge_feature(obj):
                 return (doc.Name, name), (lambda d=doc, o=obj: EdgeValues(d, o))
-            index = block.picked(obj) if block.is_block(obj) else None
+            index = None
+            if block.is_block(obj):
+                index = block.point_of_vertex(obj, sub)             # a vertex that the Select tool chose is the point of the panels
+                if index is not None:
+                    block.set_picked(obj, index)
+                else:
+                    index = block.picked(obj)
             if index is not None and index < len(obj.Vertices):
                 return (doc.Name, name, index), (lambda d=doc, o=obj, i=index: BlockValues(d, o, i))
             return (doc.Name, name), (lambda d=doc, o=obj: ObjectValues(d, o))

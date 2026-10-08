@@ -32,11 +32,13 @@ Services besides those of `TouchTool`: `blocks`, an object with the functions of
 `handles`, `signature`, `read`, `apply`, `to_local`, `to_world`), replaced in tests."""
 
 from freecad.BlocksCAD.cad import blockgeom
+from freecad.BlocksCAD.core import mathutil as mu
 from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 from freecad.BlocksCAD.tools.touch import TouchTool
 
+DRAG_START = 0.012          # metres on the stage: a point that was pressed starts to move only when the hand has moved this far, so a tap picks it
 MODES = ("Move", "Split", "Remove")
 KINDS = {"Move": "vertex", "Split": "edge", "Remove": "vertex"}
 FACES = ("Free", "Flat")
@@ -194,7 +196,7 @@ class PointsTool(TouchTool):
             label = "Moved"
         planes = blockgeom.face_planes(vertices, faces, what) if self.values["faces"] == "Flat" else []
         self._drag = {"name": obj.Name, "label": obj.Label, "index": what, "now": vertices[what], "changed": label == "Split",
-                      "verb": label, "planes": planes}
+                      "verb": label, "planes": planes, "start": tuple(raw), "moving": label == "Split"}
         self._forget_hover()
         blocks.set_picked(obj, what)                        # the value panels show this point
         self._select(doc, [(obj.Name, "")])
@@ -235,6 +237,12 @@ class PointsTool(TouchTool):
         if not hand.down("trigger"):
             self._finish(doc)
             return
+        if not state["moving"]:                             # a tap picks the point: it moves only once the hand has left the place of the press
+            mm = self._service("mm_per_metre", lambda: 1000.0)()
+            if mu.length(mu.sub(raw, state["start"])) < DRAG_START * mm:
+                self._readout(f"Point {state['index']}")
+                return
+            state["moving"] = True
         free = hand.down("button1")                         # the A button leaves the point off the grid
         if free:
             target = raw

@@ -284,6 +284,24 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(self.toasts[-1], "Unbind the points of the block first")
         self.assertEqual([e for e in self.doc.log if e[0] in ("open", "commit", "abort")], [])
 
+    def test_a_point_off_the_grid_stays_where_it_is_until_the_hand_has_moved_away_from_the_press(self):
+        self.block.vertices[1] = (103.0, 4.0, 0.0)
+        self.cursor = [103.0, 4.0, 0.0]
+        self.sim.set_hand(1, trigger=0.0, button1=False)
+        self.frames()
+        self.sim.set_hand(1, trigger=1.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.cursor = [108.0, 7.0, 0.0]                                              # a tremor, within the reach of the press
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.block.vertices[1], (103.0, 4.0, 0.0))                  # not snapped to the grid
+        self.assertEqual(self.readouts[-1], "Point 1")
+        self.cursor = [140.0, 7.0, 0.0]                                              # the hand leaves: the point follows, on the grid
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.block.vertices[1], (140.0, 10.0, 0.0))
+        self.cursor = [104.0, 4.0, 0.0]                                              # once moving, it goes on even near the first place
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.block.vertices[1], (100.0, 0.0, 0.0))
+
     def test_nothing_is_touched_far_from_the_points(self):
         self.cursor = [50.0, 50.0, 50.0]
         self.drag((60.0, 60.0, 60.0))

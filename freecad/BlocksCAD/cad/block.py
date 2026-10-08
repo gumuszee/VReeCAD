@@ -169,6 +169,25 @@ def picked(obj):
     return _PICKED.get((obj.Document.Name, obj.Name))
 
 
+def point_of_vertex(obj, sub):
+    """The index of the point of the block `obj` that sits where the sub-element `sub` ("Vertex<n>", a corner of the shape that the Select
+    tool selected) is, or None when `sub` is no vertex or no point lies there. The numbers of the vertices of the shape are not those
+    of the points, so the point is found by its place."""
+    if not (sub.startswith("Vertex") and sub[6:].isdigit()):
+        return None
+    try:
+        corner = obj.Shape.getElement(sub).Point
+    except Exception:
+        return None
+    best = None
+    for index, point in enumerate(read(obj)[0]):
+        world = _world(obj, point)
+        d = ((world[0] - corner.x) ** 2 + (world[1] - corner.y) ** 2 + (world[2] - corner.z) ** 2) ** 0.5
+        if d < 1e-3 and (best is None or d < best[0]):
+            best = (d, index)
+    return None if best is None else best[1]
+
+
 def make(doc, vertices, faces, name="Block"):
     """Add a block object with these points and faces to `doc` (the caller owns the transaction); returns it."""
     obj = doc.addObject("Part::FeaturePython", name)
