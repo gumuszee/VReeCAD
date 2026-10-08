@@ -32,6 +32,7 @@ from freecad.BlocksCAD.tools import registry as tool_registry
 from freecad.BlocksCAD.tools import base as tools_base
 from freecad.BlocksCAD.core import guides, inference, stage, units
 from freecad.BlocksCAD.cad import anchors, attach, colour, combine, duplicate, edges, edit, joints, picking, sketching, values as object_values
+from freecad.BlocksCAD.render.depth_order import DepthOrder
 from freecad.BlocksCAD.render.ghost import Ghost
 from freecad.BlocksCAD.render.highlight import Highlights
 from freecad.BlocksCAD.ui.controller import UiController
@@ -577,6 +578,8 @@ class XRwidget(QOpenGLWidget):
     def setup_tool_services(self):
         """What the tools may use besides the input frame (docs/design.md, Architecture): the cursor, the document, the ghost."""
         self.anchor_cache = anchors.Anchors()
+        self.depth_order = DepthOrder()             # a fixed winner for faces that share a plane (render/depth_order.py)
+        self._depth_synced = (None, 0.0)            # (document name, time) of the last `depth_order.sync`
         self.inference = inference.Inference()      # which anchors the guides may use when the setting says inference (core/inference.py)
         self._warmed = None                # the name of the document whose caches have been read (`warm_caches`)
         self.ghost = Ghost()      # the preview of a shape being made, in document space (added next to the document scene)
@@ -1360,6 +1363,22 @@ class XRwidget(QOpenGLWidget):
         self.nav_transform.rotation.setValue(*world.rotation)
         self.nav_transform.scaleFactor.setValue(world.scale, world.scale, world.scale)
 
+    def sync_depth_order(self):
+        """Give the objects of the active document their depth offsets, twice a second (new objects get theirs); another document
+        takes the offsets of the first out of the scene graph."""
+        doc = App.ActiveDocument
+        name, last = self._depth_synced
+        now = time.monotonic()
+        if doc is None or (name == doc.Name and now - last < 0.5):
+            return
+        if name != doc.Name:
+            self.depth_order.release()
+        self._depth_synced = (doc.Name, now)
+        try:
+            self.depth_order.sync(doc)
+        except Exception as error:               # the flicker fix must never stop the viewer
+            print(f"BlocksCAD: cannot order the depth of the objects: {error}")
+
     def warm_caches(self):
         """Read what picking and the guides need from the active document when it is first seen (a few hundred milliseconds with
         hundreds of objects, the first read of every object), so that the first touch of a tool does not stall a frame. Only
@@ -1376,6 +1395,7 @@ class XRwidget(QOpenGLWidget):
     def update_ui(self, frame):
         """One frame of the user interface: grip navigation, palette ring, haptics, ray and trigger ownership."""
         self.warm_caches()
+        self.sync_depth_order()
         self.ui.active_actions = {f"tool:{self.tools.active_name}"}
         self.ui.active_tool = self.tools.active
         self.ui.mm_to_stage = self.doc_xr_transform.scaleFactor.getValue()[0]
@@ -1619,6 +1639,10 @@ class XRwidget(QOpenGLWidget):
     def terminate(self):
         self.timer.stop()
         self.quit = True
+        try:
+            self.depth_order.release()           # the scene graph is the one of the FreeCAD view: leave it as it was
+        except Exception as error:
+            print(f"BlocksCAD: cannot take the depth offsets out: {error}")
         self.ctx.makeCurrent(self.offs_surface)
         if hasattr(self, 'offs_gl_logger'):
             self.offs_gl_logger.stopLogging()

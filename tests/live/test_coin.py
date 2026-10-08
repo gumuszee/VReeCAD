@@ -59,6 +59,107 @@ class FallbackShapeTest(unittest.TestCase):
         self.assertGreater(after[2], before[2])
 
 
+class DepthOrderTest(unittest.TestCase):
+    """The objects of a document get a polygon offset that grows with their place, so faces that share a plane have a fixed winner."""
+
+    class View:
+        def __init__(self, root):
+            self.RootNode = root
+
+    class Obj:
+        def __init__(self, name, root):
+            self.Name = name
+            self.ViewObject = DepthOrderTest.View(root) if root is not None else None
+
+    class Doc:
+        def __init__(self, objects):
+            self.Objects = objects
+
+    def quad(self, rgb):
+        from pivy import coin
+        root = coin.SoSeparator()
+        root.ref()
+        light = coin.SoLightModel()
+        light.model = coin.SoLightModel.BASE_COLOR
+        root.addChild(light)
+        colour = coin.SoBaseColor()
+        colour.rgb = coin.SbColor(*rgb)
+        root.addChild(colour)
+        points = coin.SoCoordinate3()
+        points.point.setValues(0, 4, [(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)])
+        root.addChild(points)
+        faces = coin.SoFaceSet()
+        faces.numVertices.setValue(4)
+        root.addChild(faces)
+        return root
+
+    def share(self, image):
+        red = blue = 0
+        for y in range(0, image.height(), 2):
+            for x in range(0, image.width(), 2):
+                c = image.pixelColor(x, y)
+                if c.red() > 200 and c.blue() < 60:
+                    red += 1
+                elif c.blue() > 200 and c.red() < 60:
+                    blue += 1
+        return red, blue
+
+    def render(self, *roots):
+        from pivy import coin
+        scene = coin.SoSeparator()
+        scene.ref()
+        for root in roots:
+            scene.addChild(root)
+        return offscreen.render(scene, (1.5, 1.0, 3.0), target=(0.0, 0.0, 0.0), size=(160, 120), ambient=1.0)
+
+    def test_the_object_that_comes_later_wins_a_shared_plane_whatever_the_drawing_order_and_releasing_gives_the_scene_back(self):
+        from freecad.BlocksCAD.render import depth_order
+        red, blue = self.quad((1.0, 0.0, 0.0)), self.quad((0.0, 0.0, 1.0))
+        before = (red.getNumChildren(), blue.getNumChildren())
+        shares = self.share(self.render(red, blue))
+        self.assertEqual(shares[0], 0)                                                # a tie goes to what is drawn last
+        self.assertGreater(shares[1], 100)
+        order = depth_order.DepthOrder()
+        order.sync(self.Doc([self.Obj("Blue", blue), self.Obj("Red", red)]))           # red is the later object, blue is drawn after it
+        self.assertEqual((red.getNumChildren(), blue.getNumChildren(), order.count), (before[0] + 1, before[1] + 1, 2))
+        shares = self.share(self.render(red, blue))
+        self.assertGreater(shares[0], 100)                                            # the later object is in front
+        self.assertEqual(shares[1], 0)
+        shares = self.share(self.render(blue, red))
+        self.assertGreater(shares[0], 100)
+        self.assertEqual(shares[1], 0)
+        order.release()
+        self.assertEqual((red.getNumChildren(), blue.getNumChildren(), order.count), (before[0], before[1], 0))
+        self.assertEqual(self.share(self.render(red, blue))[0], 0)
+
+    def test_new_objects_get_the_next_place_gone_ones_lose_theirs_and_objects_without_a_view_are_left_alone(self):
+        from freecad.BlocksCAD.render import depth_order
+        first, second = self.quad((1.0, 0.0, 0.0)), self.quad((0.0, 0.0, 1.0))
+        order = depth_order.DepthOrder()
+        order.sync(self.Doc([self.Obj("A", first), self.Obj("NoView", None)]))
+        self.assertEqual(order.count, 1)
+        offset = lambda root: root.getChild(0)
+        self.assertEqual(offset(first).units.getValue(), 0.0)                            # the first object is the farthest
+        order.sync(self.Doc([self.Obj("A", first), self.Obj("B", second)]))
+        self.assertEqual(order.count, 2)
+        self.assertLess(offset(second).units.getValue(), offset(first).units.getValue())
+        self.assertLess(offset(second).factor.getValue(), offset(first).factor.getValue())
+        order.sync(self.Doc([self.Obj("B", second)]))                                     # A is gone
+        self.assertEqual((order.count, first.getNumChildren() > 0), (1, True))
+        self.assertNotEqual(first.getChild(0).getTypeId().getName().getString(), "SoPolygonOffset")
+        order.sync(self.Doc([self.Obj("B", second), self.Obj("C", self.quad((0.0, 1.0, 0.0)))]))
+        self.assertEqual(offset(second).units.getValue(), -4.0)                           # B keeps its place when A goes (the object without a view has one too)
+        order.release()
+
+    def test_the_offsets_wrap_after_the_levels_and_stay_a_few_steps_of_the_depth_buffer(self):
+        from freecad.BlocksCAD.render import depth_order
+        factors = [depth_order.offset_for(rank) for rank in range(depth_order.LEVELS + 2)]
+        self.assertEqual(factors[0], (0.0, 0.0))
+        self.assertEqual(factors[depth_order.LEVELS], factors[0])
+        self.assertEqual(factors[depth_order.LEVELS + 1], factors[1])
+        self.assertTrue(all(u >= -2.0 * depth_order.LEVELS for _, u in factors))
+
+
 class SimSessionTest(unittest.TestCase):
     def test_render_shows_the_controllers_and_follows_the_script(self):
         s = sim.SimSession()
