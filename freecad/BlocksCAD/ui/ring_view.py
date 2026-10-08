@@ -343,6 +343,11 @@ class _Panel:
                            coin.SoText3.LEFT, style.PANEL_TEXT)
         self._title_string = self.title.string
         self.title_text = page.name
+        self.hide_state = 0                      # the hide slot in the title bar: 0 none, 1 offered while a face is lifted, 2 the face is over it
+        hide_x = (rg.HIDE_X[0] + rg.HIDE_X[1]) / 2
+        self.hide_color = self.plates.add(rg.HIDE_X[1] - rg.HIDE_X[0], TITLE_H - 0.004, palette.title, hide_x, TITLE_CENTRE, DEPTH)
+        self._hide_text = _text(sep, [""], hide_x, TITLE_CENTRE, TEXT_LIFT, style.TEXT, coin.SoText3.CENTER, style.PANEL_TEXT)
+        self._hide_string = self._hide_text.string
         self.cells = []
         self.sliders = {}          # row of the grid -> (slider view, face id)
         self.readouts = {}         # row of the grid -> (readout view, face id)
@@ -372,6 +377,13 @@ class _Panel:
             self.facing = facing
             self._front_show.set(facing)
 
+    def set_hide_slot(self, state):
+        """Show the hide slot (an X in the title bar) while a face is lifted, lit while the face is over it."""
+        if state != self.hide_state:
+            self.hide_state = state
+            self.hide_color.set(self.palette.title if state == 0 else style.HOVER if state == 2 else style.DROP)
+            self._hide_string.setValue("X" if state else "")
+
     def set_title(self, text):
         if text != self.title_text:
             self.title_text = text
@@ -385,7 +397,7 @@ class _Panel:
 class _Ghost:
     """The empty side at the end of the carousel while something is lifted: a panel dropped on it gets a side of its own, a face
     dropped on it is hidden."""
-    PANEL_LABEL, FACE_LABEL = "Drop here", "Hide face"
+    PANEL_LABEL = "Drop here"
 
     def __init__(self):
         self.switch = coin.SoSwitch()
@@ -584,9 +596,10 @@ class RingView:
                          lifted_face[1] if lifted_face is not None and lifted_face[0] == index else None,
                          face_target[1] if face_target is not None and face_target[0] == index else None,
                          result.bar_hover[1] if result.bar_hover is not None and result.bar_hover[0] == index else None,
-                         drag)
+                         drag, 2 if result.hide_page == index else 1 if lifted_face is not None else 0)
                 if not same or state != view.key:
                     view.key = state
+                    view.set_hide_slot(state[-1])
                     view.title_color.set(style.HOVER if hover_title == index else view.palette.title)
                     self._refresh(view, index, layout.pages[index].name, ring, result, active_actions, labels, sliders, titles, readouts)
             else:
@@ -602,7 +615,7 @@ class RingView:
             view = self._ghosts[side]
             view.shown.set(True)
             view.place.set(ghost, fade)
-            view.set_label(_Ghost.FACE_LABEL if result.lifted_face is not None else _Ghost.PANEL_LABEL)
+            view.set_label(_Ghost.PANEL_LABEL)
             over = result.drop_marker is not None and result.drop_marker[0] is None and result.drop_marker[2] == side
             view.color.set(style.HOVER if over else style.DROP)
             view.plates.flush()

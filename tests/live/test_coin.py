@@ -305,7 +305,7 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(self.s.ui.radial_view.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
         self.assertTrue(self.s.ui.navigator.level)                                # button1 is the level modifier then
 
-    def test_a_face_held_on_is_lifted_and_dropped_on_a_slot_or_on_the_empty_side_to_hide_it(self):
+    def test_a_face_held_on_is_lifted_and_dropped_on_a_slot_or_on_the_hide_slot_of_a_panel(self):
         self.show_carousel()
         ui = self.s.ui
         tools = [p.name for p in ui.layout.pages].index("Tools")
@@ -321,18 +321,17 @@ class SimUiTest(unittest.TestCase):
         self.s.input.set_hand(1, trigger=0.0)
         self.s.frame(0.02)
         self.assertEqual((ui.layout.face_at(tools, free), ui.layout.face_at(tools, 0)), (face, None))
-        # lift it again and drop it on the empty side that hides it
+        # lift it again and drop it on the hide slot in the title bar of the panel
         self.aim_at_slot(free, tools)
         self.s.input.set_hand(1, trigger=1.0)
         self.settle(30)
         self.assertEqual(ui.ring.lifted_face, (tools, free))
-        self.s.input.set_hand(0, stick=(-1.0, 0.0))
+        from freecad.BlocksCAD.ui import ring as rg
+        pose = ui.ring.poses[tools]
+        point = tuple(c + u * (rg.HIDE_X[0] + rg.HIDE_X[1]) / 2 + v * (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2 for c, u, v in zip(pose.centre, pose.u, pose.v))
+        self.s.input.set_hand(1, position=tuple(c + n * 0.3 for c, n in zip(point, pose.n)), point_at=point)
         self.s.frame(0.02)
-        self.s.input.set_hand(0, stick=(0.0, 0.0))
-        self.settle(40)
-        ghost = ui.ring.ghosts[max(ui.ring.ghosts)]
-        self.s.input.set_hand(1, position=tuple(c + n * 0.3 for c, n in zip(ghost.centre, ghost.n)), point_at=ghost.centre)
-        self.s.frame(0.02)
+        self.assertEqual(ui.view._panels[tools].hide_state, 2)                       # the X of the panel is lit while the face is over it
         self.s.input.set_hand(1, trigger=0.0)
         self.s.frame(0.02)
         self.assertEqual((ui.layout.face_at(tools, free), ui.layout.hidden), (None, [face]))

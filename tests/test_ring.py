@@ -571,7 +571,7 @@ class RingTest(unittest.TestCase):
         self.assertEqual(r.lifted_face, (0, 5))
         self.assertTrue(r.consume_trigger)
         self.assertIsNotNone(r.lift_point)
-        self.assertEqual(len(self.ring.display_sides()), len(SIDES) + 1)       # one extra empty side to hide the face
+        self.assertEqual(len(self.ring.display_sides()), len(SIDES))           # no extra side: every panel shows a hide slot
         self.sim.set_hand(1, trigger=0.0)
         r = self.run_frames(1)                   # released over its own slot: nothing happens
         self.assertIsNone(r.activated)
@@ -635,21 +635,50 @@ class RingTest(unittest.TestCase):
         self.sim.set_hand(1, trigger=0.0)
         self.assertIsNone(self.run_frames(1).activated)                       # a long press is not a tap
 
-    def test_a_lifted_face_dropped_on_the_empty_side_is_hidden(self):
+    def hide_slot_point(self, page=0):
+        pose = self.ring.poses[page]
+        x = (rg.HIDE_X[0] + rg.HIDE_X[1]) / 2
+        y = (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2
+        return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.n
+
+    def test_a_lifted_face_dropped_on_the_hide_slot_of_a_panel_is_hidden(self):
         self.run_frames()
         self.press_face(5)
         self.run_frames(25)
-        self.assertEqual(sorted(self.ring.ghosts), [len(SIDES)])
-        self.flick(-1.0)                                                       # the empty side to the front
-        self.assertEqual(self.ring.front_side(), len(SIDES))
-        ghost = self.ring.ghosts[len(SIDES)]
-        self.aim_at(ghost.centre, ghost.n)
+        self.assertEqual(sorted(self.ring.ghosts), [])                         # a face has no empty side to go to
+        point, n = self.hide_slot_point()
+        self.aim_at(point, n)
         r = self.run_frames(1)
         self.assertTrue(r.face_hide)
+        self.assertEqual(r.hide_page, 0)
         self.assertIsNone(r.face_target)
-        self.assertEqual(r.drop_marker, (None, "", len(SIDES)))
+        self.assertIsNone(r.hover)
         self.sim.set_hand(1, trigger=0.0)
         self.assertEqual(self.run_frames(1).face_dropped, (0, 5, None, None))
+
+    def test_the_hide_slot_of_another_panel_hides_too_and_its_title_is_still_a_title_elsewhere(self):
+        self.run_frames()
+        self.press_face(5)
+        self.run_frames(25)
+        self.flick(1.0)                                                        # another side to the front
+        front = self.ring.front_side()
+        point, n = self.hide_slot_point(front)
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertEqual((r.face_hide, r.hide_page), (True, front))
+        point, n = self.title_point(front)                                     # the middle of the title bar is no hide slot
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertEqual((r.face_hide, r.hide_page), (False, None))
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertIsNone(self.run_frames(1).face_dropped)
+
+    def test_without_a_lifted_face_the_place_of_the_hide_slot_is_part_of_the_title_bar(self):
+        self.run_frames()
+        point, n = self.hide_slot_point()
+        self.aim_at(point, n)
+        r = self.run_frames(1)
+        self.assertEqual((r.hover_title, r.face_hide, r.hide_page), (0, False, None))
 
     def test_releasing_a_lifted_face_over_nothing_cancels(self):
         self.run_frames()

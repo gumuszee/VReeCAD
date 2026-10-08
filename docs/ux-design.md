@@ -115,9 +115,9 @@ Each panel has a title bar with a grip mark on its right. The layout of the pale
 
 A single face is lifted the same way as a panel, with the trigger held on it:
 
-1. Point at a face and **hold the trigger for 0.4 s**: a haptic pulse marks the lift, the face lifts off its slot as a card that follows the pointer, and its slot dims. One extra empty side ("Hide face") is offered at the end of the carousel.
+1. Point at a face and **hold the trigger for 0.4 s**: a haptic pulse marks the lift, the face lifts off its slot as a card that follows the pointer, and its slot dims. Every panel shows a **hide slot**, a green square with an X in its title bar (left of the grip mark), for as long as the face is lifted; the carousel keeps its shape.
 2. **Aim at a slot** of any panel on the sides facing the user (turn the carousel with the palette stick while holding, as for panels): the slot lights orange. A face already in the slot changes places with the lifted face; an empty slot takes it. Slots in a row that belongs to a slider are not offered, and the slot the face came from is not a target.
-3. **Release the trigger** to drop the face. Releasing over nothing, over the source slot or over a refused slot cancels. Dropped on the empty side, the face is hidden: it leaves the panels and the quick radial.
+3. **Release the trigger** to drop the face. Releasing over nothing, over the source slot or over a refused slot cancels. Dropped on the hide slot of any panel (it turns blue under the pointer), the face is hidden: it leaves the panels and the quick radial.
 4. The layout is saved on every change. The **Show hidden** face (View panel) puts every hidden face back into a free slot, on its home panel when that has room; **Reset layout** restores the defaults and unhides everything. Loading a saved layout never places hidden faces again.
 
 Sliders are dragged with the trigger, so they cannot be lifted or hidden; they move with their panel.

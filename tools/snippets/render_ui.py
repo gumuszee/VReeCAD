@@ -116,7 +116,7 @@ try:
     print("radial hub activated:", _s.ui_update.activated)
     _s.input.set_head(position=_head, look_at_point=_ctrl)
 
-    # lifting a single face: hold the trigger on it, carry it to a free slot, then over the empty side that hides it
+    # lifting a single face: hold the trigger on it, carry it to a free slot, then over the hide slot of a panel
     _s.ui.settings.tip_angle = 0.0
     _tools_page = [page.name for page in _s.ui.layout.pages].index("Tools")
 
@@ -141,13 +141,11 @@ try:
     _aim_slot(10, 1.0)
     for _ in range(30):
         _s.frame(0.02)
-    _s.input.set_hand(0, stick=(-1.0, 0.0))     # turn the carousel to the empty side at the end
-    _s.frame(0.02)
-    _s.input.set_hand(0, stick=(0.0, 0.0))
-    for _ in range(40):
-        _s.frame(0.02)
-    _ghost = _s.ui.ring.ghosts[max(_s.ui.ring.ghosts)]
-    _s.input.set_hand(1, position=_mu.add(_ghost.centre, _mu.mul(_ghost.n, 0.3)), point_at=_ghost.centre, trigger=1.0)
+    _pose = _s.ui.ring.poses[_tools_page]          # the hide slot is the X in the title bar of a panel
+    _x = (_ring.HIDE_X[0] + _ring.HIDE_X[1]) / 2
+    _y = (_ring.TITLE_Y[0] + _ring.TITLE_Y[1]) / 2
+    _hide = _mu.add(_pose.centre, _mu.add(_mu.mul(_pose.u, _x), _mu.mul(_pose.v, _y)))
+    _s.input.set_hand(1, position=_mu.add(_hide, _mu.mul(_pose.n, 0.3)), point_at=_hide, trigger=1.0)
     _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_face_hide.png"))
     _s.input.set_hand(1, trigger=0.0)

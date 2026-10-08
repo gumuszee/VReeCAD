@@ -21,7 +21,8 @@ faces): the first row is the bottom row nearest the user, further rows are furth
 carousel one side per flick, the carousel fades in while the head looks at the controller (or when pinned) and out otherwise, the
 tool hand's pointer hovers faces and its trigger activates them: a press on a face activates it when the trigger is released over
 the same face within `HOLD_LIFT` seconds, while a longer hold lifts the face. A lifted face goes to the slot it is released over (a
-face there changes places with it) or, released over the extra empty side offered while lifting, is hidden. Holding the trigger on
+face there changes places with it) or, released over the hide slot (an X) that every panel shows in its title bar while a face is
+lifted, is hidden. Holding the trigger on
 the title bar of a panel lifts the panel;
 releasing it over the left or right half of another panel puts the panel next to it in its row, over the upper or lower part makes a
 new row above or below it, over the empty slot of an empty side gives the panel that side.
@@ -44,6 +45,7 @@ PANEL_W = GRID_W + 0.014
 PANEL_H = GRID_H + 0.034
 GRID_Y = -0.010        # centre of the grid of faces in panel coordinates (origin at the centre of the panel plate)
 TITLE_Y = (GRID_Y + GRID_H / 2 + 0.003, GRID_Y + GRID_H / 2 + 0.024)   # title bar, the handle for lifting a panel
+HIDE_X = (GRID_W / 2 - 0.046, GRID_W / 2 - 0.026)    # the hide slot in the title bar while a face is lifted: where a face dropped is hidden (x on the panel)
 PANEL_GAP = 0.008
 FORWARD = 0.09         # distance of the carousel centre in front of the grip point, along the controller
 RADIUS_MIN = 0.09      # distance of the side planes from the controller axis
@@ -129,7 +131,7 @@ class PanelPose:
 
 @dataclass
 class Hit:
-    kind: str                          # "face", "slider", "title", "body" or "ghost"
+    kind: str                          # "face", "slider", "title", "hide" (the hide slot of the title bar), "body" or "ghost"
     side: int
     row: int
     page: Optional[int]                # None on a ghost
@@ -158,7 +160,8 @@ class RingResult:
     dropped: Optional[tuple] = None              # (page, side, row, before, new_row): released onto a target this frame
     lifted_face: Optional[Tuple[int, int]] = None     # (page, slot) of the face held by the trigger (being moved)
     face_target: Optional[Tuple[int, int]] = None     # (page, slot) the lifted face would go to if released now
-    face_hide: bool = False                      # the lifted face is over the empty side that hides it
+    face_hide: bool = False                      # the lifted face is over a hide slot
+    hide_page: Optional[int] = None              # the page whose hide slot the lifted face is over
     face_dropped: Optional[tuple] = None         # (page, slot, target page, target slot): released onto a slot, or onto the hiding side
                                                  # (target page and slot None) this frame
     ray_end: Optional[Tuple[float, float, float]] = None
@@ -236,10 +239,7 @@ class PaletteRing:
             self._sides_version += 1
 
     def display_sides(self):
-        """The sides as drawn: without the lifted page, and while lifting with one empty side at the end to start a new side (or, for
-        a lifted face, to hide it)."""
-        if self.lifted_face is not None:
-            return [[list(r) for r in side] for side in self.sides] + [[]]
+        """The sides as drawn: without the lifted page, and while lifting a page with one empty side at the end to start a new side."""
         if self.lifted is None:
             return self.sides
         shown = lay.without_page(self.sides, self.lifted)
@@ -360,6 +360,8 @@ class PaletteRing:
         if page is None:
             return Hit("ghost", pose.side, 0, None, None, point, distance, zone)
         if TITLE_Y[0] <= y <= TITLE_Y[1]:
+            if self.lifted_face is not None and HIDE_X[0] <= x <= HIDE_X[1]:
+                return Hit("hide", pose.side, pose.row, page, None, point, distance, zone)
             return Hit("title", pose.side, pose.row, page, None, point, distance, zone)
         slot = self.locate_slot(x, y - GRID_Y)
         if slot is not None and slot // COLS in self.slider_rows.get(page, ()):
@@ -619,7 +621,7 @@ class PaletteRing:
             result.haptics.append((self.tool_hand, 0.4, 0.04))
 
     def _move_face(self, result, hit, tool, pointer):
-        """A face is lifted: the pointer chooses a slot (or the empty side that hides the face), releasing the trigger drops it."""
+        """A face is lifted: the pointer chooses a slot (or the hide slot of a panel), releasing the trigger drops it."""
         result.consume_trigger = True
         previous = self._face_target
         self._face_target = None
@@ -627,9 +629,9 @@ class PaletteRing:
         result.hover = None
         if hit is not None:
             result.ray_end = hit.point
-            if hit.kind == "ghost":
+            if hit.kind == "hide":
                 self._face_target = (None, None)
-                result.drop_marker = (None, "", hit.side)
+                result.hide_page = hit.page
             elif hit.kind in ("face", "slider") and (hit.page, hit.slot) != self.lifted_face:
                 if self.can_drop(self.lifted_face, (hit.page, hit.slot)):
                     self._face_target = (hit.page, hit.slot)
