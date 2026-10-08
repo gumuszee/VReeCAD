@@ -258,6 +258,7 @@ class PaletteRing:
         self.origin = (0.0, 0.0, 0.0)  # centre of the carousel axis
         self.frame: Optional[Frame] = None               # the frame of the carousel in the room (`Frame`), set by `update`
         self.radius = RADIUS_MIN
+        self._radii = []               # the distance of the plane of each side from the axis (every side stands as far out as its own panels are wide)
         self._sides_version = 0        # counts the changes of `sides`
         self._structure_version = None  # what `_shown` and `_layouts` were made for
         self._shown, self._layouts = [], []
@@ -334,14 +335,16 @@ class PaletteRing:
             self._shown = self.display_sides()
             self._layouts = [side_layout(rows, self._dim) for rows in self._shown]
             self._count = max(1, len(self._shown))
-            half = max([lo[1] for lo in self._layouts] or [PANEL_W / 2])
-            self.radius = max(RADIUS_MIN, half / math.tan(math.pi / self._count)) if self._count >= 3 else RADIUS_MIN
+            # every side stands as far out as its own width needs, so a wide panel moves its own side out and no other
+            self._radii = [max(RADIUS_MIN, lo[1] / math.tan(math.pi / self._count)) if self._count >= 3 else RADIUS_MIN for lo in self._layouts]
+            self.radius = min(self._radii, default=RADIUS_MIN)         # the nearest side: the pinned panel stands there
             self._local_angle = None
         if self._local_angle != self.angle:
             self._local_angle = self.angle
             self._locals, self._local_ghosts = {}, {}
-            step, radius = self.step, self.radius
+            step = self.step
             for side, (rows, (centres, _, _)) in enumerate(zip(self._shown, self._layouts)):
+                radius = self._radii[side]
                 a = self.angle + side * step
                 sa, ca = math.sin(a), math.cos(a)
                 # in the frame of the carousel (x right, y up, z back) the side faces (sin a, cos a, 0) and the controller points along -z
@@ -357,7 +360,7 @@ class PaletteRing:
             reach = max([layout[2] for layout in self._layouts], default=PANEL_H / 2)
             for page in self.pinned_pages:
                 forward = reach + PANEL_GAP + self._dim(page).panel_h / 2
-                self._locals[page] = (((0.0, radius, -forward), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0), (0.0, 1.0, 0.0)), 1.0, -1, 0)
+                self._locals[page] = (((0.0, self.radius, -forward), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0), (0.0, 1.0, 0.0)), 1.0, -1, 0)
 
     def _frame_for(self, pose):
         """The `Frame` of the carousel for a palette controller pose (the same object while the controller does not move)."""

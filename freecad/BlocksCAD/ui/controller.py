@@ -101,7 +101,7 @@ class UiController:
         self.module = ValueModule(tool_hand)       # the panels for the values of the selected object, on a carousel side of their own
         self.panel_editor = None           # the `panel_editor.PanelEditor` while a panel is renamed or coloured
         self._editor_faces = panel_editor.faces()
-        self._editor_layout = None         # (hue, layout) of the editor carousel
+        self._editor_layout = None         # (what it depends on, layout) of the editor carousel
         self._return_to = "tools"          # the carousel that comes back when the editor closes
         self.view_faces = {**self.faces, **self.module.faces, **self._editor_faces}      # every face that can be drawn: the user's, the module's and the editor's
         self.values_layout = (value_module.load_layout(set(self.module.faces), values_layout_path) if use_user_layout
@@ -224,9 +224,9 @@ class UiController:
         """The layout the carousel shows: the palette layout of the user, or, while the module is open and the values carousel is shown,
         the panels of the values carousel with a Value panel at the top of every side."""
         if self.carousel == "editor" and self.panel_editor is not None:
-            hue = self.panel_editor.preview_hue()
-            if self._editor_layout is None or self._editor_layout[0] != hue:
-                self._editor_layout = (hue, panel_editor.layout(hue))
+            key = self.panel_editor.key()
+            if self._editor_layout is None or self._editor_layout[0] != key:
+                self._editor_layout = (key, panel_editor.layout(self.panel_editor.preview_hue(), self.panel_editor.preview_page()))
             return self._editor_layout[1]
         if not self.module.is_open or self.carousel != "values":
             return self.layout
@@ -281,6 +281,12 @@ class UiController:
             self.toast(f"Panel: {name}")
         target = self._return_to if self._return_to == "tools" or self.module.is_open else "tools"
         self._show_carousel(target)
+
+    def _preview_page(self, carousel):
+        """The index of the page of the editor that only shows the panel being edited, or None."""
+        if self.panel_editor is None or self.carousel != "editor":
+            return None
+        return next((i for i, p in enumerate(carousel.pages) if p.name == panel_editor.PAGE_PREVIEW), None)
 
     def _editing_layout(self):
         """The layout the user rearranges on the carousel that is shown."""
@@ -460,7 +466,12 @@ class UiController:
         else:
             handler = self.actions.get(action)
             if handler is not None:
-                message = handler()
+                try:
+                    message = handler()
+                except Exception as error:          # an action that fails says so and the viewer goes on
+                    import traceback
+                    traceback.print_exc()
+                    message = f"{action.split(':')[-1].replace('_', ' ').capitalize()} failed: {error}"
                 if isinstance(message, str):
                     self.toast(message)
         out.activated = action
@@ -543,7 +554,8 @@ class UiController:
                 self.module.set_focus(focused)
         if self.module.engaged:
             out.owns_stick = True                            # a value slider is focused: the stick of the tool hand steps its value
-        if result.slider is not None:
+        preview = self._preview_page(carousel)               # the faces of the preview are for show: nothing on it is pressed or dragged
+        if result.slider is not None and result.slider[0] != preview:
             page, slot, along = result.slider
             face_id = carousel.face_at(page, slot)
             if face_id in value_module.SLIDER_IDS:
@@ -555,7 +567,7 @@ class UiController:
                 if value != getattr(self.settings, spec.attr):
                     setattr(self.settings, spec.attr, value)
                     out.haptics.append((self.tool_hand, 0.15, 0.01))
-        if result.slider_done is not None:
+        if result.slider_done is not None and result.slider_done[0] != preview:
             if carousel.face_at(*result.slider_done) in value_module.SLIDER_IDS:
                 self.module.end_drag()
             self._save_settings()
@@ -588,8 +600,9 @@ class UiController:
         sliders = {**self.slider_states(), **self.module.slider_states()} if self.module.is_open else self.slider_states()
         readouts = {**(self.module.readouts() if self.module.is_open else {}), **(editing.readouts() if editing is not None else {})}
         lit = self.active_actions | self.module.picked_actions() | (editing.lit_actions() if editing is not None else frozenset())
+        titles = {**self.module.titles(), **(editing.titles() if editing is not None else {})}
         self.view.update(self.ring, result, carousel, self.view_faces, frame.head.position, lit, labels, sliders,
-                         self.module.titles(), readouts or None)
+                         titles, readouts or None)
         prof.lap("ui_view")
         self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items],
                                 centre=labels.get(quick.hub, self.faces[quick.hub].label) if quick.hub else None)
@@ -601,7 +614,7 @@ class UiController:
                              self._wrist_anchor(frame), self._help_cards(frame) if self.help.visible else None)
         prof.lap("ui_feedback")
 
-        if result.activated is not None:
+        if result.activated is not None and result.activated[0] != preview:
             face_id = carousel.face_at(*result.activated)
             if face_id in self._editor_faces and self.panel_editor is not None:
                 step = self.panel_editor.activate(face_id)

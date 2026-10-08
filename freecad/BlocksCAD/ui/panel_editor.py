@@ -22,8 +22,8 @@ KEY_ROWS = ("1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM")      # the keys,
 HUES = (("Auto", None), ("Green", 0.38), ("Rose", 0.92), ("Ochre", 0.11), ("Violet", 0.68), ("Teal", 0.50), ("Lime", 0.30),
         ("Red", 0.02), ("Blue", 0.62), ("Purple", 0.78), ("Orange", 0.06), ("Mint", 0.44))
 HUE_IDS = tuple(f"ed.hue.{i}" for i in range(len(HUES)))
-PAGE_KEYBOARD, PAGE_NAME, PAGE_COLOUR = "Keyboard", "Name", "Colour"
-PAGE_NAMES = (PAGE_KEYBOARD, PAGE_NAME, PAGE_COLOUR)
+PAGE_KEYBOARD, PAGE_NAME, PAGE_COLOUR, PAGE_PREVIEW = "Keyboard", "Name", "Colour", "Preview"
+PAGE_NAMES = (PAGE_KEYBOARD, PAGE_NAME, PAGE_COLOUR, PAGE_PREVIEW)
 NAME_SLOTS = [READOUT, None, None, None, *SIZE_IDS, OK, CANCEL, None, None]
 
 
@@ -66,11 +66,13 @@ def pages():
     return [keys, Page(PAGE_NAME, list(NAME_SLOTS), 0, 1), Page(PAGE_COLOUR, list(HUE_IDS), 0, 1)]
 
 
-def layout(hue):
-    """The layout of the editor, every panel tinted with `hue`."""
-    result = Layout(pages())
+def layout(hue, preview=None):
+    """The layout of the editor, every panel tinted with `hue`; with a `preview` page (`PanelEditor.preview_page`) it stands above the
+    Name and Colour panels."""
+    result = Layout(pages() + ([preview] if preview is not None else []))
     for page in result.pages:
-        page.hue = hue
+        if page.name != PAGE_PREVIEW:
+            page.hue = hue
     return result
 
 
@@ -96,6 +98,19 @@ class PanelEditor:
     @property
     def size(self):
         return self._probe.cols, self._probe.rows
+
+    def preview_page(self):
+        """The panel as it will be with the size, the colour and the faces chosen so far: a page that stands above the editor panels
+        (its faces are for show, pressing them does nothing; its title is the name typed, see `titles`)."""
+        return Page(PAGE_PREVIEW, list(self._probe.slots), 0, 2, self.preview_hue(), self._probe.cols, self._probe.rows)
+
+    def titles(self):
+        """Page name -> the text of its title bar for the pages that show something typed: the preview wears the name."""
+        return {PAGE_PREVIEW: self.text or self.name0}
+
+    def key(self):
+        """What the layout of the editor depends on: it is made again when this changes."""
+        return (self.preview_hue(), self.size, tuple(self._probe.slots))
 
     @property
     def upper(self):

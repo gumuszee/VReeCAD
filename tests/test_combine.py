@@ -33,6 +33,29 @@ class FakeObject:
         self.Name, self.TypeId = name, type_id
 
 
+class ColourViewsTest(unittest.TestCase):
+    class View:
+        def __init__(self, with_colour):
+            if with_colour:
+                self.ShapeColor = (0.5, 0.5, 0.5)
+
+    class Doc:
+        def __init__(self, **objects):
+            self.objects = objects
+
+        def getObject(self, name):
+            return self.objects.get(name)
+
+    class Obj:
+        def __init__(self, view):
+            self.ViewObject = view
+
+    def test_only_objects_with_a_colour_of_their_own_are_coloured(self):
+        doc = self.Doc(shape=self.Obj(self.View(True)), body=self.Obj(self.View(False)), none=type("N", (), {"ViewObject": None})())
+        found = colour._views(doc, [("shape", ""), ("body", ""), ("none", ""), ("gone", ""), ("shape", "Face1")])
+        self.assertEqual(found, [doc.objects["shape"]])
+
+
 class SourcesTest(unittest.TestCase):
     class Thing:
         def __init__(self, name, out=(), shape=True, visible=True):

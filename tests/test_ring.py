@@ -659,6 +659,24 @@ class RingTest(unittest.TestCase):
         point, _ = self.wide_slot_point(39)
         self.assertTrue(all(abs(a - b) < 1e-9 for a, b in zip(centre, point)))
 
+    def test_a_wide_panel_moves_only_its_own_side_out_and_the_other_sides_keep_their_distance(self):
+        self.run_frames()
+        base = list(self.ring._radii)
+        self.assertEqual(len(set(round(r, 9) for r in base)), 1)                     # three equal sides
+        self.ring.set_dims({0: (10, 4)})
+        self.run_frames(2)
+        wide = self.ring._radii
+        self.assertGreater(wide[0], base[0])
+        self.assertEqual((wide[1], wide[2]), (base[1], base[2]))                      # no other side grows
+        self.assertEqual(self.ring.radius, base[1])
+        front = self.ring.poses[0]
+        controller = self.sim.hands[0]
+        up = mu.rotate(controller.aim.orientation, (0.0, 1.0, 0.0))
+        self.assertAlmostEqual(mu.dot(mu.sub(front.centre, controller.aim.position), up), wide[0], places=6)
+        self.ring.set_dims({})
+        self.run_frames(2)
+        self.assertEqual(self.ring._radii, base)                                      # and it comes back with the panel
+
     def test_the_title_bar_of_a_wide_panel_has_its_menu_mark_and_hide_slot_at_its_own_right_end(self):
         self.ring.set_dims({0: (10, 4)})
         self.run_frames()

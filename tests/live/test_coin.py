@@ -527,6 +527,46 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in ui.layout.pages), sorted(["Hammer" if n == "Edit" else n for n in names]))
         self.assertEqual([t.text for t in ui.toasts.items][-1], "Panel: Hammer")
 
+    def test_the_editor_shows_the_panel_as_it_will_be_and_nothing_on_it_is_pressed(self):
+        from freecad.BlocksCAD.ui import panel_editor as pe
+        self.show_carousel()
+        ui = self.s.ui
+        self.settle(5)
+        self.tap_menu_of("Tools")
+        pages = ui.shown_layout().pages
+        preview = next(p for p in pages if p.name == "Preview")
+        index = pages.index(preview)
+        tools = ui.layout.pages[0]
+        self.assertEqual((preview.cols, preview.rows, preview.slots), (tools.cols, tools.rows, tools.slots))     # the panel as it is now
+        self.assertEqual(ui.ring.page_dims.get(index, (4, 3)), (4, 3))
+        self.press_editor_face(pe.SIZE_IDS[1])                                         # one column more
+        self.press_editor_face(pe.SIZE_IDS[3])                                         # and one row
+        grown = next(p for p in ui.shown_layout().pages if p.name == "Preview")
+        self.assertEqual((grown.cols, grown.rows), (5, 4))
+        self.assertEqual((tools.cols, tools.rows), (4, 3))                              # the panel itself changes only with OK
+        self.settle(3)
+        self.assertEqual(ui.ring.page_dims[index], (5, 4))                              # the ring makes room for it
+        other = ui.ring._radii
+        self.assertEqual(len(ui.ring.display_sides()), 1)
+        press = pages[index].slots.index("tool.select")
+        before = self.s.tool_manager.active_name
+        self.aim_at_slot(press, index)
+        self.s.input.set_hand(1, trigger=1.0)
+        self.settle(2)
+        self.s.input.set_hand(1, trigger=0.0)
+        self.settle(3)
+        self.assertEqual(self.s.tool_manager.active_name, before)                       # a face of the preview does nothing
+        self.press_editor_face(pe.OK)
+        self.assertEqual((tools.cols, tools.rows), (5, 4))
+
+    def test_a_failing_action_says_so_and_does_not_stop_the_viewer(self):
+        import types
+        self.show_carousel()
+        ui = self.s.ui
+        ui.actions["doc:colour"] = lambda: 1 / 0
+        ui._run("doc:colour", types.SimpleNamespace(haptics=[], activated=None))
+        self.assertEqual([t.text for t in ui.toasts.items][-1], "Colour failed: division by zero")
+
     def test_cancel_leaves_the_panel_and_an_empty_name_is_refused(self):
         from freecad.BlocksCAD.ui import panel_editor as pe
         self.show_carousel()

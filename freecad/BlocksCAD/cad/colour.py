@@ -48,7 +48,8 @@ def _views(doc, items):
     for name, _ in items:
         if name not in names and doc.getObject(name) is not None:
             names.append(name)
-    return [doc.getObject(n) for n in names if getattr(doc.getObject(n), "ViewObject", None) is not None]
+    objects = [doc.getObject(n) for n in names if getattr(doc.getObject(n), "ViewObject", None) is not None]
+    return [o for o in objects if hasattr(o.ViewObject, "ShapeColor")]          # a body, a group or a spreadsheet has no colour of its own
 
 
 def _close(a, b):

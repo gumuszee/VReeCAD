@@ -131,6 +131,43 @@ class ResultTest(unittest.TestCase):
         self.assertEqual(editor.result(), ("Tools", None))
 
 
+class PreviewTest(unittest.TestCase):
+    def test_the_preview_is_the_panel_as_it_will_be_above_the_name_and_colour_panels(self):
+        editor = pe.PanelEditor(0, "Tools", 0.68, 4, 3, ["a", None, None, "b"] + [None] * 8)
+        page = editor.preview_page()
+        self.assertEqual((page.name, page.side, page.row, page.cols, page.rows, page.hue), ("Preview", 0, 2, 4, 3, 0.68))
+        self.assertEqual(page.slots[0], "a")
+        editor.activate("ed.cols_inc")
+        editor.activate("ed.rows_inc")
+        grown = editor.preview_page()
+        self.assertEqual((grown.cols, grown.rows, len(grown.slots), grown.slots[0], grown.slots[3]), (5, 4, 20, "a", "b"))
+        self.assertEqual(grown.slots.index("b"), 3)                                      # "b" kept its row and column: row 0, column 3
+        layout = pe.layout(0.68, grown)
+        self.assertEqual([p.name for p in layout.pages], list(pe.PAGE_NAMES))
+        self.assertEqual(layout.sides(), [[[0], [1, 2], [3]]])                          # the preview is the top row
+        self.assertEqual(layout.pages[3].hue, 0.68)
+
+    def test_the_preview_wears_the_typed_name_and_the_colour_of_the_name_on_auto(self):
+        editor = pe.PanelEditor(0, "Tools", None, 4, 3, [])
+        self.assertEqual(editor.titles(), {"Preview": "Tools"})
+        editor.activate(pe.CLEAR)
+        self.assertEqual(editor.titles(), {"Preview": "Tools"})                         # nothing typed: the name it had
+        press(editor, "box")
+        self.assertEqual(editor.titles(), {"Preview": "Box"})
+        self.assertEqual(editor.preview_page().hue, lay.default_hue("Box"))
+
+    def test_the_layout_of_the_editor_is_made_again_only_when_the_look_of_the_preview_changes(self):
+        editor = pe.PanelEditor(0, "Tools", 0.38, 4, 3, [])
+        first = editor.key()
+        press(editor, "x")
+        self.assertEqual(editor.key(), first)                                           # a letter changes only the title, which is drawn in place
+        editor.activate(pe.HUE_IDS[2])
+        self.assertNotEqual(editor.key(), first)
+        second = editor.key()
+        editor.activate("ed.cols_inc")
+        self.assertNotEqual(editor.key(), second)
+
+
 class SizeTest(unittest.TestCase):
     def test_the_size_grows_and_shrinks_by_one_column_or_row_within_the_limits(self):
         editor = pe.PanelEditor(0, "Tools", None, 4, 3, [None] * 12)
