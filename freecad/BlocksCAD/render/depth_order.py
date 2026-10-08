@@ -28,8 +28,8 @@ provider (no GUI) are left alone."""
 from pivy import coin
 
 LEVELS = 16              # objects whose places differ by a multiple of this share an offset
-FACTOR_STEP = 0.5        # the slope part of the push back of one level
-UNITS_STEP = 2.0         # the part in depth buffer steps
+FACTOR_STEP = 0.0        # the slope part of the push back of one level: none, a slope term lets the far edges show through grazing faces
+UNITS_STEP = 1.0         # the part in depth buffer steps
 
 
 def offset_for(rank):

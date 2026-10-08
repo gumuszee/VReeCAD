@@ -139,16 +139,15 @@ class DepthOrderTest(unittest.TestCase):
         order.sync(self.Doc([self.Obj("A", first), self.Obj("NoView", None)]))
         self.assertEqual(order.count, 1)
         offset = lambda root: root.getChild(0)
-        self.assertEqual(offset(first).units.getValue(), 2.0 * (depth_order.LEVELS - 1))  # the first object is pushed back the furthest
+        self.assertEqual(offset(first).units.getValue(), depth_order.UNITS_STEP * (depth_order.LEVELS - 1))  # the first object is pushed back the furthest
         order.sync(self.Doc([self.Obj("A", first), self.Obj("B", second)]))
         self.assertEqual(order.count, 2)
         self.assertLess(offset(second).units.getValue(), offset(first).units.getValue())
-        self.assertLess(offset(second).factor.getValue(), offset(first).factor.getValue())
         order.sync(self.Doc([self.Obj("B", second)]))                                     # A is gone
         self.assertEqual((order.count, first.getNumChildren() > 0), (1, True))
         self.assertNotEqual(first.getChild(0).getTypeId().getName().getString(), "SoPolygonOffset")
         order.sync(self.Doc([self.Obj("B", second), self.Obj("C", self.quad((0.0, 1.0, 0.0)))]))
-        self.assertEqual(offset(second).units.getValue(), 2.0 * (depth_order.LEVELS - 3))   # B keeps its place when A goes (the object without a view has one too)
+        self.assertEqual(offset(second).units.getValue(), depth_order.UNITS_STEP * (depth_order.LEVELS - 3))   # B keeps its place when A goes (the object without a view has one too)
         order.release()
 
     def test_the_offsets_wrap_after_the_levels_and_stay_a_few_steps_of_the_depth_buffer(self):
@@ -157,7 +156,7 @@ class DepthOrderTest(unittest.TestCase):
         self.assertEqual(factors[depth_order.LEVELS - 1], (0.0, 0.0))                  # the newest level is not pushed
         self.assertEqual(factors[depth_order.LEVELS], factors[0])
         self.assertEqual(factors[depth_order.LEVELS + 1], factors[1])
-        self.assertTrue(all(0.0 <= u <= 2.0 * depth_order.LEVELS and f >= 0.0 for f, u in factors))    # only ever back, so edges stay in front
+        self.assertTrue(all(0.0 <= u <= depth_order.UNITS_STEP * depth_order.LEVELS and f >= 0.0 for f, u in factors))    # only ever back, so edges stay in front
 
     def test_the_polygon_offset_a_part_view_provider_has_is_shifted_and_put_back(self):
         """The view provider of a Part object has a polygon offset between its points and its faces, which replaces any node before it."""
@@ -180,7 +179,7 @@ class DepthOrderTest(unittest.TestCase):
         order = depth_order.DepthOrder()
         order.sync(self.Doc([self.Obj("Blue", blue), self.Obj("Red", red)]))
         self.assertEqual((red.getNumChildren(), blue.getNumChildren()), (5, 5))                # nothing was added: the offsets of the providers were shifted
-        self.assertEqual((blue_offset.units.getValue(), red_offset.units.getValue()), (1.0 + 30.0, 1.0 + 28.0))
+        self.assertEqual((blue_offset.units.getValue(), red_offset.units.getValue()), (1.0 + 15.0 * depth_order.UNITS_STEP, 1.0 + 14.0 * depth_order.UNITS_STEP))
         shares = self.share(self.render(blue, red))
         self.assertEqual(shares[1], 0)                                                          # the later object (red) is in front, drawn last or first
         self.assertGreater(shares[0], 100)
@@ -188,7 +187,7 @@ class DepthOrderTest(unittest.TestCase):
         self.assertEqual(shares[1], 0)
         blue_offset.units.setValue(1.0)                                                         # the provider writes its own value: it is put right again
         order.sync(self.Doc([self.Obj("Blue", blue), self.Obj("Red", red)]))
-        self.assertEqual(blue_offset.units.getValue(), 31.0)
+        self.assertEqual(blue_offset.units.getValue(), 1.0 + 15.0 * depth_order.UNITS_STEP)
         order.release()
         self.assertEqual((blue_offset.units.getValue(), red_offset.units.getValue(), blue_offset.factor.getValue()), (1.0, 1.0, 1.0))
 
