@@ -56,6 +56,35 @@ class ColourViewsTest(unittest.TestCase):
         self.assertEqual(found, [doc.objects["shape"]])
 
 
+class SetColourTest(unittest.TestCase):
+    class Doc(ColourViewsTest.Doc):
+        def __init__(self, **objects):
+            super().__init__(**objects)
+            self.log = []
+
+        def openTransaction(self, name):
+            self.log.append("open")
+
+        def commitTransaction(self):
+            self.log.append("commit")
+
+        def abortTransaction(self):
+            self.log.append("abort")
+
+    class Obj(ColourViewsTest.Obj):
+        Label = "Thing"
+        PropertiesList = ["BlocksCADColour"]
+        BlocksCADColour = (0.5, 0.5, 0.5)
+
+    def test_a_swatch_colours_the_objects_in_one_transaction_and_other_objects_are_left_alone(self):
+        thing = self.Obj(ColourViewsTest.View(True))
+        doc = self.Doc(thing=thing, body=ColourViewsTest.Obj(ColourViewsTest.View(False)))
+        text = colour.set_colour(doc, [("thing", ""), ("body", "")], 1)
+        self.assertEqual((tuple(thing.BlocksCADColour), tuple(thing.ViewObject.ShapeColor)), (colour.SWATCHES[1][1],) * 2)
+        self.assertEqual((doc.log, text), (["open", "commit"], "Thing: Red"))
+        self.assertEqual(colour.set_colour(doc, [("body", "")], 1), "Nothing to colour")
+
+
 class SourcesTest(unittest.TestCase):
     class Thing:
         def __init__(self, name, out=(), shape=True, visible=True):

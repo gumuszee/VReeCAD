@@ -57,6 +57,7 @@ class Face:
     action: str
     kind: str = "button"   # "button", "slider" or "readout" (these two take a whole row of their panel) or "display" (a cell that only shows a text)
     tip: str = ""          # one line shown as a tooltip while the face is hovered
+    swatch: Optional[tuple] = None  # an rgb triple: the face is drawn in exactly this colour (the colour swatches of the values carousel)
     tint: Optional[float] = None   # a hue (0 to 1): the face is drawn in the colour that a panel of this hue gives its faces (the colours of the panel editor)
 
 

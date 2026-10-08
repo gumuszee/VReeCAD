@@ -40,8 +40,8 @@ class PagesTest(unittest.TestCase):
     def test_the_default_layout_puts_one_panel_on_every_side_like_the_palette(self):
         layout = vm.default_layout()
         self.assertEqual([(p.name, p.side, p.row) for p in layout.pages],
-                         [("Values", 0, 0), ("Number pad", 1, 0), ("Keys", 2, 0), ("Variables", 3, 0)])
-        self.assertEqual(layout.sides(), [[[0]], [[1]], [[2]], [[3]]])
+                         [("Values", 0, 0), ("Number pad", 1, 0), ("Keys", 2, 0), ("Variables", 3, 0), ("Colour", 4, 0)])
+        self.assertEqual(layout.sides(), [[[0]], [[1]], [[2]], [[3]], [[4]]])
 
     def test_the_value_panel_is_pinned_it_stands_on_no_side_and_is_the_page_after_the_others(self):
         layout = vm.default_layout()
@@ -54,7 +54,7 @@ class PagesTest(unittest.TestCase):
     def test_rearranging_the_panels_leaves_the_pinned_panel_alone(self):
         layout = vm.default_layout()
         layout.move_page(3, 0, 0, 0, False)                                           # the Variables next to the Values panel
-        self.assertEqual(len(layout.sides()), 3)                                       # the Variables joined the Values panel on one side
+        self.assertEqual(len(layout.sides()), 4)                                       # the Variables joined the Values panel on one side
         shown = vm.shown_layout(layout)
         self.assertEqual(shown.pages[-1].name, "Value")
         self.assertEqual(len(shown.sides()), len(layout.sides()))
@@ -98,7 +98,7 @@ class PagesTest(unittest.TestCase):
         saved.pages = [p for p in saved.pages if p.name != "Keys"] + [lay.Page("Value", list(vm.VALUE_SLOTS), 0, 1)]
         fixed = vm.complete(lay.Layout(saved.pages))
         self.assertEqual(sorted(p.name for p in fixed.pages), sorted(vm.MOVABLE_NAMES))
-        self.assertEqual(len({p.side for p in fixed.pages}), 4)                      # the missing panel has a side of its own
+        self.assertEqual(len({p.side for p in fixed.pages}), 5)                      # the missing panel has a side of its own
 
     def test_the_layout_is_saved_and_loaded_without_the_value_panel_and_only_of_the_current_arrangement(self):
         import os
@@ -505,3 +505,13 @@ class VariablePanelTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ColourPanelTest(unittest.TestCase):
+    def test_the_colour_panel_has_a_face_in_the_actual_colour_of_every_swatch_that_colours_the_selection(self):
+        from freecad.BlocksCAD.cad import colour
+        faces = vm.faces()
+        self.assertEqual(len(colour.SWATCHES), vm.COLOURS)
+        for i, fid in enumerate(vm.COLOUR_IDS):
+            self.assertEqual((faces[fid].swatch, faces[fid].action, faces[fid].label), (colour.SWATCHES[i][1], f"doc:colour_{i}", ""))
+        self.assertEqual(vm.default_layout().pages[-1].slots, list(vm.COLOUR_IDS))

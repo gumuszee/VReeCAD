@@ -54,8 +54,10 @@ VARIABLE_IDS = tuple(f"var.{i}" for i in range(VARIABLES))
 VARIABLE_GROUP = "var.group"
 ITEMS = 12                             # faces of the Values panel; with more values the last one is "More values"
 ITEM_IDS = tuple(f"val.item.{i}" for i in range(ITEMS))
-PAGE_VALUE, PAGE_LIST, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES = "Value", "Values", "Number pad", "Keys", "Variables"
-PAGE_NAMES = (PAGE_VALUE, PAGE_LIST, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES)
+COLOURS = 12                           # swatches of the Colour panel (`cad.colour.SWATCHES`)
+COLOUR_IDS = tuple(f"val.colour.{i}" for i in range(COLOURS))
+PAGE_VALUE, PAGE_LIST, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES, PAGE_COLOUR = "Value", "Values", "Number pad", "Keys", "Variables", "Colour"
+PAGE_NAMES = (PAGE_VALUE, PAGE_LIST, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES, PAGE_COLOUR)
 MOVABLE_NAMES = PAGE_NAMES[1:]         # the panels the user can rearrange: the Value panel is fixed at the top of every side
 TYPED_CHARS = 30                       # the readout shows at most this many characters of what is typed
 
@@ -83,6 +85,7 @@ KEY_SLOTS = ["key.0", "key.point", "key.minus", "key.plus", "key.times", "key.di
              PREV, WHICH, NEXT, "key.clear"]
 VARIABLE_SLOTS = [*VARIABLE_IDS, "key.makevar", "key.unbind", VARIABLE_GROUP, None]
 LIST_SLOTS = list(ITEM_IDS)
+COLOUR_SLOTS = list(COLOUR_IDS)
 WIDE_KINDS = ("slider", "readout")     # faces that take a whole row of their panel
 
 
@@ -101,6 +104,10 @@ def faces():
     result[VARIABLE_GROUP] = Face(VARIABLE_GROUP, "More variables", f"values:{VARIABLE_GROUP}", tip="Show the next variables")
     for fid in ITEM_IDS:
         result[fid] = Face(fid, "Value", f"values:{fid}", tip="Pick this value")
+    from freecad.BlocksCAD.cad import colour                  # the colour data only: no FreeCAD import
+    for i, fid in enumerate(COLOUR_IDS):
+        name, rgb = colour.SWATCHES[i]
+        result[fid] = Face(fid, "", f"doc:colour_{i}", tip=f"Colour the selected objects {name.lower()}", swatch=rgb)
     return result
 
 
@@ -109,9 +116,9 @@ ARRANGEMENT = 2        # the arrangement of the saved layout of the values carou
 
 def default_layout():
     """The panels the user can rearrange, as they stand to begin with: one panel on every side of the carousel, like the palette
-    (the Values panel, the Number pad, Keys and Variables)."""
+    (the Values panel, the Number pad, Keys, Variables and the Colour panel)."""
     return Layout([Page(PAGE_LIST, list(LIST_SLOTS)), Page(PAGE_PAD, list(PAD_SLOTS)), Page(PAGE_KEYS, list(KEY_SLOTS)),
-                   Page(PAGE_VARIABLES, list(VARIABLE_SLOTS))])
+                   Page(PAGE_VARIABLES, list(VARIABLE_SLOTS)), Page(PAGE_COLOUR, list(COLOUR_SLOTS))])
 
 
 def complete(layout):

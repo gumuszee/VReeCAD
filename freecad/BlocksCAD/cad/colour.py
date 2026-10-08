@@ -30,6 +30,12 @@ PALETTE = (
     ("White", (1.00, 1.00, 1.00)),
 )
 TOLERANCE = 0.02
+SWATCHES = PALETTE + (                 # the colours of the Colour panel of the values carousel: the palette and four more
+    ("Teal", (0.20, 0.65, 0.65)),
+    ("Pink", (0.92, 0.50, 0.70)),
+    ("Brown", (0.50, 0.33, 0.20)),
+    ("Black", (0.12, 0.12, 0.12)),
+)
 
 
 def next_colour(current):
@@ -59,6 +65,16 @@ def _close(a, b):
 def cycle(doc, items):
     """Give the selected objects (whole or by an element of them) the next colour; each object goes on from its own colour. One undo
     step. Returns the text for a toast."""
+    return _apply(doc, items, lambda current: next_colour(current))
+
+
+def set_colour(doc, items, index):
+    """Give the selected objects the colour `index` of `SWATCHES`, in one undo step. Returns the text for a toast."""
+    chosen = SWATCHES[index]
+    return _apply(doc, items, lambda current: chosen)
+
+
+def _apply(doc, items, choose):
     objects = _views(doc, items)
     if not objects:
         return "Nothing selected" if not items else "Nothing to colour"
@@ -70,7 +86,7 @@ def cycle(doc, items):
     doc.openTransaction("Colour")
     try:
         for obj in objects:
-            name, rgb = next_colour(tuple(getattr(obj, PROPERTY))[:3])
+            name, rgb = choose(tuple(getattr(obj, PROPERTY))[:3])
             setattr(obj, PROPERTY, rgb)
             obj.ViewObject.ShapeColor = rgb
             colours.add(name)

@@ -370,7 +370,11 @@ class _Panel:
             if row in self.sliders or row in self.readouts:    # the row belongs to its slider or readout
                 self.cells.append((None, None))
                 continue
-            base = style.tinted(face.tint).face if face is not None and face.tint is not None else None
+            base = None
+            if face is not None and face.swatch is not None:
+                base = face.swatch
+            elif face is not None and face.tint is not None:
+                base = style.tinted(face.tint).face
             self.cells.append((_Cell(sep, x, y, face.label if face else None, palette, self.plates, base), face))
         sep.replaceChild(plates_at, self.plates.build())
         self.switch.addChild(outer)

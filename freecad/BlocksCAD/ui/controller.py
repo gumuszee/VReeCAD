@@ -626,6 +626,8 @@ class UiController:
             elif face_id in self.module.faces:
                 self.module.activate(face_id)
                 out.activated = self.module.faces[face_id].action
+                if face_id in value_module.COLOUR_IDS:          # a swatch colours the selected objects
+                    self._run(out.activated, out)
             else:
                 self._activate(face_id, out)
         if quick.activated is not None:

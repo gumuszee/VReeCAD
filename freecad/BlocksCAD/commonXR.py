@@ -553,6 +553,7 @@ class XRwidget(QOpenGLWidget):
             "doc:common": lambda: self.combine_selection("common"),
             "doc:copy": self.copy_selection,
             "doc:colour": self.colour_selection,
+            **{f"doc:colour_{i}": (lambda i=i: self.colour_selection(i)) for i in range(len(colour.SWATCHES))},
             "doc:extrude": self.extrude_selection,
             "doc:sources": self.select_sources,
             "doc:fillet": lambda: self.edge_selection("fillet"),
@@ -799,12 +800,14 @@ class XRwidget(QOpenGLWidget):
             picking.set_selection(doc, [(name, "") for name in names])
         return text
 
-    def colour_selection(self):
-        """Give the selected objects the next colour; returns the text of the toast."""
+    def colour_selection(self, index=None):
+        """Give the selected objects the next colour, or colour `index` of the swatches; returns the text of the toast."""
         doc = App.ActiveDocument
         if doc is None:
             return "No document"
-        return colour.cycle(doc, picking.get_selection(doc))
+        if index is None:
+            return colour.cycle(doc, picking.get_selection(doc))
+        return colour.set_colour(doc, picking.get_selection(doc), index)
 
     def read_preferences(self):
         # read from user preferences
