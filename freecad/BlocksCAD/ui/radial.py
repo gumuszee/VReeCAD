@@ -32,8 +32,8 @@ INNER = DEAD_ZONE      # radius of the hub: the area in which nothing is chosen
 OUTER = 0.115          # outer radius of the segments
 GAP = 0.003            # metres of dark between neighbouring segments, measured at the outer radius
 TOWARDS_HEAD = 0.05    # the radial stands this far in front of the hand, so the controller does not hide it
-RECENT = 6             # number of favourites: the faces used last, padded from `DEFAULT_FAVOURITES`
-DEFAULT_FAVOURITES = ("doc.undo", "doc.redo", "view.reset", "doc.delete", "tool.move", "pointer.mode")
+RECENT = 8             # number of favourites: the faces used last, padded from `DEFAULT_FAVOURITES`; the option discs of the tools have as many sections
+DEFAULT_FAVOURITES = ("doc.undo", "doc.redo", "view.reset", "doc.delete", "tool.move", "pointer.mode", "doc.copy", "doc.colour")
 NEVER_FAVOURITE = ("view.layout", "app.close")   # faces that must not sit one flick from the hand
 CENTRE = "tool.select"   # the face in the hub: a release without moving the hand activates it; it is never one of the segments
 

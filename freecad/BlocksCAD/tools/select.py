@@ -54,7 +54,7 @@ class SelectTool(TouchTool):
         """The option disc, clockwise from the top: the targets (object, face, edge, vertex), then remove and add."""
         return (DiscSlot("Object", "target", "Object"), DiscSlot("Face", "target", "Face"), DiscSlot("Edge", "target", "Edge"),
                 DiscSlot("Vertex", "target", "Vertex"), DiscSlot("Remove", "operation", selecting.REMOVE, "toggle"),
-                DiscSlot("Add", "operation", selecting.ADD, "toggle"))
+                DiscSlot("Add", "operation", selecting.ADD, "toggle"), DiscSlot(""), DiscSlot(""))
 
     def disc_hub(self):
         return [self.values["target"], self.values["operation"]]

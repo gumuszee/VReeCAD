@@ -66,9 +66,9 @@ class PointsTool(TouchTool):
         return KINDS[self.values["mode"]]
 
     def disc_slots(self):
-        """The option disc, clockwise from the top: nothing, the three modes, free faces, flat faces."""
-        return (DiscSlot(""), DiscSlot("Move point", "mode", MODES[0]), DiscSlot("Split edge", "mode", MODES[1]),
-                DiscSlot("Remove point", "mode", MODES[2]), DiscSlot("Free faces", "faces", FACES[0]), DiscSlot("Flat faces", "faces", FACES[1]))
+        """The option disc, clockwise from the top: the three modes, a gap, free faces, flat faces."""
+        return (DiscSlot("Move point", "mode", MODES[0]), DiscSlot("Split edge", "mode", MODES[1]), DiscSlot("Remove point", "mode", MODES[2]),
+                DiscSlot(""), DiscSlot("Free faces", "faces", FACES[0]), DiscSlot("Flat faces", "faces", FACES[1]), DiscSlot(""), DiscSlot(""))
 
     def disc_hub(self):
         return [self.grid_text(), f"{self.values['mode']}, {self.values['faces'].lower()}"]

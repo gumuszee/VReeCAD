@@ -193,31 +193,31 @@ class SelectDiscTest(unittest.TestCase):
 
     def test_the_sections_choose_the_target_and_the_operation(self):
         labels = [s.label for s in self.tool.disc_slots()]
-        self.assertEqual(labels, ["Object", "Face", "Edge", "Vertex", "Remove", "Add"])
-        for degrees, target in ((60, "Face"), (120, "Edge"), (180, "Vertex"), (0, "Object")):
+        self.assertEqual(labels, ["Object", "Face", "Edge", "Vertex", "Remove", "Add", "", ""])
+        for degrees, target in ((45, "Face"), (90, "Edge"), (135, "Vertex"), (0, "Object")):
             self.push(degrees)
             self.assertEqual(self.tool.values["target"], target)
         self.assertEqual(self.tool.values["operation"], selecting.REPLACE)
 
     def test_add_and_remove_go_back_to_replace_when_pushed_again(self):
-        self.push(300)
+        self.push(225)
         self.assertEqual(self.tool.values["operation"], selecting.ADD)
-        self.push(300)
+        self.push(225)
         self.assertEqual(self.tool.values["operation"], selecting.REPLACE)
-        self.push(240)
+        self.push(180)
         self.assertEqual(self.tool.values["operation"], selecting.REMOVE)
-        self.push(300)
+        self.push(225)
         self.assertEqual(self.tool.values["operation"], selecting.ADD)
 
     def test_the_disc_lights_the_target_and_the_operation_that_are_set(self):
-        self.push(300)
-        state = self.push(120)
-        self.assertEqual(state.disc.active, [False, False, True, False, False, True])
+        self.push(225)
+        state = self.push(90)
+        self.assertEqual(state.disc.active, [False, False, True, False, False, True, False, False])
         self.assertEqual(state.disc.hub, ["Edge", "Add"])
 
     def test_the_click_of_the_stick_puts_both_back(self):
-        self.push(120)
-        self.push(240)
+        self.push(90)
+        self.push(180)
         self.tool.stick_click()
         self.assertEqual((self.tool.values["target"], self.tool.values["operation"]), ("Object", selecting.REPLACE))
 

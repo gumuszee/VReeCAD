@@ -611,12 +611,12 @@ class SketchToolTest(unittest.TestCase):
         self.tool.update(self.sim.frame(0.02))
         self.assertEqual(self.tool._gesture["now"], (50.0, 0.0))                    # its own old place is no anchor: only the grid and the other end
 
-    def test_the_disc_has_the_four_modes_and_the_square_shows_the_plane(self):
-        labels = [slot.label for slot in self.tool.disc_slots()]
-        self.assertEqual(labels, ["", "Rectangle", "Circle", "", "Edit", "Line"])
-        self.assertEqual(self.tool.stick_click(), "Arc and planes")
-        self.assertEqual([slot.label for slot in self.tool.disc_slots()], ["", "Arc", "XY plane", "", "XZ plane", "YZ plane"])
-        self.assertEqual(self.tool.stick_click(), "Line, Rectangle, Circle and Edit")
+    def test_the_disc_has_the_five_modes_and_the_three_planes_and_the_square_shows_the_plane(self):
+        slots = self.tool.disc_slots()
+        self.assertEqual([slot.label for slot in slots],
+                         ["Rectangle", "Circle", "Line", "Arc", "Edit", "XY plane", "XZ plane", "YZ plane"])
+        self.assertEqual([slot.option for slot in slots], ["mode"] * 5 + ["plane"] * 3)
+        self.assertIsNone(self.tool.stick_click())                                   # one disc: nothing to turn
         square = plane_square("XZ", (0.0, 0.0, 0.0), 10.0)
         self.assertEqual(len(square), 5)
         self.assertTrue(all(abs(p[1]) < 1e-9 for p in square))                  # the XZ plane has no Y extent

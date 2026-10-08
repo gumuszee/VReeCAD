@@ -33,7 +33,7 @@ from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.tools.base import DiscSlot, Tool, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 
-SHAPE_PAGES = (("Box", "Cylinder", "Cone", "Sphere"), ("Torus", "Wedge", "Prism", primitives.BLOCK))   # four shapes on the disc at a time
+DISC_SHAPES = ("Box", "Cylinder", "Cone", "Sphere", "Torus", "Wedge", "Prism", primitives.BLOCK)    # the eight sections of the disc, clockwise from the top
 
 
 @register
@@ -41,12 +41,11 @@ class PrimitiveTool(Tool):
     name = "primitive"
     label = "Create"
     hint = "Drag a box in space to make a shape, tap to place one"
-    controls = (("Trigger", "drag out a shape, tap: place one"), ("A", "trigger held: snap, grid, free"), ("Stick click", "other shapes"))
+    controls = (("Trigger", "drag out a shape, tap: place one"), ("A", "trigger held: snap, grid, free"))
     options = (ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES + (primitives.BLOCK,)),)
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self._page = 0
         self._start = None        # document point (on the grid) where the trigger went down
         self._current = None
         self._built = None       # (shape, lo, size) the ghost shows
@@ -56,17 +55,11 @@ class PrimitiveTool(Tool):
         return self._start is not None
 
     def disc_slots(self):
-        """The option disc, clockwise from the top: nothing, the four shapes of the page (the first at the lower left), nothing."""
-        first, second, third, fourth = (DiscSlot(name, "shape", name) if name else DiscSlot("") for name in SHAPE_PAGES[self._page])
-        return (DiscSlot(""), second, third, DiscSlot(""), fourth, first)
+        """The option disc, clockwise from the top: the eight shapes."""
+        return tuple(DiscSlot(name, "shape", name) for name in DISC_SHAPES)
 
     def disc_hub(self):
         return [self.grid_text(), self.values["shape"]]
-
-    def stick_click(self):
-        """Turn to the other page of shapes."""
-        self._page = (self._page + 1) % len(SHAPE_PAGES)
-        return "Shapes: " + ", ".join(name for name in SHAPE_PAGES[self._page] if name)
 
     # services
     def _service(self, name, default=None):

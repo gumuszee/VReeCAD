@@ -373,7 +373,7 @@ class PointsToolTest(unittest.TestCase):
         self.frames()
         self.assertGreater(self.highlights.selected.shown, 0)
         labels = [slot.label for slot in self.tool.disc_slots()]
-        self.assertEqual(labels, ["", "Move point", "Split edge", "Remove point", "Free faces", "Flat faces"])
+        self.assertEqual(labels, ["Move point", "Split edge", "Remove point", "", "Free faces", "Flat faces", "", ""])
         self.tool.values["faces"] = "Flat"
         self.assertEqual(self.tool.stick_click(), "Mode and faces reset")
         self.assertEqual(self.tool.values["faces"], "Free")

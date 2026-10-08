@@ -1195,10 +1195,10 @@ class PrimitiveLiveTest(unittest.TestCase):
             s.select_tool("primitive")
             tool = s.tool_manager.active
             push = lambda degrees: s.input.set_hand(1, stick=(math.sin(math.radians(degrees)), math.cos(math.radians(degrees))))
-            push(0)                                                          # up: no section, nothing happens
+            push(0)                                                          # up: the first shape, Box (it is set already)
             s.frame(0.02)
             self.assertEqual(tool.values["shape"], "Box")
-            push(60)                                                         # upper right: the second shape
+            push(45)                                                         # upper right: the second of the eight shapes
             s.frame(0.02)
             self.assertEqual(tool.values["shape"], "Cylinder")
             self.assertEqual(s.ui.options_view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
@@ -1207,14 +1207,12 @@ class PrimitiveLiveTest(unittest.TestCase):
             for _ in range(int(2.0 / 0.02)):
                 s.frame(0.02)
             self.assertEqual(s.ui.options_view.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
-            s.input.set_hand(1, stick_click=True)                            # the click turns to the other shapes
-            s.frame(0.02)
-            self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Shapes: Torus, Wedge, Prism, Block")
-            s.input.set_hand(1, stick_click=False)
-            s.frame(0.02)
-            push(300)                                                        # upper left: the first shape of the page
-            s.frame(0.02)
-            self.assertEqual(tool.values["shape"], "Torus")
+            for degrees, shape in ((315, "Block"), (270, "Prism"), (180, "Torus"), (225, "Wedge")):     # every one of the eight is a push away
+                push(degrees)
+                s.frame(0.02)
+                self.assertEqual(tool.values["shape"], shape, degrees)
+                s.input.set_hand(1, stick=(0.0, 0.0))
+                s.frame(0.02)
         finally:
             s.close()
 
@@ -3047,7 +3045,7 @@ class MoveLiveTest(unittest.TestCase):
         tool = s.tool_manager.active
         push = lambda degrees: s.input.set_hand(1, stick=(math.sin(math.radians(degrees)), math.cos(math.radians(degrees))))
         release = lambda: (s.input.set_hand(1, stick=(0.0, 0.0)), s.frame(0.02), s.frame(0.02))
-        for degrees, option, expected in ((120, "mode", "Move"), (60, "mode", "Move and rotate")):
+        for degrees, option, expected in ((45, "mode", "Move"), (0, "mode", "Move and rotate")):
             push(degrees)
             s.frame(0.02)
             self.assertEqual(tool.values[option], expected, f"{degrees}")
@@ -3294,7 +3292,7 @@ class MoveLiveTest(unittest.TestCase):
         module = self.select()
         self.tip_to(self.face_point("val.slider", 0.5, 0.0, front=0.4), trigger=0.0)   # far from the panels
         self.assertFalse(module.engaged)
-        self.push(math.sin(math.radians(120)), math.cos(math.radians(120)))
+        self.push(math.sin(math.radians(45)), math.cos(math.radians(45)))
         self.assertEqual(self.box.Width.Value, 100.0)
         self.assertEqual(tool.values["mode"], "Move")                                  # the option disc of the Move tool took the stick
         self.assertFalse(s.ui_update.owns_stick and module.engaged)

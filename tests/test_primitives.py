@@ -303,22 +303,13 @@ class ToolTest(unittest.TestCase):
         self.step()
         self.assertEqual(self.created, [(self.document, "Sphere", (30.0, 30.0, 30.0), (40.0, 40.0, 40.0))])
 
-    def test_the_disc_has_four_shapes_that_the_click_pages_and_nothing_on_top_and_bottom(self):
+    def test_the_disc_has_the_eight_shapes_clockwise_from_the_top_and_no_empty_section(self):
         slots = self.tool.disc_slots()
-        self.assertEqual(len(slots), 6)
-        self.assertEqual([(s.label, s.option) for s in (slots[0], slots[3])], [("", ""), ("", "")])
-        self.assertEqual([slots[i].label for i in (5, 1, 2, 4)], ["Box", "Cylinder", "Cone", "Sphere"])      # clockwise from the upper left
-        self.assertTrue(all(slots[i].option == "shape" for i in (5, 1, 2, 4)))
+        self.assertEqual([s.label for s in slots], ["Box", "Cylinder", "Cone", "Sphere", "Torus", "Wedge", "Prism", "Block"])
+        self.assertTrue(all(s.option == "shape" and s.value == s.label for s in slots))
+        self.assertEqual({s.value for s in slots}, set(prim.SHAPES) | {prim.BLOCK})            # every shape is on the disc
         self.assertEqual(self.tool.disc_hub(), ["Grid 10 mm", "Box"])
-        self.assertEqual(self.tool.stick_click(), "Shapes: Torus, Wedge, Prism, Block")
-        slots = self.tool.disc_slots()
-        self.assertEqual([slots[i].label for i in (5, 1, 2, 4)], ["Torus", "Wedge", "Prism", "Block"])
-        self.assertEqual(self.tool.stick_click(), "Shapes: Box, Cylinder, Cone, Sphere")
-        shown = set()
-        for _ in range(2):                                                      # look at both pages
-            shown |= {slot.value for slot in self.tool.disc_slots() if slot.option == "shape"}
-            self.tool.stick_click()
-        self.assertEqual(shown, set(prim.SHAPES) | {prim.BLOCK})                               # every shape is on a page
+        self.assertIsNone(self.tool.stick_click())                                             # one disc: the click has nothing to turn
 
     def test_the_radial_stays_closed_during_a_drag(self):
         self.assertFalse(self.tool.busy)

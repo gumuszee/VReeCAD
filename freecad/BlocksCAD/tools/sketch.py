@@ -60,14 +60,13 @@ def plane_square(plane, centre, half):
 class SketchTool(TouchTool):
     name = "sketch"
     label = "Sketch"
-    controls = (("Trigger", "drag a shape (an arc: press again)"), ("A", "trigger held: snap, grid, free"), ("B", "held: fix it, else tap: undo, hold: redo"), ("Stick click", "other page of the disc"))
+    controls = (("Trigger", "drag a shape (an arc: press again)"), ("A", "trigger held: snap, grid, free"), ("B", "held: fix it, else tap: undo, hold: redo"))
     hint = "Drag a line, rectangle or circle on a plane or a face; Edit drags a point or dimensions a line"
     options = (ToolOption("mode", "Mode", "choice", default=MODES[1], choices=MODES),
                ToolOption("plane", "Plane", "choice", default=sketching.PLANES[0], choices=sketching.PLANES))
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self._page = 0                # the page of the option disc
         self._plane_seen = self.values["plane"]
         self._gesture = None
         self._handles_key = None
@@ -88,20 +87,12 @@ class SketchTool(TouchTool):
     def disc_slots(self):
         """The option disc, clockwise from the top: nothing, then on the first page rectangle, circle, edit and line, on the second page
         arc and the planes XY, XZ and YZ, and nothing at the bottom."""
-        none = DiscSlot("")
-        if self._page == 0:
-            return (none, DiscSlot("Rectangle", "mode", "Rectangle"), DiscSlot("Circle", "mode", "Circle"), none,
-                    DiscSlot("Edit", "mode", "Edit"), DiscSlot("Line", "mode", "Line"))
-        return (none, DiscSlot("Arc", "mode", "Arc"), DiscSlot("XY plane", "plane", "XY"), none,
+        return (DiscSlot("Rectangle", "mode", "Rectangle"), DiscSlot("Circle", "mode", "Circle"), DiscSlot("Line", "mode", "Line"),
+                DiscSlot("Arc", "mode", "Arc"), DiscSlot("Edit", "mode", "Edit"), DiscSlot("XY plane", "plane", "XY"),
                 DiscSlot("XZ plane", "plane", "XZ"), DiscSlot("YZ plane", "plane", "YZ"))
 
     def disc_hub(self):
         return [self.grid_text(), self.values["mode"] if self.editing else f"{self.values['mode']} on {self.plane}"]
-
-    def stick_click(self):
-        """Turn to the other page of the option disc."""
-        self._page = 1 - self._page
-        return "Arc and planes" if self._page else "Line, Rectangle, Circle and Edit"
 
     def _sk(self):
         return self._service("sketching", sketching)

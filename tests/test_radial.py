@@ -47,25 +47,26 @@ class SegmentTest(unittest.TestCase):
 
 
 class ItemsTest(unittest.TestCase):
-    KNOWN = {"doc.undo", "doc.redo", "view.reset", "doc.delete", "tool.move", "pointer.mode", "tool.line", "tool.cube", "app.close",
-             "view.layout"}
+    KNOWN = {"doc.undo", "doc.redo", "view.reset", "doc.delete", "tool.move", "pointer.mode", "doc.copy", "doc.colour", "tool.line", "tool.cube",
+             "app.close", "view.layout"}
 
     def test_recent_faces_come_first_then_the_defaults(self):
         items = rd.choose_items(["tool.cube", "tool.line"], self.KNOWN)
         self.assertEqual(items[:2], ["tool.cube", "tool.line"])
-        self.assertEqual(items[2:], ["doc.undo", "doc.redo", "view.reset", "doc.delete"])
+        self.assertEqual(items[2:], ["doc.undo", "doc.redo", "view.reset", "doc.delete", "tool.move", "pointer.mode"])
         self.assertEqual(len(items), rd.RECENT)
+        self.assertEqual(rd.RECENT, 8)                                                 # as many items as the option discs of the tools have sections
 
     def test_unknown_hidden_repeated_and_dangerous_faces_are_left_out(self):
         items = rd.choose_items(["gone", "tool.cube", "doc.undo", "tool.cube", "app.close", "view.layout", "view.reset"], self.KNOWN,
                                 hidden=["view.reset"])
-        self.assertEqual(items, ["tool.cube", "doc.undo", "doc.redo", "doc.delete", "tool.move", "pointer.mode"])
+        self.assertEqual(items, ["tool.cube", "doc.undo", "doc.redo", "doc.delete", "tool.move", "pointer.mode", "doc.copy", "doc.colour"])
 
     def test_remember_moves_a_face_to_the_front_and_keeps_the_newest(self):
         recent = []
         for face in ("a", "b", "c", "a", "d", "e", "f", "g"):
             recent = rd.remember(recent, face)
-        self.assertEqual(recent, ["g", "f", "e", "d", "a", "c"])
+        self.assertEqual(recent, ["g", "f", "e", "d", "a", "c", "b"])
 
     def test_recent_faces_are_saved_with_the_settings(self):
         settings = cfg.Settings(recent=["x", "y"])

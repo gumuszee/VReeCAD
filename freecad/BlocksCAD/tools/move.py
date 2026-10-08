@@ -65,8 +65,8 @@ class MoveTool(TouchTool):
         return self._locked if self._grab is not None else None
 
     def disc_slots(self):
-        """The option disc, clockwise from the top: nothing, the two move modes, nothing."""
-        return (DiscSlot(""), DiscSlot("Move, turn", "mode", MODES[0]), DiscSlot("Move only", "mode", MODES[1]), DiscSlot(""), DiscSlot(""), DiscSlot(""))
+        """The option disc, clockwise from the top: the two move modes, six sections without a function."""
+        return (DiscSlot("Move, turn", "mode", MODES[0]), DiscSlot("Move only", "mode", MODES[1])) + (DiscSlot(""),) * 6
 
     def disc_hub(self):
         return [self.values["mode"], f"{self.grid_text()}, angle {self.angle:g} deg"]
