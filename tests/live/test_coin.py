@@ -908,6 +908,30 @@ class PrimitiveLiveTest(unittest.TestCase):
         finally:
             s.close()
 
+    def test_the_tip_of_the_tool_hand_stays_out_of_the_way_while_the_option_disc_is_shown(self):
+        import math
+        from pivy import coin
+        s = sim.SimSession(None)
+        try:
+            s.ui.settings.pointer_mode = "tip"
+            s.select_tool("primitive")
+            for _ in range(3):
+                s.frame(0.02)
+            tip = s.ui.tips[s.ui.tool_hand].root.whichChild
+            self.assertEqual(tip.getValue(), coin.SO_SWITCH_ALL)
+            s.input.set_hand(1, stick=(math.sin(math.radians(60)), math.cos(math.radians(60))))
+            s.frame(0.02)
+            self.assertEqual(s.ui.options_view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+            self.assertEqual(tip.getValue(), coin.SO_SWITCH_NONE)                              # the disc and its text are not covered
+            self.assertEqual(s.ui.tips[s.ui.palette_hand].root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+            s.input.set_hand(1, stick=(0.0, 0.0))
+            for _ in range(int(2.0 / 0.02)):
+                s.frame(0.02)
+            self.assertEqual(s.ui.options_view.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
+            self.assertEqual(tip.getValue(), coin.SO_SWITCH_ALL)
+        finally:
+            s.close()
+
     def test_the_stick_chooses_from_the_option_disc_of_the_create_tool(self):
         import math
         from pivy import coin

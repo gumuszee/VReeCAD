@@ -37,7 +37,7 @@ KINDS = {"Object": "object", "Face": "face", "Edge": "edge", "Vertex": "vertex"}
 class SelectTool(TouchTool):
     name = "select"
     label = "Select"
-    controls = (("Trigger", "select what the tip touches"),)
+    controls = (("Trigger", "select what the tip touches"), ("Stick click", "back to Object and Replace"))
     hint = "Touch and press the trigger to select; the stick chooses objects, faces, edges or vertices, and adds or removes"
     options = (ToolOption("target", "Select", "choice", default=TARGETS[0], choices=TARGETS),
                ToolOption("operation", "Mode", "choice", default=selecting.REPLACE, choices=selecting.OPERATIONS))

@@ -41,7 +41,7 @@ class PrimitiveTool(Tool):
     name = "primitive"
     label = "Create"
     hint = "Drag a box in space to make a shape, tap to place one"
-    controls = (("Trigger", "drag out a shape, tap: place one"),)
+    controls = (("Trigger", "drag out a shape, tap: place one"), ("Stick click", "other shapes"))
     options = (ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES + (primitives.BLOCK,)),)
 
     def __init__(self, ctx):

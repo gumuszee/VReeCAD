@@ -106,6 +106,7 @@ class UiController:
         self.values_source = None          # callable() -> (key, factory of a `core.values.ValueTarget`) of the selected object, or None; set by the host
         self._shown = None                 # (key, layout of the values carousel) while it is shown
         self.options = tool_options.OptionControl(tool_hand)
+        self._disc_shown = False           # the option disc of the tool is drawn: the pointer of the tool hand stays out of its way
         self.active_tool = None            # the active `tools.base.Tool`, set by the host before `update`
         self.hands_changed = None          # callable(tool hand index), set by the host: the hands have swapped roles
         self.gesture_text = None           # readout of a running gesture (the size of a shape being dragged), set by the tool
@@ -562,7 +563,8 @@ class UiController:
             self.ruler.hide()
 
         tool_pointer = self.pointer_poses[self.tool_hand]
-        if s.pointer_mode == "laser" and self.ring.fade > 0.3 and tool_pointer.tracked and not nav.navigating and not self.radial.is_open:
+        if (s.pointer_mode == "laser" and self.ring.fade > 0.3 and tool_pointer.tracked and not nav.navigating and not self.radial.is_open
+                and not self._disc_shown):
             self.pointer.show(tool_pointer.position, tool_pointer.direction, out.ray_end)
         else:
             self.pointer.hide()
@@ -570,7 +572,7 @@ class UiController:
             ptr = self.pointer_poses[hand]
             # the tips stay visible while navigating; the tip of the palette hand is hidden while the carousel is shown
             palette_shown = hand == self.palette_hand and self.ring.fade > 0.3 and not nav.navigating
-            if s.pointer_mode == "tip" and ptr.tracked and not palette_shown:
+            if s.pointer_mode == "tip" and ptr.tracked and not palette_shown and not (hand == self.tool_hand and self._disc_shown):
                 touching = hand == self.tool_hand and out.ray_end is not None
                 marker.show(frame.hands[hand].aim.position, ptr.position, touching)
             else:
@@ -609,6 +611,7 @@ class UiController:
         """Draw the option disc of the active tool on the controller of the tool hand: centred over the thumbstick, in the plane of the
         top of the controller, turning with it like the carousel. The stick pushed forward points at the top section."""
         placed = None if disc is None else self._controller_frame(frame, self.tool_hand, STICK_PARTS, OPTION_DISC_LIFT)
+        self._disc_shown = placed is not None
         if placed is None:
             self.options_view.update(radial.RadialState(), [])
             return
