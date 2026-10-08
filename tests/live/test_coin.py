@@ -1826,6 +1826,33 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual((names, len(self.doc.Objects)), ([], count))
         self.assertEqual(sketching.extrude(self.doc, [(self.box.Name, "")], 20.0), ("Select a sketch to extrude", []))
 
+    def test_an_arc_or_a_chain_that_is_open_at_two_ends_is_closed_with_a_line_when_extruded(self):
+        from freecad.BlocksCAD.cad import sketching
+        sketch = self.sketch_on()
+        sketching.add_arc(self.doc, sketch, (0.0, 40.0), (60.0, 40.0), (30.0, 70.0))          # a half circle: open
+        self.doc.commitTransaction()
+        self.assertEqual(len(sketch.Geometry), 1)
+        text, names = sketching.extrude(self.doc, [(sketch.Name, "")], 20.0)
+        self.assertEqual(text, "Extruded " + sketch.Label + ", closed with a line")
+        self.assertAlmostEqual(self.doc.getObject(names[0]).Shape.Volume, 3.141592653589793 * 30.0 ** 2 / 2.0 * 20.0, places=2)
+        self.assertEqual(len(sketch.Geometry), 2)                                             # the line stays in the sketch, joined to the arc
+        self.assertEqual(sum(c.Type == "Coincident" for c in sketch.Constraints), 2)
+        self.doc.undo()                                                                       # the extrusion and the line are one undo step
+        self.assertEqual((len(sketch.Geometry), self.doc.getObject(names[0])), (1, None))
+        chain = self.sketch_on("XZ", (0.0, 0.0, 0.0))
+        sketching.add_line(self.doc, chain, (0.0, 0.0), (50.0, 0.0))
+        sketching.add_line(self.doc, chain, (50.0, 0.0), (50.0, 40.0))
+        self.doc.commitTransaction()
+        text, names = sketching.extrude(self.doc, [(chain.Name, "")], 10.0)
+        self.assertEqual(text, "Extruded " + chain.Label + ", closed with a line")
+        self.assertAlmostEqual(self.doc.getObject(names[0]).Shape.Volume, 50.0 * 40.0 / 2.0 * 10.0, places=3)
+        three = self.sketch_on("YZ", (0.0, 0.0, 0.0))                                         # a Y that is open at three ends cannot be closed
+        for p0, p1 in (((0.0, 0.0), (10.0, 0.0)), ((10.0, 0.0), (20.0, 10.0)), ((10.0, 0.0), (20.0, -10.0))):
+            sketching.add_line(self.doc, three, p0, p1)
+        self.doc.commitTransaction()
+        text, names = sketching.extrude(self.doc, [(three.Name, "")], 10.0)
+        self.assertEqual((text.startswith("Extrude failed"), names, len(three.Geometry)), (True, [], 3))
+
     def test_the_points_and_curves_of_a_sketch_are_picked_and_drawn(self):
         from freecad.BlocksCAD.cad import sketching
         sketch = self.sketch_on("XY", (0.0, 0.0, 0.0))

@@ -446,9 +446,42 @@ def move_point(doc, sketch, geo, pos, target):
 
 
 # using a sketch
+def open_ends(sketch):
+    """The two end points (sketch coordinates) of the one open chain of lines and arcs of a sketch, or None when it has no open end, more
+    than two, or when the line between them is there already (a single line)."""
+    counts = {}
+    ends = []
+    segments = set()
+    for geometry, construction in zip(sketch.Geometry, [sketch.getConstruction(i) for i in range(len(sketch.Geometry))]):
+        if construction or not (hasattr(geometry, "StartPoint") and hasattr(geometry, "EndPoint")):
+            continue                                                                  # a circle is closed by itself
+        a, b = (geometry.StartPoint.x, geometry.StartPoint.y), (geometry.EndPoint.x, geometry.EndPoint.y)
+        for point in (a, b):
+            key = (round(point[0], 6), round(point[1], 6))
+            counts[key] = counts.get(key, 0) + 1
+            ends.append((key, point))
+        if type(geometry).__name__ == "LineSegment":                                  # an arc is not the line between its ends
+            segments.add(frozenset(((round(a[0], 6), round(a[1], 6)), (round(b[0], 6), round(b[1], 6)))))
+    open_keys = [key for key, n in counts.items() if n == 1]
+    if len(open_keys) != 2 or frozenset(open_keys) in segments:
+        return None
+    return tuple(next(point for key, point in ends if key == wanted) for wanted in open_keys)
+
+
+def close_outline(doc, sketch):
+    """Add the line that closes the one open chain of a sketch between its ends (with the constraints that join it); returns whether one
+    was added."""
+    found = open_ends(sketch)
+    if found is None:
+        return False
+    add_line(doc, sketch, found[0], found[1])
+    return True
+
+
 def extrude(doc, items, length):
-    """Extrude each selected sketch by `length` millimetres along its normal into a solid, in one transaction. The sketch is hidden.
-    Returns (text for a toast, names of the new objects)."""
+    """Extrude each selected sketch by `length` millimetres along its normal into a solid, in one transaction. The sketch is hidden. A
+    sketch whose outline is open at two ends only (an arc, a line that has not come back to its start) is closed with a line between
+    them. Returns (text for a toast, names of the new objects)."""
     from freecad.BlocksCAD.cad import combine
     sketches_ = []
     for name, _ in items:
@@ -459,6 +492,7 @@ def extrude(doc, items, length):
         return ("Select a sketch to extrude" if items else "Nothing selected"), []
     doc.openTransaction("Extrude " + (sketches_[0].Label if len(sketches_) == 1 else f"{len(sketches_)} sketches"))
     made = []
+    closed = []
     try:
         for sketch in sketches_:
             solid = doc.addObject("Part::Extrusion", "Extrude")
@@ -467,6 +501,9 @@ def extrude(doc, items, length):
             solid.LengthFwd = float(length)
             solid.Solid = True
             doc.recompute()
+            if not combine.sound(solid) and close_outline(doc, sketch):
+                closed.append(sketch)
+                doc.recompute()
             if not combine.sound(solid):
                 raise ValueError(f"{sketch.Label} has no closed outline")
             combine.hide(sketch)
@@ -476,4 +513,7 @@ def extrude(doc, items, length):
         doc.abortTransaction()
         doc.recompute()
         return f"Extrude failed: {error}", []
-    return (f"Extruded {sketches_[0].Label}" if len(made) == 1 else f"Extruded {len(made)} sketches"), [o.Name for o in made]
+    text = f"Extruded {sketches_[0].Label}" if len(made) == 1 else f"Extruded {len(made)} sketches"
+    if closed:
+        text += ", closed with a line" if len(closed) == 1 else f", {len(closed)} closed with a line"
+    return text, [o.Name for o in made]
