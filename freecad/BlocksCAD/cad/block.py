@@ -150,6 +150,11 @@ def expressions(obj):
     return found
 
 
+def has_bound_points(obj):
+    """Whether a coordinate of a point of the block is bound to an expression (the points would change their numbers if one went)."""
+    return bool(expressions(obj))
+
+
 def set_picked(obj, index):
     """Remember `index` as the point of the block `obj` that the value panels show (None forgets it)."""
     key = (obj.Document.Name, obj.Name)

@@ -413,6 +413,44 @@ def split_edge(vertices, faces, a, b, point):
     return list(vertices) + [tuple(point)], result, index
 
 
+def remove_vertex(vertices, faces, index):
+    """The block without vertex `index`: every face that has it loses that corner (a triangle disappears), and the hole that the
+    corner leaves, a cap made of the corners next to it, becomes a face of its own (a corner of a box is cut off, a point that splits
+    an edge only vanishes). The vertices after it are numbered one lower. Returns (vertices, faces); ValueError when the point is no
+    corner of a closed star of faces. Whether the result is a solid is for `validate` to say."""
+    pairs = []                                       # (corner before, corner after) of the point in each face that has it
+    kept = []
+    for face in faces:
+        if index not in face:
+            kept.append(tuple(face))
+            continue
+        k = face.index(index)
+        pairs.append((face[k - 1], face[(k + 1) % len(face)]))
+        rest = tuple(c for c in face if c != index)
+        if len(rest) >= 3:
+            kept.append(rest)
+    if len(pairs) < 2:
+        raise ValueError("That point has no faces")
+    after = {succ: pred for pred, succ in pairs}     # the edges of the cap run the other way round: from the corner after to the one before
+    if len(after) != len(pairs):
+        raise ValueError("That point cannot be removed")
+    ring = [pairs[0][1]]
+    current = after[ring[0]]
+    while current != ring[0]:
+        ring.append(current)
+        current = after.get(current)
+        if current is None or len(ring) > len(pairs):
+            raise ValueError("That point cannot be removed")
+    if len(ring) != len(pairs):
+        raise ValueError("That point cannot be removed")
+    if len(ring) >= 3:
+        kept.append(tuple(ring))
+
+    def number(i):
+        return i - 1 if i > index else i
+    return [v for k, v in enumerate(vertices) if k != index], [tuple(number(i) for i in face) for face in kept]
+
+
 def move_vertex(vertices, index, point):
     """The vertices with vertex `index` at `point`."""
     moved = list(vertices)

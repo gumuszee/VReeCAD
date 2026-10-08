@@ -241,6 +241,49 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(self.block.vertices[8], (80.0, 0.0, 0.0))
         self.assertIsNone(bg.validate(self.block.vertices, self.block.faces))
 
+    def remove(self, at):
+        self.tool.values["mode"] = "Remove"
+        self.cursor = list(at)
+        self.sim.set_hand(1, trigger=0.0, button1=False)
+        self.frames()
+        self.sim.set_hand(1, trigger=1.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+
+    def test_the_remove_mode_cuts_a_corner_off_in_one_undo_step_and_selects_the_block(self):
+        self.remove((100.0, 0.0, 0.0))
+        self.assertEqual(len(self.block.vertices), 7)
+        self.assertEqual(len(self.block.faces), 7)
+        self.assertEqual([e for e in self.doc.log if e[0] in ("open", "commit", "abort")],
+                         [("open", "Remove point of BLOCK"), ("commit",)])
+        self.assertEqual(self.selection, [("block", "")])
+        self.assertEqual(self.toasts[-1], "Removed point 1 of BLOCK")
+        self.assertEqual(self.tool.values["mode"], "Remove")                           # the mode stays: several points can go in a row
+        self.assertFalse(self.tool.busy)                                              # no drag follows
+
+    def test_a_point_that_split_an_edge_goes_back_to_the_box(self):
+        vertices, faces, index = bg.split_edge(self.block.vertices, self.block.faces, 0, 1, (50.0, 0.0, 0.0))
+        self.block.vertices, self.block.faces = vertices, faces
+        self.remove((50.0, 0.0, 0.0))
+        self.assertEqual(self.block.vertices, bg.box((0, 0, 0), (100, 100, 100))[0])
+        self.assertEqual(len(self.block.faces), 6)
+
+    def test_a_removal_that_leaves_no_solid_is_refused_and_the_block_stays(self):
+        self.block.vertices = [(0, 0, 0), (100, 0, 0), (0, 100, 0), (0, 0, 100)]
+        self.block.faces = [(0, 2, 1), (0, 1, 3), (0, 3, 2), (1, 2, 3)]
+        self.remove((0.0, 0.0, 0.0))
+        self.assertEqual(len(self.block.vertices), 4)
+        self.assertEqual([e for e in self.doc.log if e[0] in ("open", "commit", "abort")], [("open", "Remove point of BLOCK"), ("abort",)])
+        self.assertTrue(self.toasts[-1].startswith("Cannot remove that point"))
+
+    def test_a_block_with_bound_points_keeps_them(self):
+        self.tool._blocks().has_bound_points = lambda obj: True
+        self.remove((100.0, 0.0, 0.0))
+        self.assertEqual(len(self.block.vertices), 8)
+        self.assertEqual(self.toasts[-1], "Unbind the points of the block first")
+        self.assertEqual([e for e in self.doc.log if e[0] in ("open", "commit", "abort")], [])
+
     def test_nothing_is_touched_far_from_the_points(self):
         self.cursor = [50.0, 50.0, 50.0]
         self.drag((60.0, 60.0, 60.0))
@@ -251,7 +294,7 @@ class PointsToolTest(unittest.TestCase):
         self.frames()
         self.assertGreater(self.highlights.selected.shown, 0)
         labels = [slot.label for slot in self.tool.disc_slots()]
-        self.assertEqual(labels, ["", "Move point", "Split edge", "", "Free faces", "Flat faces"])
+        self.assertEqual(labels, ["", "Move point", "Split edge", "Remove point", "Free faces", "Flat faces"])
         self.tool.values["faces"] = "Flat"
         self.assertEqual(self.tool.stick_click(), "Mode and faces reset")
         self.assertEqual(self.tool.values["faces"], "Free")

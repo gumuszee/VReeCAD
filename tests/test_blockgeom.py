@@ -221,6 +221,52 @@ class SplitTest(unittest.TestCase):
         self.assertEqual(second, 9)
 
 
+class RemoveVertexTest(unittest.TestCase):
+    def test_a_point_that_split_an_edge_vanishes_and_the_block_is_the_box_again(self):
+        vertices, faces = bg.box((0, 0, 0), (10, 10, 10))
+        vertices, faces, index = bg.split_edge(vertices, faces, 0, 1, (5, 0, 0))
+        back_vertices, back_faces = bg.remove_vertex(vertices, faces, index)
+        self.assertEqual(back_vertices, bg.box((0, 0, 0), (10, 10, 10))[0])
+        self.assertEqual(sorted(sorted(f) for f in back_faces), sorted(sorted(f) for f in bg.box((0, 0, 0), (10, 10, 10))[1]))
+        self.assertIsNone(bg.validate(back_vertices, back_faces))
+        self.assertAlmostEqual(bg.signed_volume(back_vertices, back_faces), 1000.0)
+
+    def test_a_corner_of_a_box_is_cut_off_and_the_corners_next_to_it_make_the_cap(self):
+        vertices, faces = bg.box((0, 0, 0), (10, 10, 10))
+        new_vertices, new_faces = bg.remove_vertex(vertices, faces, 0)
+        self.assertEqual(len(new_vertices), 7)
+        self.assertEqual(len(new_faces), 7)                                   # three faces became triangles and a triangle closes the hole
+        self.assertIsNone(bg.validate(new_vertices, new_faces))
+        self.assertAlmostEqual(bg.signed_volume(new_vertices, new_faces), 1000.0 - 10.0 * 10.0 * 10.0 / 6.0)   # the tetrahedron of the corner
+        self.assertEqual(sorted(len(f) for f in new_faces), [3, 3, 3, 3, 4, 4, 4])
+
+    def test_the_vertices_after_the_removed_one_are_numbered_one_lower(self):
+        vertices, faces = bg.box((0, 0, 0), (10, 10, 10))
+        new_vertices, new_faces = bg.remove_vertex(vertices, faces, 3)
+        self.assertEqual(new_vertices, vertices[:3] + vertices[4:])
+        self.assertTrue(all(0 <= i < 7 for face in new_faces for i in face))
+        self.assertEqual(len(vertices), 8)                                    # the arguments are not changed
+
+    def test_a_point_removed_from_a_tetrahedron_leaves_no_solid(self):
+        vertices = [(0, 0, 0), (10, 0, 0), (0, 10, 0), (0, 0, 10)]
+        faces = [(0, 2, 1), (0, 1, 3), (0, 3, 2), (1, 2, 3)]
+        self.assertIsNone(bg.validate(vertices, faces))
+        new_vertices, new_faces = bg.remove_vertex(vertices, faces, 0)
+        self.assertIsNotNone(bg.validate(new_vertices, new_faces))
+
+    def test_a_point_that_no_face_has_cannot_be_removed(self):
+        vertices, faces = bg.box((0, 0, 0), (10, 10, 10))
+        with self.assertRaises(ValueError):
+            bg.remove_vertex(vertices + [(50, 50, 50)], faces, 8)
+
+    def test_a_point_that_two_faces_touch_only_at_a_corner_cannot_be_removed(self):
+        vertices, faces = bg.box((0, 0, 0), (10, 10, 10))
+        pinched = [f for f in faces if 0 in f]                                # the three faces round corner 0 and a second star on corner 0
+        bad = pinched + [(0, 5, 6, 7)]
+        with self.assertRaises(ValueError):
+            bg.remove_vertex(vertices, bad, 0)
+
+
 class NearestTest(unittest.TestCase):
     def test_nearest_vertex_edge_and_segment_point(self):
         vertices, faces = bg.box((0, 0, 0), (10, 10, 10))

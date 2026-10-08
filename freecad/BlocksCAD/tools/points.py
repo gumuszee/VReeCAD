@@ -20,11 +20,13 @@ touches is highlighted (`tools/touch.py`). In the **Move** mode the trigger pres
 cursor, rounded to the grid (the A button held leaves it free), and the block is built again at every step, so the solid follows the
 hand; a position that makes no solid (a block turned inside out, a flat block) is refused and the point stays at the last good one.
 In the **Split** mode the trigger pressed on an edge adds a point on it, where the cursor is nearest, and the drag goes on with that
-new point. With the faces **Flat** the dragged point stays in the planes of the faces that have it (every face of four or more corners
+new point. In the **Remove** mode the trigger pressed on a point takes it out of the block in one undo step: a point that splits an
+edge vanishes, a corner is cut off (the corners next to it become a face of their own); a point whose removal leaves no solid, or
+whose coordinates are bound to variables, stays. With the faces **Flat** the dragged point stays in the planes of the faces that have it (every face of four or more corners
 is held flat: the plane of its other corners), so it moves in a plane, along a line or not at all; with **Free** faces a face that
 bends is built from triangles. Releasing keeps the change as one undo step and selects the block (so the value panels follow it); a
-grip cancels. The stick chooses from an option disc: the grid larger and smaller, the two modes and the two kinds of faces; its click
-puts the grid, the mode and the faces back.
+grip cancels. The stick chooses from an option disc: the three modes and the two kinds of faces; its click
+puts the mode and the faces back.
 
 Services besides those of `TouchTool`: `blocks`, an object with the functions of `cad.block` that the tool uses (`pick`, `display`,
 `handles`, `signature`, `read`, `apply`, `to_local`, `to_world`), replaced in tests."""
@@ -35,8 +37,8 @@ from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 from freecad.BlocksCAD.tools.touch import TouchTool
 
-MODES = ("Move", "Split")
-KINDS = {"Move": "vertex", "Split": "edge"}
+MODES = ("Move", "Split", "Remove")
+KINDS = {"Move": "vertex", "Split": "edge", "Remove": "vertex"}
 FACES = ("Free", "Flat")
 
 
@@ -44,8 +46,8 @@ FACES = ("Free", "Flat")
 class PointsTool(TouchTool):
     name = "points"
     label = "Points"
-    hint = "Press on a point of a block and drag it; the stick switches to splitting an edge"
-    controls = (("Trigger", "drag a point (or split an edge)"), ("A", "hold: off the grid"))
+    hint = "Press on a point of a block and drag it; the stick switches to splitting an edge or removing a point"
+    controls = (("Trigger", "drag, split or remove a point"), ("A", "hold: off the grid"))
     options = (ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),
                ToolOption("faces", "Faces", "choice", default=FACES[0], choices=FACES))
 
@@ -63,9 +65,9 @@ class PointsTool(TouchTool):
         return KINDS[self.values["mode"]]
 
     def disc_slots(self):
-        """The option disc, clockwise from the top: nothing, the two modes, nothing, free faces, flat faces."""
+        """The option disc, clockwise from the top: nothing, the three modes, free faces, flat faces."""
         return (DiscSlot(""), DiscSlot("Move point", "mode", MODES[0]), DiscSlot("Split edge", "mode", MODES[1]),
-                DiscSlot(""), DiscSlot("Free faces", "faces", FACES[0]), DiscSlot("Flat faces", "faces", FACES[1]))
+                DiscSlot("Remove point", "mode", MODES[2]), DiscSlot("Free faces", "faces", FACES[0]), DiscSlot("Flat faces", "faces", FACES[1]))
 
     def disc_hub(self):
         return [self.grid_text(), f"{self.values['mode']}, {self.values['faces'].lower()}"]
@@ -159,7 +161,11 @@ class PointsTool(TouchTool):
             return
         vertices, faces = blocks.read(obj)
         kind, what = blocks.parse_sub(pick.sub)
-        doc.openTransaction(f"{'Move point' if kind == 'point' else 'Split edge'} of {obj.Label}")
+        removing = kind == "point" and self.values["mode"] == MODES[2]
+        if removing and getattr(blocks, "has_bound_points", lambda o: False)(obj):
+            self._toast("Unbind the points of the block first")
+            return
+        doc.openTransaction(f"{'Remove point' if removing else 'Move point' if kind == 'point' else 'Split edge'} of {obj.Label}")
         convert = getattr(blocks, "convert_box", None)
         if convert is not None and obj.TypeId == "Part::Box":      # a box becomes a block as the press starts: one undo step with the move
             try:
@@ -169,6 +175,9 @@ class PointsTool(TouchTool):
                 self._toast("Could not turn the box into a block")
                 print(f"BlocksCAD: cannot turn {obj.Label} into a block: {error}")
                 return
+        if removing:
+            self._remove(doc, obj, what, vertices, faces)
+            return
         if kind == "segment":
             a, b = what
             _, point, _ = self._edge_point(vertices, a, b, blocks.to_local(obj, raw))
@@ -190,6 +199,27 @@ class PointsTool(TouchTool):
         blocks.set_picked(obj, what)                        # the value panels show this point
         self._select(doc, [(obj.Name, "")])
         self._haptic(0.3, 0.02)
+
+    def _remove(self, doc, obj, index, vertices, faces):
+        """Take point `index` out of the block (the transaction is open): one undo step, or nothing when the result is no solid."""
+        blocks = self._blocks()
+        try:
+            new_vertices, new_faces = blockgeom.remove_vertex(vertices, faces, index)
+        except ValueError as error:
+            doc.abortTransaction()
+            self._toast(str(error))
+            return
+        error = blocks.apply(doc, obj, new_vertices, new_faces)
+        if error is not None:
+            doc.abortTransaction()
+            self._toast("Cannot remove that point: " + error[0].lower() + error[1:])
+            return
+        doc.commitTransaction()
+        self._forget_hover()
+        blocks.set_picked(obj, None)
+        self._select(doc, [(obj.Name, "")])
+        self._toast(f"Removed point {index} of {obj.Label}")
+        self._haptic(0.4, 0.03)
 
     @staticmethod
     def _edge_point(vertices, a, b, local):

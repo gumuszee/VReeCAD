@@ -1566,6 +1566,24 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(s.ui.module.editor.target.title, made.Label + " point 6")
         self.assertEqual(s.ui.module.readouts()["val.readout"], ("Point X", "500 mm", False))
 
+    def test_the_remove_mode_of_the_points_tool_cuts_a_corner_off_a_real_block_in_one_undo_step(self):
+        from freecad.BlocksCAD.cad import block
+        made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        s = self.session()
+        s.select_tool("points")
+        s.tool_manager.active.values["mode"] = "Remove"
+        self.hand(1, (500.0, 100.0, 100.0))
+        self.hand(1, (500.0, 100.0, 100.0), trigger=1.0)
+        self.hand(1, (500.0, 100.0, 100.0), trigger=0.0)
+        for _ in range(3):
+            s.frame(0.02)
+        self.assertEqual((len(made.Vertices), len(block.read(made)[1])), (7, 7))
+        self.assertTrue(made.isValid())
+        self.assertAlmostEqual(made.Shape.Volume, 1.0e6 - 1.0e6 / 6.0, places=2)          # the tetrahedron of the corner is gone
+        self.assertEqual(s.ui.toasts.items[-1].text, f"Removed point 6 of {made.Label}")
+        self.doc.undo()
+        self.assertEqual((len(made.Vertices), len(block.read(made)[1])), (8, 6))
+
     def sketch_on(self, plane="XY", point=(0.0, 0.0, 0.0)):
         from freecad.BlocksCAD.cad import sketching
         self.doc.openTransaction("sketch")
