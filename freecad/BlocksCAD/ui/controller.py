@@ -333,13 +333,14 @@ class UiController:
         """Save the layout of the palette carousel and the one of the values carousel (or remove both files)."""
         if not self.use_user_layout:
             return
-        for layout, path in ((self.layout, self.layout_path or lay.user_layout_path()),
-                             (self.values_layout, self.values_layout_path or value_module.user_layout_path())):
+        for layout, path, extra in ((self.layout, self.layout_path or lay.user_layout_path(), {}),
+                                    (self.values_layout, self.values_layout_path or value_module.user_layout_path(),
+                                     {"arrangement": value_module.ARRANGEMENT})):
             try:
                 if remove:
                     os.remove(path)
                 else:
-                    lay.save_layout(layout, path)
+                    lay.save_layout(layout, path, **extra)
             except OSError:
                 pass   # the layout is a convenience; a failed write must not stop the session
 
@@ -520,6 +521,7 @@ class UiController:
         else:
             self.ring.fixed_from = len(self.values_layout.pages) if carousel is not self.layout else None
         self.ring.set_sides(carousel.sides())
+        self.ring.pinned_pages = [i for i, p in enumerate(carousel.pages) if p.pinned]
         self.ring.set_dims({i: (p.cols, p.rows) for i, p in enumerate(carousel.pages) if (p.cols, p.rows) != (lay.COLS, lay.ROWS)})
         self.ring.slider_rows = self.slider_rows()
         self.ring.readout_rows = self.slider_rows("readout")

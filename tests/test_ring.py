@@ -694,6 +694,30 @@ class RingTest(unittest.TestCase):
         self.assertGreater(centres[2][0], 0.0)
         self.assertAlmostEqual(centres[2][0] - centres[1][0], sizes[1].panel_w + rg.PANEL_GAP)
 
+    def test_a_pinned_panel_stands_at_a_fixed_place_one_panel_further_forward_and_does_not_turn_with_the_carousel(self):
+        self.ring.pinned_pages = [3]
+        self.run_frames()
+        pinned = self.ring.poses[3]
+        self.assertEqual((pinned.side, pinned.cos), (-1, 1.0))
+        reach = rg.side_layout([[0]])[2]                                              # half the height of the tallest side
+        self.assertAlmostEqual(pinned.lcentre[2], -(reach + rg.PANEL_GAP + rg.PANEL_H / 2))
+        self.assertAlmostEqual(pinned.lcentre[0], 0.0)
+        before = pinned.lcentre
+        self.flick(1.0)
+        self.assertEqual(self.ring.front_side(), 1)                                   # another side is in front
+        self.assertEqual(self.ring.poses[3].lcentre, before)                          # the pinned panel did not move in the frame of the carousel
+        self.assertEqual(len(self.ring.display_sides()), len(SIDES))                  # and it is on no side
+        point, n = self.wide_slot_point(5, 3)
+        self.aim_at(point, n)
+        self.assertEqual(self.run_frames(1).hover, (3, 5))                            # it is pointed at like any panel
+        self.ring.fixed_from = 3
+        self.run_frames(1)
+        self.sim.set_hand(1, trigger=1.0)
+        self.run_frames(2)
+        self.assertEqual(self.ring.press, (3, 5))                                     # a face of it is pressed and activated on release as usual
+        self.sim.set_hand(1, trigger=0.0)
+        self.assertEqual(self.run_frames(1).activated, (3, 5))
+
     def hide_slot_point(self, page=0):
         pose = self.ring.poses[page]
         x = (rg.HIDE_X[0] + rg.HIDE_X[1]) / 2

@@ -232,6 +232,7 @@ class PaletteRing:
     def __init__(self, sides, palette_hand=0, tool_hand=1):
         self.sides = [[list(r) for r in s] for s in sides]   # page indexes: side -> rows -> pages
         self.page_dims = {}            # page index -> (columns, rows) of its grid, for the pages that differ from the default
+        self.pinned_pages = []             # set by the host: pages that stand at a fixed place of the carousel, not on a side (see `_prepare`)
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
         self.index = 0                 # side at the front (unbounded, modulo the number of sides)
         self.angle = 0.0               # displayed carousel angle (radians), eases towards the target
@@ -327,7 +328,7 @@ class PaletteRing:
     def _prepare(self):
         """Work out what depends only on the structure of the sides (the layout of each side, the radius) and on the angle (the local
         poses of the panels); each is kept until its input changes."""
-        version = (self._sides_version, self.lifted, self.lifted_face is not None)
+        version = (self._sides_version, self.lifted, self.lifted_face is not None, tuple(self.pinned_pages))
         if version != self._structure_version:
             self._structure_version = version
             self._shown = self.display_sides()
@@ -351,6 +352,12 @@ class PaletteRing:
                     for page in row:
                         x, y = centres[page]
                         self._locals[page] = (((sa * radius + ca * x, ca * radius - sa * x, -y), u, v, n), ca, side, r)
+            # a pinned panel stands where the front side stands (facing up), one panel further forward than the tallest side reaches,
+            # whatever the angle of the carousel is
+            reach = max([layout[2] for layout in self._layouts], default=PANEL_H / 2)
+            for page in self.pinned_pages:
+                forward = reach + PANEL_GAP + self._dim(page).panel_h / 2
+                self._locals[page] = (((0.0, radius, -forward), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0), (0.0, 1.0, 0.0)), 1.0, -1, 0)
 
     def _frame_for(self, pose):
         """The `Frame` of the carousel for a palette controller pose (the same object while the controller does not move)."""

@@ -37,31 +37,32 @@ def page(name, layout=None):
 
 
 class PagesTest(unittest.TestCase):
-    def test_the_default_layout_puts_the_list_on_the_front_side_and_the_keys_on_the_next(self):
+    def test_the_default_layout_puts_one_panel_on_every_side_like_the_palette(self):
         layout = vm.default_layout()
         self.assertEqual([(p.name, p.side, p.row) for p in layout.pages],
-                         [("Values", 0, 0), ("Variables", 1, 0), ("Keys", 1, 1), ("Number pad", 1, 2)])    # rows count from the bottom
-        self.assertEqual(layout.sides(), [[[0]], [[1], [2], [3]]])
+                         [("Values", 0, 0), ("Number pad", 1, 0), ("Keys", 2, 0), ("Variables", 3, 0)])
+        self.assertEqual(layout.sides(), [[[0]], [[1]], [[2]], [[3]]])
 
-    def test_the_value_panel_is_fixed_at_the_top_of_every_side(self):
+    def test_the_value_panel_is_pinned_it_stands_on_no_side_and_is_the_page_after_the_others(self):
         layout = vm.default_layout()
         shown = vm.shown_layout(layout)
-        self.assertEqual([(p.name, p.side, p.row) for p in shown.pages[len(layout.pages):]], [("Value", 0, 1), ("Value", 1, 3)])
-        self.assertEqual(shown.sides(), [[[0], [4]], [[1], [2], [3], [5]]])
-        self.assertTrue(all(p.name != "Value" for p in layout.pages))             # it is no part of what the user rearranges
+        self.assertEqual([(p.name, p.pinned) for p in shown.pages[len(layout.pages):]], [("Value", True)])
+        self.assertEqual(shown.sides(), layout.sides())                               # it is on none of the sides
+        self.assertTrue(all(p.name != "Value" and not p.pinned for p in layout.pages))   # it is no part of what the user rearranges
+        self.assertEqual(sum(p.pinned for p in shown.pages), 1)
 
-    def test_a_panel_moved_to_a_new_side_gets_a_value_panel_of_its_own_and_an_emptied_side_loses_it(self):
+    def test_rearranging_the_panels_leaves_the_pinned_panel_alone(self):
         layout = vm.default_layout()
-        layout.move_page(3, 2)                                                       # the Number pad on a side of its own
+        layout.move_page(3, 0, 0, 0, False)                                           # the Variables next to the Values panel
+        self.assertEqual(len(layout.sides()), 3)                                       # the Variables joined the Values panel on one side
         shown = vm.shown_layout(layout)
-        self.assertEqual([p.side for p in shown.pages if p.name == "Value"], [0, 1, 2])
-        layout.move_page(0, 1, 0, None, True)                                        # the list to the keys: its side is gone
-        self.assertEqual(len(vm.shown_layout(layout).sides()), 2)
+        self.assertEqual(shown.pages[-1].name, "Value")
+        self.assertEqual(len(shown.sides()), len(layout.sides()))
 
     def test_every_face_of_the_panels_is_known_and_each_is_on_a_panel_once(self):
         known = vm.faces()
         shown = vm.shown_layout(vm.default_layout())
-        placed = [f for page in shown.pages[:-2] for f in page.slots if f] + [f for f in shown.pages[-1].slots if f]
+        placed = [f for page in shown.pages for f in page.slots if f]
         self.assertEqual(sorted(placed), sorted(known))
         self.assertEqual(len(placed), len(set(placed)))
         for fid in vm.SLIDER_IDS:
@@ -97,20 +98,25 @@ class PagesTest(unittest.TestCase):
         saved.pages = [p for p in saved.pages if p.name != "Keys"] + [lay.Page("Value", list(vm.VALUE_SLOTS), 0, 1)]
         fixed = vm.complete(lay.Layout(saved.pages))
         self.assertEqual(sorted(p.name for p in fixed.pages), sorted(vm.MOVABLE_NAMES))
-        self.assertEqual(len({p.side for p in fixed.pages}), 3)                      # the missing panel has a side of its own
+        self.assertEqual(len({p.side for p in fixed.pages}), 4)                      # the missing panel has a side of its own
 
-    def test_the_layout_is_saved_and_loaded_without_the_value_panel(self):
+    def test_the_layout_is_saved_and_loaded_without_the_value_panel_and_only_of_the_current_arrangement(self):
         import os
         import tempfile
         layout = vm.default_layout()
         layout.move_page(3, 0, 0, 0, True)
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "values.json")
-            lay.save_layout(layout, path)
+            lay.save_layout(layout, path, arrangement=vm.ARRANGEMENT)
             loaded = vm.load_layout(set(vm.faces()), path)
             self.assertEqual([(p.name, p.side, p.row) for p in loaded.pages], [(p.name, p.side, p.row) for p in layout.pages])
-            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.faces()), os.path.join(folder, "none.json")).pages],
-                             [(p.name, p.side, p.row) for p in vm.default_layout().pages])
+            default = [(p.name, p.side, p.row) for p in vm.default_layout().pages]
+            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.faces()), os.path.join(folder, "none.json")).pages], default)
+            lay.save_layout(layout, path)                                              # a file of an older arrangement is not read
+            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.faces()), path).pages], default)
+            with open(path, "w") as f:
+                f.write("not json")
+            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.faces()), path).pages], default)
 
     def test_nice_ceiling(self):
         for value, expected in ((1, 1), (1.1, 2), (2, 2), (3, 5), (5, 5), (5.1, 10), (100, 100), (101, 200), (0.04, 0.05), (999, 1000)):

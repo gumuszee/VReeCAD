@@ -69,6 +69,7 @@ class Page:
     hue: Optional[float] = None  # the tint the user gave the panel (0 to 1); None leaves it to the name (`default_hue`)
     cols: int = COLS             # the faces stand in a grid of `cols` columns and `rows` rows, row by row; the panel grows with it
     rows: int = ROWS
+    pinned: bool = False         # a panel that does not stand on a side: the ring puts it at a fixed place that does not turn with the carousel (not saved)
 
     def __post_init__(self):
         self.cols = min(max(int(self.cols), 1), MAX_COLS)
@@ -113,25 +114,28 @@ class Layout:
     def normalize(self):
         """Number the sides 0, 1, 2 ... in carousel order and the rows of each side 0, 1, 2 ...; a page without a side gets one of
         its own, a page without a row goes to the bottom row."""
-        free = max([p.side for p in self.pages if p.side is not None], default=-1) + 1
-        for page in self.pages:
+        pages = [p for p in self.pages if not p.pinned]                  # a pinned panel is on no side
+        free = max([p.side for p in pages if p.side is not None], default=-1) + 1
+        for page in pages:
             if page.side is None:
                 page.side, free = free, free + 1
             if page.row is None:
                 page.row = 0
-        side_rank = {side: i for i, side in enumerate(sorted({p.side for p in self.pages}))}
+        side_rank = {side: i for i, side in enumerate(sorted({p.side for p in pages}))}
         row_rank = {}
         for side in side_rank:
-            for i, row in enumerate(sorted({p.row for p in self.pages if p.side == side})):
+            for i, row in enumerate(sorted({p.row for p in pages if p.side == side})):
                 row_rank[(side, row)] = i
-        for page in self.pages:
+        for page in pages:
             page.row = row_rank[(page.side, page.row)]
             page.side = side_rank[page.side]
 
     def sides(self):
         """The pages (as indexes) on each carousel side: side -> rows from the bottom up -> pages from left to right."""
-        result = [[] for _ in range(1 + max([p.side for p in self.pages], default=-1))]
+        result = [[] for _ in range(1 + max([p.side for p in self.pages if not p.pinned], default=-1))]
         for index, page in enumerate(self.pages):
+            if page.pinned:
+                continue
             rows = result[page.side]
             while len(rows) <= page.row:
                 rows.append([])
@@ -234,8 +238,9 @@ class Layout:
         self.hidden = [f for f in hidden if not any(f in p.slots for p in self.pages)]
         return len(self.hidden) < len(hidden)
 
-    def to_json(self):
-        return json.dumps({"version": VERSION, "hidden": self.hidden,
+    def to_json(self, **extra):
+        """The layout as JSON; `extra` adds keys to the file (the values carousel marks its arrangement)."""
+        return json.dumps({"version": VERSION, "hidden": self.hidden, **extra,
                            "pages": [{"name": p.name, "side": p.side, "row": p.row, "slots": p.slots, **({"hue": p.hue} if p.hue is not None else {}),
                                       **({"cols": p.cols, "rows": p.rows} if (p.cols, p.rows) != (COLS, ROWS) else {})}
                                      for p in self.pages]}, indent=1)
@@ -280,11 +285,11 @@ def load_layout(default, known_faces, path=None):
         return default
 
 
-def save_layout(layout, path=None):
+def save_layout(layout, path=None, **extra):
     path = path or user_layout_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(layout.to_json())
+        f.write(layout.to_json(**extra))
     return path
 
 

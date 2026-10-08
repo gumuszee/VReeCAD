@@ -3078,8 +3078,8 @@ class MoveLiveTest(unittest.TestCase):
         ui = self.s.ui
         pages = ui.shown_layout().pages
         candidates = [i for i, p in enumerate(pages) if face_id in p.slots]
-        page = next((i for i in candidates if pages[i].side == ui.ring.front_side()), candidates[0])     # the Value panel stands on every side
-        if pages[page].side != ui.ring.front_side():
+        page = next((i for i in candidates if pages[i].pinned or pages[i].side == ui.ring.front_side()), candidates[0])     # the Value panel is pinned
+        if not pages[page].pinned and pages[page].side != ui.ring.front_side():
             ui.ring.focus_side(pages[page].side)                          # turn the carousel to the face
             self.s.frame(0.02)
         centre, u, v = ui.ring.slot_centre(page, pages[page].slots.index(face_id))
@@ -3131,8 +3131,9 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual([f.label for f in module.editor.fields], ["Length", "Width", "Height", "X", "Y", "Z"])
         self.assertEqual(s.ui.carousel, "values")
         names = [p.name for p in s.ui.shown_layout().pages]
-        self.assertEqual(sorted(names), sorted(["Values", "Variables", "Keys", "Number pad", "Value", "Value"]))
-        self.assertEqual(len(s.ui.ring.display_sides()), 2)                            # the palette carousel is gone
+        self.assertEqual(sorted(names), sorted(["Values", "Variables", "Keys", "Number pad", "Value"]))
+        self.assertEqual(len(s.ui.ring.display_sides()), 4)                            # one side for each of the four panels, like the palette
+        self.assertEqual(s.ui.ring.pinned_pages, [4])                                  # the Value panel is pinned: it is on no side and does not turn
         self.assertEqual(s.ui.ring.front_side(), 0)                                    # the list of the values is in front
         self.assertEqual(s.ui.view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
         self.assertFalse(s.ui.ring.pinned)                                             # it is not forced open
@@ -3229,12 +3230,12 @@ class MoveLiveTest(unittest.TestCase):
         ui = s.ui
         layout = ui.values_layout
         names = [p.name for p in layout.pages]
-        self.assertEqual(names, ["Values", "Variables", "Keys", "Number pad"])
+        self.assertEqual(names, ["Values", "Number pad", "Keys", "Variables"])
         self.assertTrue(all(ui.shown_layout().pages[i].name == "Value" for i in range(len(names), len(ui.shown_layout().pages))))
-        ui.values_layout.move_page(3, 0, 0, 0, False)                                  # the Number pad next to the Values panel
+        ui.values_layout.move_page(3, 0, 0, 0, False)                                  # the Variables next to the Values panel
         ui._save_layout()
         s.frame(0.02)
-        self.assertEqual([(p.name, p.side) for p in ui.values_layout.pages][:2], [("Number pad", 0), ("Values", 0)])
+        self.assertEqual([(p.name, p.side) for p in ui.values_layout.pages][:2], [("Variables", 0), ("Values", 0)])
         self.assertEqual(ui.ring.fixed_from, 4)
         self.assertEqual(ui.shown_layout().pages[-1].name, "Value")
         # the faces of the values carousel cannot be lifted or moved
@@ -3247,9 +3248,9 @@ class MoveLiveTest(unittest.TestCase):
             first.values_layout.move_page(3, 0, 0, 0, False)
             first._save_layout()
             second = UiController(registry.names(), registry.label_of, {}, **paths)
-            self.assertEqual([(p.name, p.side) for p in second.values_layout.pages][:2], [("Number pad", 0), ("Values", 0)])
+            self.assertEqual([(p.name, p.side) for p in second.values_layout.pages][:2], [("Variables", 0), ("Values", 0)])
             second.reset_layout()
-            self.assertEqual([p.name for p in second.values_layout.pages], ["Values", "Variables", "Keys", "Number pad"])
+            self.assertEqual([p.name for p in second.values_layout.pages], ["Values", "Number pad", "Keys", "Variables"])
             self.assertFalse(os.path.exists(paths["values_layout_path"]))
             first.close()
             second.close()

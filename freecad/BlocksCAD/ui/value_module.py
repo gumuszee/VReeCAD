@@ -32,6 +32,7 @@ the tool's own options keep the stick the rest of the time. A slider changes its
 `ValueModule` holds the `core.values.ValueEditor` of the selected object and turns what the carousel reports (a face pressed, a
 slider dragged, the value slider focused) into editor calls; the controller shows the panels and swaps the carousels."""
 
+import json
 import math
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -103,16 +104,19 @@ def faces():
     return result
 
 
+ARRANGEMENT = 2        # the arrangement of the saved layout of the values carousel: a file of another one is not read
+
+
 def default_layout():
-    """The panels the user can rearrange, as they stand to begin with: the Values panel alone on the front side, the keys on the next
-    (the Number pad over Keys over Variables; rows count from the bottom, nearest the user)."""
-    return Layout([Page(PAGE_LIST, list(LIST_SLOTS), 0, 0), Page(PAGE_VARIABLES, list(VARIABLE_SLOTS), 1, 0),
-                   Page(PAGE_KEYS, list(KEY_SLOTS), 1, 1), Page(PAGE_PAD, list(PAD_SLOTS), 1, 2)])
+    """The panels the user can rearrange, as they stand to begin with: one panel on every side of the carousel, like the palette
+    (the Values panel, the Number pad, Keys and Variables)."""
+    return Layout([Page(PAGE_LIST, list(LIST_SLOTS)), Page(PAGE_PAD, list(PAD_SLOTS)), Page(PAGE_KEYS, list(KEY_SLOTS)),
+                   Page(PAGE_VARIABLES, list(VARIABLE_SLOTS))])
 
 
 def complete(layout):
-    """A saved layout of the values carousel made fit to use: the Value panel is never part of it (it is added to every side), and a
-    panel that is missing comes back on a side of its own."""
+    """A saved layout of the values carousel made fit to use: the Value panel is never part of it (it is pinned by `shown_layout`), and
+    a panel that is missing comes back on a side of its own."""
     pages = [p for p in layout.pages if p.name in MOVABLE_NAMES]
     present = {p.name for p in pages}
     for page in default_layout().pages:
@@ -122,17 +126,23 @@ def complete(layout):
 
 
 def shown_layout(layout):
-    """The layout the carousel draws for the movable `layout`: the same panels, and above the top row of every side a Value panel
-    (page indexes from `len(layout.pages)` on, in the order of the sides)."""
-    pages = list(layout.pages)
-    for side, rows in enumerate(layout.sides()):
-        pages.append(Page(PAGE_VALUE, list(VALUE_SLOTS), side, len(rows)))
-    return Layout(pages)
+    """The layout the carousel draws for the movable `layout`: the same panels and the Value panel, which is **pinned**: it stands on no
+    side but at a fixed place that does not turn with the carousel, so it is in view whichever side is at the front (it is the page
+    with index `len(layout.pages)`)."""
+    return Layout(list(layout.pages) + [Page(PAGE_VALUE, list(VALUE_SLOTS), pinned=True)])
 
 
 def load_layout(known_faces, path=None):
-    """The user's saved layout of the values carousel, or the default one when there is none or it cannot be read."""
-    return complete(lay.load_layout(default_layout(), known_faces, path or user_layout_path()))
+    """The user's saved layout of the values carousel, or the default one when there is none, it cannot be read or it is of another
+    arrangement (`ARRANGEMENT`: the panels stood in a different order of sides)."""
+    path = path or user_layout_path()
+    try:
+        with open(path, encoding="utf-8") as f:
+            if json.load(f).get("arrangement") != ARRANGEMENT:
+                return default_layout()
+    except (OSError, ValueError, AttributeError):
+        return default_layout()
+    return complete(lay.load_layout(default_layout(), known_faces, path))
 
 
 def user_layout_path():
