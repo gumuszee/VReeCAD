@@ -525,7 +525,7 @@ try:
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_rolled.png"))
     _s.input.set_hand(0, orientation=_o)
 
-    # tip mode: the tip of the tool hand touches the third face, the Session panel shows the pointer faces
+    # tip mode: the tip of the tool hand touches the third face, the Pointer panel shows the pointer faces
     _s.ui.settings.pointer_mode = "tip"
     for _ in range(8):
         _s.frame(0.02)
@@ -571,8 +571,8 @@ try:
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_stacked.png"))
     print("sides:", _s.ui.layout.sides(), _names())
 
-    # lift the Session panel by its title bar and hold it above the Tools panel (a new row)
-    _page = _names().index("Session")
+    # lift the Settings panel by its title bar and hold it above the Tools panel (a new row)
+    _page = _names().index("Settings")
     _s.input.set_hand(0, stick=(1.0, 0.0))
     _s.frame(0.02)
     _s.input.set_hand(0, stick=(0.0, 0.0))
