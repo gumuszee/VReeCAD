@@ -20,10 +20,10 @@ class CardTest(unittest.TestCase):
         _, bare = controls_help.tool_card("Tool", ())
         self.assertEqual(bare[0], "A: hold: quick menu")
 
-    def test_the_palette_card_names_the_stick_the_trigger_the_grips_and_the_pad(self):
+    def test_the_palette_card_names_the_stick_the_trigger_the_grips_the_pad_and_the_menu(self):
         title, lines = controls_help.palette_card()
         self.assertEqual(title, "Palette hand")
-        self.assertEqual([line.split(":")[0] for line in lines], ["Stick", "Trigger", "Grip", "A", "D-pad"])
+        self.assertEqual([line.split(":")[0] for line in lines], ["Stick", "Trigger", "Grip", "A", "D-pad", "Menu"])
 
     def test_every_tool_declares_what_its_trigger_does_and_the_card_fits(self):
         import freecad.BlocksCAD.tools  # noqa: F401  (registers the tools)

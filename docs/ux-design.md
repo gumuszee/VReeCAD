@@ -276,7 +276,8 @@ All three are dark plates that fit their text, drawn over the model in the inter
 What the buttons do is shown on the controllers themselves (`ui/help.py`, `ui/feedback_view.py`). The **Tutorial** face of the Settings panel toggles a **card** over each controller: a plate with a title (orange) and one line per control ("Trigger: ...") on plates of one width, 15 cm above the controller, turned to face the head, at the size of the toasts on the wrist, drawn over the model like the other messages.
 
 - **Tool hand card:** titled "<tool>: tool hand". It lists what the active tool declares in `Tool.controls` (the trigger and where it matters the A button, for example "Trigger: tap: select, hold: move and turn", "A: hold: lock to grid and angles"), then "A: hold: quick menu" when the tool says nothing about A, and what every tool has: "Stick: options of the tool", "B: tap: undo, hold: redo", "Grip: grab the world (both: turn, scale)". The card follows the active tool.
-- **Palette hand card:** "Palette hand": the stick turns the palette, the trigger swaps the palette carousel and the values carousel, the grips, A pins the palette, the D-pad undoes and redoes.
+- **Palette hand card:** "Palette hand": the stick turns the palette, the trigger swaps the palette carousel and the values carousel, the grips, A pins the palette, the D-pad undoes and redoes, the menu button shows or hides the card.
+- **Menu button:** the menu button of either controller (where it has one) toggles the cards at any time, whatever the carousel shows.
 - **Time:** the cards go after 40 s or when the face is pressed again (toasts say "Controls shown" and "Controls hidden"). A hand that is not tracked has no card.
 - **First run:** the first time the addon runs (the setting `onboarded` in `settings.json` is false) the cards show by themselves with a toast that names the face; when they go, by time or by the face, `onboarded` is saved and they stay away from then on.
 

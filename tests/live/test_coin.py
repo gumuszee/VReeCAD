@@ -400,6 +400,22 @@ class SimUiTest(unittest.TestCase):
         self.settle(3)
         self.assertEqual([len(c) for c in self.card_plates()], [0, 0])
 
+    def test_the_menu_button_of_either_controller_toggles_the_controls_cards_at_any_time(self):
+        self.s.select_tool("move")
+        self.assertEqual([len(c) for c in self.card_plates()], [0, 0])
+        for hand in (0, 1):
+            self.s.input.set_hand(hand, menu=True)
+            self.settle(3)
+            self.assertGreater(len(self.card_plates()[1]), 4, hand)                       # the cards show, with no carousel in view
+            self.s.input.set_hand(hand, menu=False)
+            self.settle(3)
+            self.assertGreater(len(self.card_plates()[1]), 4, hand)                       # letting go of the button changes nothing
+            self.s.input.set_hand(hand, menu=True)
+            self.settle(3)
+            self.s.input.set_hand(hand, menu=False)
+            self.settle(3)
+            self.assertEqual([len(c) for c in self.card_plates()], [0, 0], hand)          # the next press hides them
+
     def test_the_cards_show_once_on_the_first_run_and_the_setting_is_saved_when_they_go(self):
         import os
         import tempfile

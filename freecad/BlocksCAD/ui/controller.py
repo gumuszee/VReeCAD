@@ -543,6 +543,8 @@ class UiController:
         elif quick.activated_hub:
             self._activate(hub, out)
 
+        if any("menu" in hand.pressed for hand in frame.hands):       # the controls card can be called at any time, with the menu button of either controller
+            self._run("help:toggle", out)
         palette = frame.hands[self.palette_hand]
         for name, action in (("aux1", "doc:undo"), ("aux2", "doc:redo")):
             if name in palette.pressed:

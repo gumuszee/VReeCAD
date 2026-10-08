@@ -17,7 +17,7 @@
 
 One card hangs over each controller: the tool hand's lists the controls of the active tool (what the tool declares in
 `Tool.controls`, then the ones every tool has), the palette hand's the controls of the palette. `HelpState` is whether the cards
-show: the Controls face toggles them, they go by themselves after `SHOW_SECONDS`, and the first time the addon runs they show once
+show: the Tutorial face and the menu button toggle them, they go by themselves after `SHOW_SECONDS`, and the first time the addon runs they show once
 (the host asks for it, and the setting `onboarded` remembers that it has been seen)."""
 
 SHOW_SECONDS = 40.0
@@ -34,6 +34,7 @@ PALETTE_HAND = (
     ("Grip", "grab the world (both: turn, scale)"),
     ("A", "pin the palette"),
     ("D-pad", "left: undo, right: redo"),
+    ("Menu", "show or hide this card"),
 )
 
 
