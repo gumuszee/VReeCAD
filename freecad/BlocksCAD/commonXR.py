@@ -598,6 +598,8 @@ class XRwidget(QOpenGLWidget):
             "toast": self.ui.toast,
             "readout": self.ui.set_readout,
             "format_length": lambda mm: units.format_length(mm, self.ui.system),
+            "grid": lambda: self.ui.settings.grid,
+            "angle": lambda: self.ui.settings.angle,
         })
 
     def align_point(self, raw, point, exclude=()):

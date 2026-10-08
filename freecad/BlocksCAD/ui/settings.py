@@ -24,6 +24,7 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import List
 
+from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.ui.layout import current_face
 
 MODES = ("laser", "tip")
@@ -37,6 +38,14 @@ def _clamp(value, low, high):
     return min(max(value, low), high)
 
 
+def _nearest(value, choices, default):
+    """The member of `choices` nearest to `value`, `default` when it is not a number."""
+    try:
+        return min(choices, key=lambda c: abs(c - float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
 @dataclass
 class Settings:
     pointer_mode: str = "laser"
@@ -46,6 +55,8 @@ class Settings:
     onboarded: bool = False       # the controls card has been shown (and gone) once
     tool_hand: str = "right"      # the hand that holds the tool; the palette is on the other
     sub_mm: str = "mm"            # how lengths under a millimetre are written, one of `SUB_MM`
+    grid: float = snapping.DEFAULT_GRID      # the grid step of every tool in millimetres, one of `snapping.GRID_STEPS`
+    angle: float = snapping.DEFAULT_ANGLE    # the angle step of a locked turn in degrees, one of `snapping.ANGLE_STEPS`
 
     def __post_init__(self):
         if self.pointer_mode not in MODES:
@@ -58,6 +69,8 @@ class Settings:
             self.tool_hand = "right"
         if self.sub_mm not in SUB_MM:
             self.sub_mm = "mm"
+        self.grid = _nearest(self.grid, snapping.GRID_STEPS, snapping.DEFAULT_GRID)
+        self.angle = _nearest(self.angle, snapping.ANGLE_STEPS, snapping.DEFAULT_ANGLE)
 
     def toggle_mode(self):
         self.pointer_mode = "tip" if self.pointer_mode == "laser" else "laser"
@@ -68,7 +81,7 @@ class Settings:
     @classmethod
     def from_json(cls, text):
         data = json.loads(text)
-        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length", "recent", "onboarded", "tool_hand", "sub_mm") if k in data}
+        known = {k: data[k] for k in ("pointer_mode", "tip_angle", "tip_length", "recent", "onboarded", "tool_hand", "sub_mm", "grid", "angle") if k in data}
         return cls(**known)
 
 

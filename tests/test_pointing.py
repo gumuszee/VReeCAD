@@ -58,6 +58,16 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(cfg.Settings("tip", -500.0, -1.0).tip_angle, -90.0)
         self.assertEqual(cfg.Settings("tip", 500.0, 9.0).tip_length, 0.4)
 
+    def test_the_grid_and_the_angle_step_are_shared_settings_that_snap_to_the_steps(self):
+        s = cfg.Settings()
+        self.assertEqual((s.grid, s.angle), (10.0, 15.0))
+        s = cfg.Settings(grid=12.0, angle=40.0)
+        self.assertEqual((s.grid, s.angle), (10.0, 45.0))                         # the nearest step of each list
+        self.assertEqual(cfg.Settings(grid="nonsense", angle=None).grid, 10.0)
+        loaded = cfg.Settings.from_json(json.dumps({"grid": 50, "angle": 90}))
+        self.assertEqual((loaded.grid, loaded.angle), (50.0, 90.0))
+        self.assertEqual(cfg.Settings.from_json(loaded.to_json()), loaded)
+
     def test_json_roundtrip_and_bad_files(self):
         s = cfg.Settings("tip", 20.0, 0.15)
         self.assertEqual(cfg.Settings.from_json(s.to_json()), s)

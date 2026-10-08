@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Tuple
 
-from freecad.BlocksCAD.core import units
+from freecad.BlocksCAD.core import snapping, units
 
 TICK_AMPLITUDE = 0.2    # a pulse weaker than this is a tick of a tool (a grid step, a guide), the others mark a start or an end
 TICK_INTERVAL = 0.15    # s between two ticks of a hand
@@ -118,6 +118,23 @@ class Tool:
         self.ctx = ctx
         self.values = {option.name: option.default for option in self.options}
         self._guide_key = None
+
+    @property
+    def grid(self):
+        """The grid step in document millimetres: the one setting of the Settings panel that every tool shares (the service `grid`)."""
+        service = self.ctx.services.get("grid")
+        return float(service()) if service is not None else snapping.DEFAULT_GRID
+
+    @property
+    def angle(self):
+        """The angle step in degrees that a locked turn is rounded to: the one setting of the Settings panel (the service `angle`)."""
+        service = self.ctx.services.get("angle")
+        return float(service()) if service is not None else snapping.DEFAULT_ANGLE
+
+    def grid_text(self):
+        """The grid step as text, in the measurement system of the document."""
+        format_length = self.ctx.services.get("format_length")
+        return "Grid " + (format_length(self.grid) if format_length is not None else f"{self.grid:g} mm")
 
     def align(self, raw, point, exclude=()):
         """(point, guides) for a cursor at `raw` that the grid rounded to `point`: the point lined up with the points of the model (the

@@ -28,7 +28,8 @@ from typing import List, Optional
 
 COLS, ROWS = 4, 3
 SLOTS = COLS * ROWS
-RENAMED_FACES = {"tool.grab": "tool.move"}    # ids that saved layouts and settings may hold, and the faces they stand for
+RENAMED_FACES = {"tool.grab": "tool.move", "view.controls": "settings.tutorial"}    # ids that saved layouts and settings may hold, and the faces they stand for
+RENAMED_PAGES = {"Session": "Settings"}       # names of panels that saved layouts may hold, and the panels they stand for
 
 
 def current_face(face_id):
@@ -214,7 +215,7 @@ class Layout:
             slots = [current_face(s) if (isinstance(s, str) and (known_faces is None or current_face(s) in known_faces)) else None
                      for s in page.get("slots", [])]
             side, row = page.get("side"), page.get("row")
-            pages.append(Page(str(page["name"]), slots, side if isinstance(side, int) else None,
+            pages.append(Page(RENAMED_PAGES.get(str(page["name"]), str(page["name"])), slots, side if isinstance(side, int) else None,
                               row if isinstance(row, int) else None))
         if not pages:
             raise ValueError("layout without pages")

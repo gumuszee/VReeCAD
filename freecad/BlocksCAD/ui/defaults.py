@@ -21,30 +21,39 @@ A slider is a face of kind "slider" (action "slider:<setting>"): it takes a whol
 row and the other slots of that row stay empty. `SLIDERS` holds the range and step of each slider by face id."""
 
 from dataclasses import dataclass
+from typing import Tuple
 
+from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.ui.layout import Face, Layout, Page
 
 
 @dataclass(frozen=True)
 class Slider:
     attr: str        # the `settings.Settings` field the slider sets
-    low: float
-    high: float
-    step: float
+    low: float = 0.0
+    high: float = 1.0
+    step: float = 1.0
+    choices: Tuple[float, ...] = ()      # a slider over a list of values (the grid steps): they are spread evenly along the track
 
     def value(self, along):
-        """The value for a position along the track (0 to 1), rounded to the step."""
+        """The value for a position along the track (0 to 1), rounded to the step or the nearest of the choices."""
         along = min(max(along, 0.0), 1.0)
+        if self.choices:
+            return self.choices[round(along * (len(self.choices) - 1))]
         return round(round((self.low + along * (self.high - self.low)) / self.step) * self.step, 6)
 
     def fraction(self, value):
         """The position along the track (0 to 1) of a value."""
+        if self.choices:
+            return min(range(len(self.choices)), key=lambda i: abs(self.choices[i] - value)) / max(len(self.choices) - 1, 1)
         return min(max((value - self.low) / (self.high - self.low), 0.0), 1.0)
 
 
 SLIDERS = {
     "pointer.angle": Slider("tip_angle", -30.0, 60.0, 1.0),
     "pointer.length": Slider("tip_length", 0.0, 0.2, 0.005),
+    "settings.grid": Slider("grid", choices=snapping.GRID_STEPS),
+    "settings.angle": Slider("angle", choices=snapping.ANGLE_STEPS),
 }
 
 
@@ -56,7 +65,6 @@ def build_faces(tool_names, tool_label, tool_hint=None):
         Face("view.reload", "Reload scene", "scene:reload", tip="Rebuild the scene from the document"),
         Face("view.layout", "Reset layout", "layout:reset", tip="Restore the default panels and faces"),
         Face("view.hidden", "Show hidden", "layout:show_hidden", tip="Put the hidden faces back on the panels"),
-        Face("view.controls", "Controls", "help:toggle", tip="Show what the buttons of the controllers do"),
         Face("doc.undo", "Undo", "doc:undo", tip="Undo the last change"),
         Face("doc.redo", "Redo", "doc:redo", tip="Redo the last undone change"),
         Face("doc.delete", "Delete", "doc:delete", tip="Delete the selected objects"),
@@ -85,8 +93,11 @@ def build_faces(tool_names, tool_label, tool_hint=None):
         Face("pointer.mode", "Pointer", "pointer:mode", tip="Switch between laser and tip"),
         Face("pointer.hands", "Tool hand", "hands:swap", tip="Hold the tools in the other hand and the palette in this one"),
         Face("pointer.submm", "Small lengths", "units:submm", tip="Write lengths under 1 mm as decimals of a millimetre or as micrometres"),
+        Face("settings.tutorial", "Tutorial", "help:toggle", tip="Show what the buttons of the controllers do"),
         Face("pointer.angle", "Angle", "slider:tip_angle", "slider", "Hold the trigger and drag"),
         Face("pointer.length", "Length", "slider:tip_length", "slider", "Hold the trigger and drag"),
+        Face("settings.grid", "Grid", "slider:grid", "slider", "The grid step of every tool: hold the trigger and drag"),
+        Face("settings.angle", "Angle step", "slider:angle", "slider", "The angle step of a locked turn: hold the trigger and drag"),
     ]
     return {face.id: face for face in faces}
 
@@ -100,8 +111,26 @@ def default_layout(tool_names):
                         "doc.pattern_x", "doc.pattern_y", "doc.pattern_z"]),
         Page("Shape", ["doc.extrude", "doc.fillet", "doc.chamfer", "doc.attach", "doc.detach",
                        "doc.joint_fixed", "doc.joint_revolute", "doc.joint_slider", "doc.joint_ball", "doc.unjoint"]),
-        Page("View", ["view.reset", "view.reload", "view.layout", "view.hidden", "view.controls"]),
-        Page("Session", ["pointer.mode", "app.close", "pointer.hands", "pointer.submm",
+        Page("View", ["view.reset", "view.reload", "view.layout", "view.hidden"]),
+        Page("Pointer", ["pointer.mode", None, None, None,
                          "pointer.angle", None, None, None,
                          "pointer.length"]),
+        Page("Settings", ["app.close", "pointer.hands", "pointer.submm", "settings.tutorial",
+                          "settings.grid", None, None, None,
+                          "settings.angle"]),
     ])
+
+
+def migrate(layout, default):
+    """Bring a saved layout up to the panels of `default`: the panel that held the pointer faces gets the pointer panel's own place when
+    the layout has none (the faces move there), and the faces that the layout lacks come back through `Layout.add_missing`."""
+    pointer = next((p for p in default.pages if p.name == "Pointer"), None)
+    if pointer is None or any(p.name == "Pointer" for p in layout.pages):
+        return False
+    moved = [f for f in pointer.slots if f]
+    kept = Page("Pointer", [None if f in layout.hidden else f for f in pointer.slots])
+    for page in layout.pages:
+        page.slots = [None if f in moved else f for f in page.slots]
+    layout.pages.append(kept)
+    layout.normalize()
+    return True

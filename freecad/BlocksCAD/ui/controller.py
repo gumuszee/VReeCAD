@@ -82,8 +82,10 @@ class UiController:
         self.settings_path = settings_path
         self.values_layout_path = values_layout_path
         self.wide = {fid for fid, face in self.faces.items() if face.kind == "slider"}
-        if use_user_layout and self.layout is not default and self.layout.add_missing(default, self.wide):
-            self._save_layout()
+        if use_user_layout and self.layout is not default:
+            migrated = defaults.migrate(self.layout, default)
+            if self.layout.add_missing(default, self.wide) or migrated:
+                self._save_layout()
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
         self.navigator = Navigator(modifier_hand=tool_hand)
         self._grip_claimed = [False, False]     # a grip pressed while the tool is in a gesture: it cancels it and does not hold the world
@@ -309,6 +311,8 @@ class UiController:
             "pointer.angle": f"Angle {s.tip_angle:.0f}\u00b0",
             "pointer.length": "Length " + units.format_length(s.tip_length * 1000.0, self.system),
             "pointer.submm": "Small: " + ("0.1 mm" if s.sub_mm == "mm" else "100 µm"),
+            "settings.grid": "Grid " + units.format_length(s.grid, self.system),
+            "settings.angle": f"Angle step {s.angle:.0f}°",
         }
 
     def slider_states(self):
@@ -376,7 +380,7 @@ class UiController:
         if not self.settings.onboarded:
             self._first_help = True
             self.help.show()
-            self.toast("Controls help: the Controls face on the View panel shows it again")
+            self.toast("Controls help: the Tutorial face on the Settings panel shows it again")
 
     def _help_ended(self):
         if self._first_help:

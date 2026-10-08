@@ -27,12 +27,9 @@ and `pushpull(doc, name, sub, distance)` that replace `cad.pushpull.face_info`, 
 from freecad.BlocksCAD.cad import pushpull
 from freecad.BlocksCAD.core import guides
 from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.core import snapping
-from freecad.BlocksCAD.tools.base import ToolOption
 from freecad.BlocksCAD.tools.registry import register
 from freecad.BlocksCAD.tools.touch import TouchTool
 
-GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
 
 
 @register
@@ -40,9 +37,8 @@ class PushPullTool(TouchTool):
     name = "pushpull"
     label = "Push/Pull"
     controls = (("Trigger", "press a face, move along it"),)
-    hint = "Press on a flat face and move the hand along it to push or pull; the stick changes the grid"
+    hint = "Press on a flat face and move the hand along it to push or pull"
     pick_kind = "face"
-    options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),)
 
     def __init__(self, ctx):
         super().__init__(ctx)
@@ -52,14 +48,6 @@ class PushPullTool(TouchTool):
     @property
     def busy(self):
         return self._drag is not None
-
-    @property
-    def grid(self):
-        return float(self.values["grid"].split()[0])
-
-    def stick_click(self):
-        self.values["grid"] = self.options[0].default
-        return "Grid reset"
 
     def _ghost(self):
         return self._service("ghost")

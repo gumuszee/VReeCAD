@@ -33,7 +33,6 @@ from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.tools.base import DiscSlot, Tool, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 
-GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
 SHAPE_PAGES = (("Box", "Cylinder", "Cone", "Sphere"), ("Torus", "Wedge", "Prism", primitives.BLOCK))   # four shapes on the disc at a time
 
 
@@ -43,8 +42,7 @@ class PrimitiveTool(Tool):
     label = "Create"
     hint = "Drag a box in space to make a shape, tap to place one"
     controls = (("Trigger", "drag out a shape, tap: place one"),)
-    options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
-               ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES + (primitives.BLOCK,)))
+    options = (ToolOption("shape", "Shape", "choice", default="Box", choices=primitives.SHAPES + (primitives.BLOCK,)),)
 
     def __init__(self, ctx):
         super().__init__(ctx)
@@ -58,12 +56,12 @@ class PrimitiveTool(Tool):
         return self._start is not None
 
     def disc_slots(self):
-        """The option disc, clockwise from the top: grid up, the four shapes of the page, grid down."""
+        """The option disc, clockwise from the top: nothing, the four shapes of the page (the first at the lower left), nothing."""
         first, second, third, fourth = (DiscSlot(name, "shape", name) if name else DiscSlot("") for name in SHAPE_PAGES[self._page])
-        return (DiscSlot("Grid +", "grid", 1, "step"), second, third, DiscSlot("Grid -", "grid", -1, "step"), fourth, first)
+        return (DiscSlot(""), second, third, DiscSlot(""), fourth, first)
 
     def disc_hub(self):
-        return [self.values["grid"]]
+        return [self.grid_text(), self.values["shape"]]
 
     def stick_click(self):
         """Turn to the other page of shapes."""
@@ -73,10 +71,6 @@ class PrimitiveTool(Tool):
     # services
     def _service(self, name, default=None):
         return self.ctx.services.get(name, default)
-
-    @property
-    def grid(self):
-        return float(self.values["grid"].split()[0])
 
     def _format(self, mm):
         return self._service("format_length", lambda v: f"{v:g} mm")(mm)

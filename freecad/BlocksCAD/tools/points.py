@@ -35,7 +35,6 @@ from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 from freecad.BlocksCAD.tools.touch import TouchTool
 
-GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
 MODES = ("Move", "Split")
 KINDS = {"Move": "vertex", "Split": "edge"}
 FACES = ("Free", "Flat")
@@ -47,8 +46,7 @@ class PointsTool(TouchTool):
     label = "Points"
     hint = "Press on a point of a block and drag it; the stick switches to splitting an edge"
     controls = (("Trigger", "drag a point (or split an edge)"), ("A", "hold: off the grid"))
-    options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
-               ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),
+    options = (ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),
                ToolOption("faces", "Faces", "choice", default=FACES[0], choices=FACES))
 
     def __init__(self, ctx):
@@ -61,25 +59,21 @@ class PointsTool(TouchTool):
         return self._drag is not None
 
     @property
-    def grid(self):
-        return float(self.values["grid"].split()[0])
-
-    @property
     def pick_kind(self):
         return KINDS[self.values["mode"]]
 
     def disc_slots(self):
-        """The option disc, clockwise from the top: grid up, the two modes, grid down, free faces, flat faces."""
-        return (DiscSlot("Grid +", "grid", 1, "step"), DiscSlot("Move point", "mode", MODES[0]), DiscSlot("Split edge", "mode", MODES[1]),
-                DiscSlot("Grid -", "grid", -1, "step"), DiscSlot("Free faces", "faces", FACES[0]), DiscSlot("Flat faces", "faces", FACES[1]))
+        """The option disc, clockwise from the top: nothing, the two modes, nothing, free faces, flat faces."""
+        return (DiscSlot(""), DiscSlot("Move point", "mode", MODES[0]), DiscSlot("Split edge", "mode", MODES[1]),
+                DiscSlot(""), DiscSlot("Free faces", "faces", FACES[0]), DiscSlot("Flat faces", "faces", FACES[1]))
 
     def disc_hub(self):
-        return [self.values["grid"], f"{self.values['mode']}, {self.values['faces'].lower()}"]
+        return [self.grid_text(), f"{self.values['mode']}, {self.values['faces'].lower()}"]
 
     def stick_click(self):
         for option in self.options:
             self.values[option.name] = option.default
-        return "Grid, mode and faces reset"
+        return "Mode and faces reset"
 
     def _blocks(self):
         service = self._service("blocks")

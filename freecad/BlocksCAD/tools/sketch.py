@@ -42,7 +42,6 @@ from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 from freecad.BlocksCAD.tools.touch import TouchTool
 
-GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
 MODES = ("Line", "Rectangle", "Circle", "Arc", "Edit")
 PLANE_HALF_CELLS = 5            # the square that shows the plane of a new sketch reaches this many grid steps from the cursor
 
@@ -60,8 +59,7 @@ class SketchTool(TouchTool):
     label = "Sketch"
     controls = (("Trigger", "drag a shape (an arc: press again)"), ("A", "hold: off the grid"))
     hint = "Drag a line, rectangle or circle on a plane or a face; Edit drags a point or dimensions a line"
-    options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
-               ToolOption("mode", "Mode", "choice", default=MODES[1], choices=MODES),
+    options = (ToolOption("mode", "Mode", "choice", default=MODES[1], choices=MODES),
                ToolOption("plane", "Plane", "choice", default=sketching.PLANES[0], choices=sketching.PLANES))
 
     def __init__(self, ctx):
@@ -77,10 +75,6 @@ class SketchTool(TouchTool):
         return self._gesture is not None
 
     @property
-    def grid(self):
-        return float(self.values["grid"].split()[0])
-
-    @property
     def plane(self):
         return self.values["plane"]
 
@@ -89,17 +83,17 @@ class SketchTool(TouchTool):
         return self.values["mode"] == "Edit"
 
     def disc_slots(self):
-        """The option disc, clockwise from the top: grid up, then on the first page rectangle, circle, edit and line, on the second page
-        arc and the planes XY, XZ and YZ, and grid down."""
-        grid_up, grid_down = DiscSlot("Grid +", "grid", 1, "step"), DiscSlot("Grid -", "grid", -1, "step")
+        """The option disc, clockwise from the top: nothing, then on the first page rectangle, circle, edit and line, on the second page
+        arc and the planes XY, XZ and YZ, and nothing at the bottom."""
+        none = DiscSlot("")
         if self._page == 0:
-            return (grid_up, DiscSlot("Rectangle", "mode", "Rectangle"), DiscSlot("Circle", "mode", "Circle"), grid_down,
+            return (none, DiscSlot("Rectangle", "mode", "Rectangle"), DiscSlot("Circle", "mode", "Circle"), none,
                     DiscSlot("Edit", "mode", "Edit"), DiscSlot("Line", "mode", "Line"))
-        return (grid_up, DiscSlot("Arc", "mode", "Arc"), DiscSlot("XY plane", "plane", "XY"), grid_down,
+        return (none, DiscSlot("Arc", "mode", "Arc"), DiscSlot("XY plane", "plane", "XY"), none,
                 DiscSlot("XZ plane", "plane", "XZ"), DiscSlot("YZ plane", "plane", "YZ"))
 
     def disc_hub(self):
-        return [self.values["grid"], self.values["mode"] if self.editing else f"{self.values['mode']} on {self.plane}"]
+        return [self.grid_text(), self.values["mode"] if self.editing else f"{self.values['mode']} on {self.plane}"]
 
     def stick_click(self):
         """Turn to the other page of the option disc."""

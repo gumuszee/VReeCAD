@@ -173,9 +173,8 @@ class PointsToolTest(unittest.TestCase):
 
     def test_the_tool_starts_in_the_move_mode_whatever_the_mode_was(self):
         self.tool.values["mode"] = "Split"
-        self.tool.values["grid"] = "20 mm"
         self.tool.activate()
-        self.assertEqual((self.tool.values["mode"], self.tool.values["grid"]), ("Move", "20 mm"))
+        self.assertEqual(self.tool.values["mode"], "Move")
 
     def test_a_press_on_nothing_says_how_to_make_a_block_only_when_the_document_has_none(self):
         self.cursor = [900.0, 900.0, 900.0]
@@ -248,13 +247,13 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(self.block.vertices, bg.box((0, 0, 0), (100, 100, 100))[0])
         self.assertFalse(self.tool.busy)
 
-    def test_the_points_of_the_blocks_are_marked_and_the_option_disc_has_the_grid_and_the_modes(self):
+    def test_the_points_of_the_blocks_are_marked_and_the_option_disc_has_the_modes_and_the_faces(self):
         self.frames()
         self.assertGreater(self.highlights.selected.shown, 0)
         labels = [slot.label for slot in self.tool.disc_slots()]
-        self.assertEqual(labels, ["Grid +", "Move point", "Split edge", "Grid -", "Free faces", "Flat faces"])
+        self.assertEqual(labels, ["", "Move point", "Split edge", "", "Free faces", "Flat faces"])
         self.tool.values["faces"] = "Flat"
-        self.assertEqual(self.tool.stick_click(), "Grid, mode and faces reset")
+        self.assertEqual(self.tool.stick_click(), "Mode and faces reset")
         self.assertEqual(self.tool.values["faces"], "Free")
         self.assertEqual((self.tool.pick_kind, self.tool.grid), ("vertex", 10.0))
         self.tool.values["mode"] = "Split"

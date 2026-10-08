@@ -211,7 +211,7 @@ try:
     _s.select_tool("primitive")
     _tool = _s.tool_manager.active
     _tool.ctx.services["document"] = lambda: None        # the render must not make anything in the open document
-    _tool.values["grid"] = "20 mm"
+    _s.ui.settings.grid = 20.0
     _to_stage = lambda p: _sg.to_stage(_s.navigator.world, p)
     _centre = _to_stage((260.0, 0.0, 40.0))          # beside the 300 mm test cube
     _s.input.set_head(position=_mu.add(_centre, (0.1, 0.25, 0.4)), look_at_point=_centre)
@@ -247,7 +247,7 @@ try:
         _s.frame(0.02)
     _s.input.set_head(position=_mu.add(_centre, (0.1, 0.25, 0.4)), look_at_point=_to_stage((230.0, 0.0, 120.0)))
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_options_create.png"))
-    print("create disc:", _s.tool_manager.active.values["shape"], _s.tool_manager.active.values["grid"])
+    print("create disc:", _s.tool_manager.active.values["shape"], _s.tool_manager.active.grid)
     _s.input.set_hand(1, stick=(0.0, 0.0))
     _s.input.set_head(position=_mu.add(_centre, (0.1, 0.25, 0.4)), look_at_point=_centre)
     for _ in range(3):

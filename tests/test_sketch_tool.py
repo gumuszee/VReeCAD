@@ -380,7 +380,8 @@ class SketchToolTest(unittest.TestCase):
 
     def test_a_line_that_is_nearly_parallel_to_a_slanted_line_is_made_exactly_so_with_a_guide(self):
         self.with_anchors([], 5.0)
-        self.tool.values["mode"], self.tool.values["grid"] = "Line", "1 mm"
+        self.tool.values["mode"] = "Line"
+        self.tool.ctx.services["grid"] = lambda: 1.0
         self.drag((0.0, 0.0, 0.0), (40.0, 20.0, 0.0))                              # a slanted line to be parallel to
         self.drag((10.0, 50.0, 0.0), (49.0, 71.0, 0.0), release=False)
         start = self.tool._gesture["start"]
@@ -396,7 +397,8 @@ class SketchToolTest(unittest.TestCase):
 
     def test_a_line_that_is_nearly_as_long_as_another_gets_its_length_and_a_guide(self):
         self.with_anchors([], 5.0)
-        self.tool.values["mode"], self.tool.values["grid"] = "Line", "1 mm"
+        self.tool.values["mode"] = "Line"
+        self.tool.ctx.services["grid"] = lambda: 1.0
         self.drag((0.0, 0.0, 0.0), (40.0, 0.0, 0.0))
         self.drag((0.0, 20.0, 0.0), (0.0, 62.0, 0.0), release=False)                 # 42 mm against 40 mm
         self.assertEqual(self.tool._gesture["now"], (0.0, 60.0))
@@ -405,7 +407,8 @@ class SketchToolTest(unittest.TestCase):
 
     def test_a_line_across_a_slanted_line_is_perpendicular_and_the_a_button_leaves_it_alone(self):
         self.with_anchors([], 5.0)
-        self.tool.values["mode"], self.tool.values["grid"] = "Line", "1 mm"
+        self.tool.values["mode"] = "Line"
+        self.tool.ctx.services["grid"] = lambda: 1.0
         self.drag((0.0, 0.0, 0.0), (40.0, 20.0, 0.0))
         self.drag((10.0, 50.0, 0.0), (29.0, 11.0, 0.0), release=False)               # across (40, 20): along (-20, 40)
         start, end = self.tool._gesture["start"], self.tool._gesture["now"]
@@ -451,11 +454,11 @@ class SketchToolTest(unittest.TestCase):
         self.tool.update(self.sim.frame(0.02))
         self.assertEqual(self.tool._gesture["now"], (50.0, 0.0))                    # its own old place is no anchor: only the grid and the other end
 
-    def test_the_disc_has_the_grid_and_the_four_modes_and_the_square_shows_the_plane(self):
+    def test_the_disc_has_the_four_modes_and_the_square_shows_the_plane(self):
         labels = [slot.label for slot in self.tool.disc_slots()]
-        self.assertEqual(labels, ["Grid +", "Rectangle", "Circle", "Grid -", "Edit", "Line"])
+        self.assertEqual(labels, ["", "Rectangle", "Circle", "", "Edit", "Line"])
         self.assertEqual(self.tool.stick_click(), "Arc and planes")
-        self.assertEqual([slot.label for slot in self.tool.disc_slots()], ["Grid +", "Arc", "XY plane", "Grid -", "XZ plane", "YZ plane"])
+        self.assertEqual([slot.label for slot in self.tool.disc_slots()], ["", "Arc", "XY plane", "", "XZ plane", "YZ plane"])
         self.assertEqual(self.tool.stick_click(), "Line, Rectangle, Circle and Edit")
         square = plane_square("XZ", (0.0, 0.0, 0.0), 10.0)
         self.assertEqual(len(square), 5)

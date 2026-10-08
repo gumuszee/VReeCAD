@@ -35,14 +35,11 @@ from freecad.BlocksCAD.cad import edit
 from freecad.BlocksCAD.core import grab as grabbing
 from freecad.BlocksCAD.core import guides
 from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.core import snapping
 from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 from freecad.BlocksCAD.tools.touch import TouchTool
 
-GRID_LABELS = tuple(f"{step:g} mm" for step in snapping.GRID_STEPS)
 MODES = ("Move and rotate", "Move")
-ANGLE_LABELS = ("5 deg", "15 deg", "30 deg", "45 deg", "90 deg")
 
 
 @register
@@ -51,9 +48,7 @@ class MoveTool(TouchTool):
     label = "Move"
     hint = "Touch to highlight, tap to select, hold the trigger to move; the other trigger scales"
     controls = (("Trigger", "tap: select, hold: move and turn"), ("Other trigger", "scale"), ("A", "hold: lock to grid and angles"))
-    options = (ToolOption("grid", "Grid", "choice", default="10 mm", choices=GRID_LABELS, wrap=False),
-               ToolOption("angle", "Angle", "choice", default="15 deg", choices=ANGLE_LABELS, wrap=False),
-               ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES))
+    options = (ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),)
 
     def __init__(self, ctx):
         super().__init__(ctx)
@@ -69,24 +64,11 @@ class MoveTool(TouchTool):
         return self._locked if self._grab is not None else None
 
     def disc_slots(self):
-        """The option disc, clockwise from the top: grid up, the two move modes, grid down, angle down and up."""
-        return (DiscSlot("Grid +", "grid", 1, "step"), DiscSlot("Move, turn", "mode", MODES[0]), DiscSlot("Move only", "mode", MODES[1]),
-                DiscSlot("Grid -", "grid", -1, "step"), DiscSlot("Angle -", "angle", -1, "step"), DiscSlot("Angle +", "angle", 1, "step"))
+        """The option disc, clockwise from the top: nothing, the two move modes, nothing."""
+        return (DiscSlot(""), DiscSlot("Move, turn", "mode", MODES[0]), DiscSlot("Move only", "mode", MODES[1]), DiscSlot(""), DiscSlot(""), DiscSlot(""))
 
     def disc_hub(self):
-        return [self.values["grid"], self.values["angle"]]
-
-    def stick_click(self):
-        self.values["grid"], self.values["angle"] = (o.default for o in self.options[:2])
-        return "Grid and angle reset"
-
-    @property
-    def grid(self):
-        return float(self.values["grid"].split()[0])
-
-    @property
-    def angle(self):
-        return float(self.values["angle"].split()[0])
+        return [self.values["mode"], f"{self.grid_text()}, angle {self.angle:g} deg"]
 
     # lifecycle
     def deactivate(self):

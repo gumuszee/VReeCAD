@@ -218,12 +218,12 @@ class ToolTest(unittest.TestCase):
         for _ in range(n):
             self.tool.update(self.sim.frame(0.02))
 
-    def test_it_declares_a_grid_and_a_shape_option(self):
-        self.assertEqual([o.name for o in self.tool.options], ["grid", "shape"])
-        self.assertEqual((self.tool.grid, self.tool.values["shape"]), (10.0, "Box"))
-        self.tool.values["grid"] = "2 mm"
+    def test_it_declares_a_shape_option_and_takes_the_grid_from_the_settings(self):
+        self.assertEqual([o.name for o in self.tool.options], ["shape"])
+        self.assertEqual((self.tool.grid, self.tool.values["shape"]), (10.0, "Box"))        # without a host: the default grid
+        self.tool.ctx.services["grid"] = lambda: 2.0
         self.assertEqual(self.tool.grid, 2.0)
-        self.assertEqual(self.tool.options[0].choices[-1], "100 mm")
+        self.assertEqual(self.tool.grid_text(), "Grid 2 mm")
 
     def test_a_cross_marks_the_grid_point_under_the_cursor(self):
         self.hand_at((13.0, 28.0, 2.0))
@@ -303,14 +303,13 @@ class ToolTest(unittest.TestCase):
         self.step()
         self.assertEqual(self.created, [(self.document, "Sphere", (30.0, 30.0, 30.0), (40.0, 40.0, 40.0))])
 
-    def test_the_disc_has_the_grid_on_top_and_bottom_and_four_shapes_that_the_click_pages(self):
+    def test_the_disc_has_four_shapes_that_the_click_pages_and_nothing_on_top_and_bottom(self):
         slots = self.tool.disc_slots()
         self.assertEqual(len(slots), 6)
-        self.assertEqual([(s.label, s.option, s.value, s.kind) for s in (slots[0], slots[3])],
-                         [("Grid +", "grid", 1, "step"), ("Grid -", "grid", -1, "step")])
+        self.assertEqual([(s.label, s.option) for s in (slots[0], slots[3])], [("", ""), ("", "")])
         self.assertEqual([slots[i].label for i in (5, 1, 2, 4)], ["Box", "Cylinder", "Cone", "Sphere"])      # clockwise from the upper left
         self.assertTrue(all(slots[i].option == "shape" for i in (5, 1, 2, 4)))
-        self.assertEqual(self.tool.disc_hub(), ["10 mm"])
+        self.assertEqual(self.tool.disc_hub(), ["Grid 10 mm", "Box"])
         self.assertEqual(self.tool.stick_click(), "Shapes: Torus, Wedge, Prism, Block")
         slots = self.tool.disc_slots()
         self.assertEqual([slots[i].label for i in (5, 1, 2, 4)], ["Torus", "Wedge", "Prism", "Block"])
@@ -321,8 +320,7 @@ class ToolTest(unittest.TestCase):
             self.tool.stick_click()
         self.assertEqual(shown, set(prim.SHAPES) | {prim.BLOCK})                               # every shape is on a page
 
-    def test_the_grid_stops_at_its_ends_and_the_radial_stays_closed_during_a_drag(self):
-        self.assertFalse(self.tool.options[0].wrap)
+    def test_the_radial_stays_closed_during_a_drag(self):
         self.assertFalse(self.tool.busy)
         self.hand_at((0.0, 0.0, 0.0), trigger=1.0)
         self.step()
@@ -331,8 +329,8 @@ class ToolTest(unittest.TestCase):
         self.step()
         self.assertFalse(self.tool.busy)
 
-    def test_the_grid_option_changes_the_snap(self):
-        self.tool.values["grid"] = "5 mm"
+    def test_the_grid_of_the_settings_changes_the_snap(self):
+        self.tool.ctx.services["grid"] = lambda: 5.0
         self.hand_at((0.0, 0.0, 0.0), trigger=1.0)
         self.step()
         self.hand_at((12.0, 3.0, 0.0), trigger=1.0)

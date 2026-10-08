@@ -22,6 +22,8 @@ starting point."""
 import math
 
 GRID_STEPS = (1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0)   # millimetres
+ANGLE_STEPS = (5.0, 15.0, 30.0, 45.0, 90.0)              # degrees
+DEFAULT_GRID, DEFAULT_ANGLE = 10.0, 15.0
 TAP_CELLS = 4                                            # a tap makes a box of this many grid steps on every side
 
 

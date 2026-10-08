@@ -206,8 +206,16 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(labels["pointer.angle"], "Angle 15°")
         self.assertEqual(labels["pointer.length"], "Length 40 mm")
         self.assertEqual(self.s.ui.slider_states()["pointer.angle"][0], 0.5)
-        session = [p.name for p in self.s.ui.layout.pages].index("Session")
-        self.assertEqual(self.s.ui.slider_rows(), {session: {1: "pointer.angle", 2: "pointer.length"}})
+        names = [p.name for p in self.s.ui.layout.pages]
+        self.assertEqual(self.s.ui.slider_rows(), {names.index("Pointer"): {1: "pointer.angle", 2: "pointer.length"},
+                                                   names.index("Settings"): {1: "settings.grid", 2: "settings.angle"}})
+        self.assertEqual((labels["settings.grid"], labels["settings.angle"]), ("Grid 10 mm", "Angle step 15\u00b0"))
+        self.assertEqual((self.s.ui.slider_states()["settings.grid"][0], self.s.ui.slider_states()["settings.angle"][0]), (0.5, 0.25))
+        self.s.ui.settings.grid = 50.0
+        self.assertEqual(self.s.ui.labels()["settings.grid"], "Grid 50 mm")
+        self.s.select_tool("move")
+        self.assertEqual(self.s.tool_manager.active.grid, 50.0)                            # every tool takes the grid from the settings
+        self.s.ui.settings.grid = 10.0
         self.s.ui.settings.tip_angle = 30.0
         self.assertEqual(self.s.ui.labels()["pointer.angle"], "Angle 30°")
         self.s.ui.set_unit_system("Imperial decimal (in, lb)")
@@ -377,7 +385,7 @@ class SimUiTest(unittest.TestCase):
         self.show_carousel()
         ui = self.s
         ui.select_tool("move")
-        face = ui.ui.faces["view.controls"]
+        face = ui.ui.faces["settings.tutorial"]
         self.assertEqual(face.action, "help:toggle")
         self.assertEqual([len(c) for c in self.card_plates()], [0, 0])
         ui.ui._run(face.action, types.SimpleNamespace(haptics=[]))
@@ -672,6 +680,7 @@ class SimUiTest(unittest.TestCase):
     def test_a_moving_controller_writes_only_the_transform_of_the_carousel(self):
         from pivy import coin
         self.s.input.set_head(position=(0.0, 1.6, 0.0), look_at_point=(-0.25, 1.2, -0.35))
+        self.s.input.set_hand(0, position=(-0.25, 1.2, -0.35), point_at=(0.0, 1.2, -1.0))      # a panel that turns away from the head is hidden: start in place
         for _ in range(30):
             self.s.frame(0.02)
         changes = []
@@ -870,7 +879,7 @@ class PrimitiveLiveTest(unittest.TestCase):
             s.ui.settings.tip_angle = 0.0
             s.select_tool("primitive")
             s.tool_manager.active.values["shape"] = "Torus"
-            s.tool_manager.active.values["grid"] = "1 mm"           # every step of the hand is a new box: the worst case
+            s.ui.settings.grid = 1.0                                 # every step of the hand is a new box: the worst case
             s.input.set_hand(1, position=stage.to_stage(s.navigator.world, (0.0, 0.0, 0.0)), trigger=1.0)
             s.frame(0.02)
             durations = []
@@ -892,15 +901,13 @@ class PrimitiveLiveTest(unittest.TestCase):
             s.select_tool("primitive")
             tool = s.tool_manager.active
             push = lambda degrees: s.input.set_hand(1, stick=(math.sin(math.radians(degrees)), math.cos(math.radians(degrees))))
-            push(0)                                                          # up: the grid gets larger
+            push(0)                                                          # up: no section, nothing happens
             s.frame(0.02)
-            s.input.set_hand(1, stick=(0.0, 0.0))
-            s.frame(0.02)
-            self.assertEqual(tool.values["grid"], "20 mm")
-            self.assertEqual(s.ui.options_view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
+            self.assertEqual(tool.values["shape"], "Box")
             push(60)                                                         # upper right: the second shape
             s.frame(0.02)
             self.assertEqual(tool.values["shape"], "Cylinder")
+            self.assertEqual(s.ui.options_view.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
             self.assertTrue(s.ui_update.owns_stick)
             s.input.set_hand(1, stick=(0.0, 0.0))
             for _ in range(int(2.0 / 0.02)):
@@ -2434,8 +2441,7 @@ class MoveLiveTest(unittest.TestCase):
         tool = s.tool_manager.active
         push = lambda degrees: s.input.set_hand(1, stick=(math.sin(math.radians(degrees)), math.cos(math.radians(degrees))))
         release = lambda: (s.input.set_hand(1, stick=(0.0, 0.0)), s.frame(0.02), s.frame(0.02))
-        for degrees, option, expected in ((0, "grid", "20 mm"), (180, "grid", "10 mm"), (300, "angle", "30 deg"), (240, "angle", "15 deg"),
-                                          (120, "mode", "Move"), (60, "mode", "Move and rotate")):
+        for degrees, option, expected in ((120, "mode", "Move"), (60, "mode", "Move and rotate")):
             push(degrees)
             s.frame(0.02)
             self.assertEqual(tool.values[option], expected, f"{degrees}")
@@ -2675,15 +2681,16 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(self.box.Width.Value, 120.0)
 
     def test_without_a_focused_slider_the_stick_belongs_to_the_tool(self):
+        import math
         from pivy import coin
         s = self.session()
         tool = s.tool_manager.active
         module = self.select()
         self.tip_to(self.face_point("val.slider", 0.5, 0.0, front=0.4), trigger=0.0)   # far from the panels
         self.assertFalse(module.engaged)
-        self.push(0.0, 1.0)
+        self.push(math.sin(math.radians(120)), math.cos(math.radians(120)))
         self.assertEqual(self.box.Width.Value, 100.0)
-        self.assertEqual(tool.values["grid"], "20 mm")                                 # the option disc of the Move tool took the stick
+        self.assertEqual(tool.values["mode"], "Move")                                  # the option disc of the Move tool took the stick
         self.assertFalse(s.ui_update.owns_stick and module.engaged)
 
     def test_a_slider_changes_its_value_only_when_its_bar_is_pressed_and_dragged(self):
@@ -2804,14 +2811,15 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(torus.isValid())
         self.assertEqual(torus.Radius2.Value, radius2)
 
-    def test_the_click_of_the_stick_puts_the_grid_and_the_angle_back(self):
+    def test_the_click_of_the_stick_changes_nothing_in_the_move_tool_and_the_grid_and_the_angle_are_the_settings(self):
         s = self.session()
         tool = s.tool_manager.active
         self.select("")
-        tool.values["grid"], tool.values["angle"] = "50 mm", "45 deg"
+        s.ui.settings.grid, s.ui.settings.angle = 50.0, 45.0
         s.input.set_hand(1, stick_click=True)
         s.frame(0.02)
-        self.assertEqual((tool.values["grid"], tool.values["angle"]), ("10 mm", "15 deg"))
+        self.assertEqual((tool.grid, tool.angle), (50.0, 45.0))
+        self.assertEqual(tool.disc_hub(), ["Move and rotate", "Grid 50 mm, angle 45 deg"])
 
     def test_a_cone_may_end_in_a_point(self):
         from freecad.BlocksCAD.cad import values as object_values
