@@ -1954,6 +1954,42 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.undo()                                                                       # the rectangle and its sketch
         self.assertEqual([o for o in self.doc.Objects if sketching.is_sketch(o)], [])
 
+    def test_the_radius_of_a_circle_is_dragged_with_the_sketch_tool_in_one_undo_step_and_is_a_value(self):
+        from freecad.BlocksCAD.cad import sketching
+        s = self.session()
+        s.select_tool("sketch")
+        s.tool_manager.active.values["mode"] = "Circle"
+        self.hand(1, (300.0, 0.0, 0.0))
+        self.hand(1, (300.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (320.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (320.0, 0.0, 0.0), trigger=0.0)
+        (sketch,) = [o for o in self.doc.Objects if sketching.is_sketch(o)]
+        self.assertAlmostEqual(sketch.Geometry[0].Radius, 20.0)
+        s.tool_manager.active.values["mode"] = "Edit"
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (320.0, 0.0, 0.0))                                                       # press on the circle and drag outwards
+        for _ in range(12):
+            s.frame(0.02)
+        self.hand(1, (320.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (350.0, 0.0, 0.0), trigger=1.0)
+        self.assertEqual(s.ui.gesture_text, "Radius: 50 mm")
+        self.hand(1, (340.0, 0.0, 0.0), trigger=1.0)
+        self.assertAlmostEqual(sketch.Geometry[0].Radius, 40.0)
+        self.hand(1, (340.0, 0.0, 0.0), trigger=0.0)
+        self.assertEqual([d[1:] for d in sketching.dimensions(sketch)], [("radius", "Radius", 40.0)])
+        self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Radius 40 mm")
+        self.hand(1, (340.0, 0.0, 0.0), trigger=1.0)                                          # press again: the dimension is changed, not made
+        self.hand(1, (310.0, 0.0, 0.0), trigger=1.0)
+        self.hand(1, (310.0, 0.0, 0.0), trigger=0.0)
+        self.assertAlmostEqual(sketch.Geometry[0].Radius, 10.0)
+        self.assertEqual(len(sketching.dimensions(sketch)), 1)
+        self.doc.undo()                                                                       # the second drag
+        self.assertAlmostEqual(sketch.Geometry[0].Radius, 40.0)
+        self.doc.undo()                                                                       # the first drag with its dimension
+        self.assertEqual(sketching.dimensions(sketch), [])
+        self.assertAlmostEqual(sketch.Geometry[0].Radius, 20.0)
+
     def test_a_circle_and_a_line_join_the_sketch_and_a_press_on_a_face_attaches_a_new_one(self):
         from freecad.BlocksCAD.cad import sketching
         s = self.session()

@@ -146,7 +146,30 @@ class FakeSketching:
         return None
 
     def dimension(self, doc, sketch, geo):
+        if getattr(sketch, "curve", "line") == "circle":
+            if getattr(sketch, "radius_index", None) is not None:
+                return "That is dimensioned already", None
+            sketch.radius_index, sketch.radius = 0, 20.0
+            return "Dimension radius = 20 mm", "radius"
         return "Dimension length = 10 mm", "length"
+
+    def curve_kind(self, sketch, geo):
+        return getattr(sketch, "curve", "line")
+
+    def radius_dimension(self, sketch, geo):
+        return getattr(sketch, "radius_index", None)
+
+    def centre_of(self, sketch, geo):
+        return sketch.centre
+
+    def dimension_value(self, sketch, index):
+        return sketch.radius
+
+    def set_dimension(self, sketch, index, value):
+        if value > 500.0:
+            return "The sketch cannot take that value"
+        sketch.radius = value
+        return None
 
 
 class FakeLayer:
@@ -374,6 +397,74 @@ class SketchToolTest(unittest.TestCase):
         self.tool._press_edit(self.doc, picked, (0.0, 0.0, 0.0))
         self.assertEqual(self.toasts[-1], "Dimension length = 10 mm")
         self.assertEqual(self.doc.log, [("open", "Dimension"), ("commit",)])
+
+    def circle_press(self, radius_index=None, radius=20.0):
+        self.tool.values["mode"] = "Edit"
+        solid = self.doc.objects["solid"]
+        solid.TypeId, solid.points, solid.curve, solid.centre, solid.radius, solid.radius_index = sketching.TYPE, {}, "circle", (0.0, 0.0), radius, radius_index
+        self.doc.log.clear()
+        self.sim.set_hand(1, trigger=1.0)
+        self.cursor = [20.0, 0.0, 0.0]                                               # the press is on the circle of radius 20
+        self.tool._press_edit(self.doc, picking.Pick("solid", "edge", "Curve0", 0.0), (20.0, 0.0, 0.0))
+        self.tool.update(self.sim.frame(0.02))
+        return solid
+
+    def pull(self, to, **inputs):
+        self.cursor = list(to)
+        self.sim.set_hand(1, trigger=1.0, button1=inputs.get("button1", False))
+        self.tool.update(self.sim.frame(0.02))
+
+    def release(self):
+        self.sim.set_hand(1, trigger=0.0, button1=False)
+        self.tool.update(self.sim.frame(0.02))
+
+    def test_pressing_a_circle_without_a_dimension_makes_one_and_dragging_sets_the_radius_in_one_undo_step(self):
+        solid = self.circle_press()
+        self.assertTrue(self.tool.busy)
+        self.assertEqual(self.doc.log, [("open", "Radius of " + solid.Label)])
+        self.pull((47.0, 0.0, 0.0))                                                  # on the grid of 10: 50 mm
+        self.assertEqual(solid.radius, 50.0)
+        self.assertEqual(self.readouts[-1], "Radius: 50 mm")
+        self.pull((0.0, 31.0, 0.0))
+        self.assertEqual(solid.radius, 30.0)
+        self.release()
+        self.assertEqual(self.doc.log, [("open", "Radius of " + solid.Label), ("commit",)])
+        self.assertEqual(self.toasts[-1], "Radius 30 mm")
+        self.assertFalse(self.tool.busy)
+
+    def test_a_tap_on_a_circle_that_has_no_dimension_gives_it_one(self):
+        solid = self.circle_press()
+        self.release()
+        self.assertEqual(self.doc.log, [("open", "Radius of " + solid.Label), ("commit",)])
+        self.assertEqual(self.toasts[-1], "Dimension radius = 20 mm")
+
+    def test_a_tap_on_a_dimensioned_circle_changes_nothing_and_a_drag_changes_its_radius(self):
+        solid = self.circle_press(radius_index=3, radius=20.0)
+        self.release()
+        self.assertEqual(self.doc.log, [("open", "Radius of " + solid.Label), ("abort",)])
+        self.assertEqual(self.toasts[-1], "Radius 20 mm: drag to change it")
+        solid = self.circle_press(radius_index=3, radius=20.0)
+        self.pull((0.0, 80.0, 0.0))
+        self.release()
+        self.assertEqual((solid.radius, self.doc.log[-1], self.toasts[-1]), (80.0, ("commit",), "Radius 80 mm"))
+
+    def test_the_a_button_leaves_the_radius_off_the_grid_and_a_radius_the_sketch_refuses_stays_at_the_last_good_one(self):
+        solid = self.circle_press(radius_index=0)
+        self.pull((33.3, 0.0, 0.0), button1=True)
+        self.assertAlmostEqual(solid.radius, 33.3)
+        self.pull((900.0, 0.0, 0.0))
+        self.assertEqual(self.readouts[-1], "The sketch cannot take that value")
+        self.assertAlmostEqual(solid.radius, 33.3)
+        self.pull((0.0, 2.0, 0.0))                                                   # the smallest radius is one grid step
+        self.assertEqual(solid.radius, 10.0)
+
+    def test_a_grip_cancels_the_radius_drag(self):
+        solid = self.circle_press(radius_index=0)
+        self.sim.set_hand(0, grip=1.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.doc.log[-1], ("abort",))
+        self.assertFalse(self.tool.busy)
+        self.sim.set_hand(0, grip=0.0)
 
     def with_anchors(self, anchors, reach=5.0):
         self.tool.ctx.services["guide_anchors"] = lambda exclude: (anchors, reach)

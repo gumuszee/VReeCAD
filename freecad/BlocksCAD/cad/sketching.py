@@ -278,6 +278,33 @@ def dimensions(sketch):
     return found
 
 
+def curve_kind(sketch, geo):
+    """"line", "circle" (a circle or an arc: it has a radius) or "other" for the geometry `geo` of a sketch."""
+    type_id = sketch.Geometry[geo].TypeId
+    if type_id == "Part::GeomLineSegment":
+        return "line"
+    return "circle" if type_id in ("Part::GeomCircle", "Part::GeomArcOfCircle") else "other"
+
+
+def radius_dimension(sketch, geo):
+    """The index of the driving radius dimension of the circle or arc `geo`, or None when it has none."""
+    for index, c in enumerate(sketch.Constraints):
+        if c.First == geo and c.Type == "Radius" and c.Driving:
+            return index
+    return None
+
+
+def centre_of(sketch, geo):
+    """The centre (x, y) of the circle or arc `geo` in sketch coordinates."""
+    centre = sketch.Geometry[geo].Center
+    return (centre.x, centre.y)
+
+
+def dimension_value(sketch, index):
+    """The value in millimetres of the dimension `index`."""
+    return float(sketch.Constraints[index].Value)
+
+
 def dimension(doc, sketch, geo):
     """Give the line or the circle `geo` a named length or radius that is its present size. Returns (text for a toast, name or None)."""
     g = sketch.Geometry[geo]

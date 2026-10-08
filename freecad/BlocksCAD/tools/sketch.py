@@ -23,8 +23,9 @@ cursor is the point of its plane that is nearest to the tip, rounded to the grid
 the trigger pressed at one point, dragged and released at another draws the shape in one undo step, with the constraints it implies
 (`cad/sketchinfer.py`). **Arc**: the same drag gives the two ends; after the release the third point follows the hand (a preview of
 the arc through it) and the next press of the trigger draws the arc, all in one undo step. **Edit**: the trigger pressed on a point of a sketch drags it (the solver keeps the constraints, so a constrained
-point may stop short), pressed on a line, a circle or an arc it gives that a named dimension, which the value panels then edit. A grip
-cancels. The stick chooses from an option disc of two pages (the grid and Line, Rectangle, Circle and Edit; the grid and Arc and the
+point may stop short), pressed on a line it gives that a named dimension, which the value panels then edit, and pressed on a circle or an arc it gives
+that a radius dimension (when it has none) and drags it: once the hand has left the press the radius follows the distance of the
+hand from the centre. A grip cancels. The stick chooses from an option disc of two pages (the grid and Line, Rectangle, Circle and Edit; the grid and Arc and the
 three planes) and its click turns the page. Choosing a plane ends the current sketch, so the next one lies on that plane.
 
 Services besides those of `TouchTool`: `ghost` (`render.ghost.Ghost`) and `sketching`, an object with the functions of `cad.sketching`
@@ -42,6 +43,8 @@ from freecad.BlocksCAD.tools.base import DiscSlot, ToolOption
 from freecad.BlocksCAD.tools.registry import register
 from freecad.BlocksCAD.tools.touch import TouchTool
 
+MIN_RADIUS = 0.1             # millimetres: the smallest radius that a drag gives a circle
+DRAG_START = 0.012           # metres on the stage: the radius changes only once the hand has moved this far from the press
 MODES = ("Line", "Rectangle", "Circle", "Arc", "Edit")
 PLANE_HALF_CELLS = 5            # the square that shows the plane of a new sketch reaches this many grid steps from the cursor
 
@@ -329,6 +332,9 @@ class SketchTool(TouchTool):
             self._abort()
             return
         local = sk.to_local(sketch, raw)
+        if state.get("radius") is not None:
+            self._follow_radius(doc, hand, sketch, local)
+            return
         if state.get("edit") is not None:
             self._follow_edit(doc, hand, sketch, local)
             return
@@ -399,6 +405,9 @@ class SketchTool(TouchTool):
         if sketch is None:
             return
         kind, geo, pos = sk.parse_sub(pick.sub)
+        if kind == "curve" and sk.curve_kind(sketch, geo) == "circle":
+            self._start_radius(doc, sketch, geo, sk.to_local(sketch, raw))
+            return
         if kind == "curve":
             doc.openTransaction("Dimension")
             text, name = sk.dimension(doc, sketch, geo)
@@ -417,6 +426,66 @@ class SketchTool(TouchTool):
         self._forget_hover()
         self._select(doc, [(sketch.Name, "")])
         self._haptic(0.3, 0.02)
+
+    def _start_radius(self, doc, sketch, geo, local):
+        """A press on a circle or an arc starts to drag its radius, which has a dimension from now on (made now when it has none): once
+        the hand has left the press the radius grows and shrinks with the distance of the hand from the centre, in one undo step with
+        the dimension."""
+        sk = self._sk()
+        doc.openTransaction(f"Radius of {sketch.Label}")
+        index, made = sk.radius_dimension(sketch, geo), None
+        if index is None:
+            text, name = sk.dimension(doc, sketch, geo)
+            if name is None:
+                doc.abortTransaction()
+                self._select(doc, [(sketch.Name, "")])
+                self._toast(text)
+                return
+            doc.recompute()
+            index, made = sk.radius_dimension(sketch, geo), text
+        radius = sk.dimension_value(sketch, index)
+        centre = sk.centre_of(sketch, geo)
+        self._gesture = {"sketch": sketch.Name, "radius": geo, "index": index, "changed": made is not None, "kind": "Edit",
+                         "now": radius, "made": made, "dragged": False, "start": (local[0], local[1]), "r0": radius,
+                         "d0": ((local[0] - centre[0]) ** 2 + (local[1] - centre[1]) ** 2) ** 0.5, "moving": False}
+        self._forget_hover()
+        self._select(doc, [(sketch.Name, "")])
+        self._haptic(0.3, 0.02)
+
+    def _follow_radius(self, doc, hand, sketch, local):
+        sk = self._sk()
+        state = self._gesture
+        if not hand.down("trigger"):
+            self._gesture = None
+            self._readout(None)
+            if state["changed"]:
+                doc.commitTransaction()
+                self._toast(state["made"] if state["made"] and not state["dragged"] else f"Radius {self._format(state['now'])}")
+                self._haptic(0.4, 0.03)
+            else:
+                doc.abortTransaction()
+                self._toast(f"Radius {self._format(state['now'])}: drag to change it")
+            self._select(doc, [(sketch.Name, "")])
+            return
+        mm = self._service("mm_per_metre", lambda: 1000.0)()
+        if not state["moving"]:                             # a tap or a trembling hand leaves the radius as it is
+            if ((local[0] - state["start"][0]) ** 2 + (local[1] - state["start"][1]) ** 2) ** 0.5 < DRAG_START * mm:
+                self._readout(f"Radius: {self._format(state['now'])}")
+                return
+            state["moving"] = True
+        centre = sk.centre_of(sketch, state["radius"])
+        distance = ((local[0] - centre[0]) ** 2 + (local[1] - centre[1]) ** 2) ** 0.5
+        wanted = state["r0"] + distance - state["d0"]       # the radius follows the distance of the hand from the centre, from where it was pressed
+        radius = max(wanted, MIN_RADIUS) if hand.down("button1") else max(snapping.snap(wanted, self.grid), self.grid)
+        if abs(radius - state["now"]) > 1e-9:
+            error = sk.set_dimension(sketch, state["index"], radius)
+            if error is not None:
+                self._readout(error)
+                return
+            doc.recompute()
+            state["now"], state["changed"], state["dragged"] = radius, True, True
+            self._haptic(0.08, 0.008)
+        self._readout(f"Radius: {self._format(state['now'])}")
 
     def _follow_edit(self, doc, hand, sketch, local):
         sk = self._sk()
