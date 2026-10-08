@@ -17,23 +17,25 @@
 
 Two objects that share a plane (a box standing on another, a cut that ends in the plane of the base) draw faces at the same depth,
 and the depth test then picks one of them per pixel, differently from frame to frame: a flicker, which shows most where the two
-objects have different colours or one of them is selected. Every object gets a `SoPolygonOffset` as the first child of the root of its
-view provider, with an offset that grows with the place of the object in the document (`LEVELS` levels, newer objects nearer), so the
-winner of a shared plane is always the same. The offsets are a few steps of the depth buffer (micrometres), no visible shift. The nodes
-are made for the viewer and taken out again when it stops (`release`): the scene graph is the one of the FreeCAD view, which is not left
-changed. Pivy only; objects without a view provider (no GUI) are left alone."""
+objects have different colours or one of them is selected. Every object gets a polygon offset that grows with the place of the object
+in the document (`LEVELS` levels): older objects are pushed back a little further than newer ones, so the winner of a shared plane is
+always the newer object. The offsets are a few steps of the depth buffer (micrometres), no visible shift, and they only push back, so
+the edges of an object (drawn without an offset) stay in front of its faces. The view provider of a Part object has an offset node
+of its own, which replaces any node before it, so its values are shifted; a view provider without one gets a node of our own. Everything
+is put back by `release` when the viewer stops: the scene graph is the one of the FreeCAD view. Pivy only; objects without a view
+provider (no GUI) are left alone."""
 
 from pivy import coin
 
 LEVELS = 16              # objects whose places differ by a multiple of this share an offset
-FACTOR_STEP = -0.5       # the slope part of the offset of one level (towards the viewer)
-UNITS_STEP = -2.0        # the part in depth buffer steps
+FACTOR_STEP = 0.5        # the slope part of the push back of one level
+UNITS_STEP = 2.0         # the part in depth buffer steps
 
 
 def offset_for(rank):
-    """(factor, units) of the polygon offset of the object with place `rank` in the document."""
-    level = rank % LEVELS
-    return FACTOR_STEP * level, UNITS_STEP * level
+    """(factor, units) that the object with place `rank` in the document is pushed back by: the newest level is not pushed."""
+    back = LEVELS - 1 - rank % LEVELS
+    return FACTOR_STEP * back, UNITS_STEP * back
 
 
 def _make_node(rank):
@@ -54,9 +56,24 @@ def _root_of(obj):
         return None
 
 
+def _offsets_in(root):
+    """The polygon offset nodes inside a view provider root (a Part view provider has one, between its points and its faces)."""
+    action = coin.SoSearchAction()
+    action.setType(coin.SoPolygonOffset.getClassTypeId())
+    action.setInterest(coin.SoSearchAction.ALL)
+    action.setSearchingAll(True)
+    action.apply(root)
+    paths = action.getPaths()
+    return [paths[i].getTail() for i in range(paths.getLength())]
+
+
 class DepthOrder:
+    """Each object has one entry: either the polygon offsets its view provider already has (their values are shifted by the offset of
+    the object and put back by `release`; a node later in the root replaces an earlier one, so a node of our own in front of the faces
+    would change nothing), or, for a view provider without any, a node of our own as the first child of its root."""
+
     def __init__(self):
-        self._placed = {}                  # object name -> (root, node, the address of the root)
+        self._placed = {}                  # object name -> (root, [(node, factor, units, shifted factor, shifted units)], own node or None, address)
         self._ranks = {}                   # object name -> its rank: the order in which the objects were first seen, kept when others go
 
     def sync(self, doc):
@@ -74,25 +91,47 @@ class DepthOrder:
                     self._remove(obj.Name)
                 continue
             where = str(root.this)                                        # the same object keeps the same root, a new one under that name does not
-            if known is not None and known[2] == where:
+            if known is not None and known[3] == where:
+                self._reassert(known)                                      # the view provider may have written its own values since
                 continue
             if known is not None:
                 self._remove(obj.Name)
-            node = _make_node(rank)
-            root.ref()
-            root.insertChild(node, 0)
-            self._placed[obj.Name] = (root, node, where)
+            self._place(obj.Name, root, rank, where)
+
+    def _place(self, name, root, rank, where):
+        factor, units = offset_for(rank)
+        shifted, own = [], None
+        for node in _offsets_in(root):
+            f, u = node.factor.getValue(), node.units.getValue()
+            node.factor.setValue(f + factor)
+            node.units.setValue(u + units)
+            shifted.append((node, f, u, f + factor, u + units))
+        if not shifted:
+            own = _make_node(rank)
+            root.insertChild(own, 0)
+        root.ref()
+        self._placed[name] = (root, shifted, own, where)
+
+    @staticmethod
+    def _reassert(entry):
+        for node, f, u, sf, su in entry[1]:
+            if node.factor.getValue() != sf or node.units.getValue() != su:
+                node.factor.setValue(sf)
+                node.units.setValue(su)
 
     def _remove(self, name):
-        root, node, _ = self._placed.pop(name)
+        root, shifted, own, _ = self._placed.pop(name)
         try:
-            if root.findChild(node) >= 0:
-                root.removeChild(node)
+            for node, f, u, _, _ in shifted:
+                node.factor.setValue(f)
+                node.units.setValue(u)
+            if own is not None and root.findChild(own) >= 0:
+                root.removeChild(own)
         finally:
             root.unref()
 
     def release(self):
-        """Take every offset out of the scene graph."""
+        """Put every offset back as it was and take our own nodes out of the scene graph."""
         for name in list(self._placed):
             self._remove(name)
 
