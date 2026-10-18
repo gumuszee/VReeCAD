@@ -1,21 +1,21 @@
 # Render the cached runtime controller models (GLB) offscreen from a few viewpoints, to check the glTF -> Coin loader without a headset.
-# Prerequisite: GLBs in %LOCALAPPDATA%\BlocksCAD\cache\rendermodels (written by tools/snippets/xr_render_models.py during a FOCUSED session).
+# Prerequisite: GLBs in %LOCALAPPDATA%\VReeCAD\cache\rendermodels (written by tools/snippets/xr_render_models.py during a FOCUSED session).
 # Run:  python tools/fc_rpc.py exec -f tools/snippets/render_controller_models.py
-# Output: <RENDER_DIR>/controller_<uuid8>_<view>.png (default RENDER_DIR = %TEMP%\blockscad_renders). Set RENDER_DIR before exec to change it.
+# Output: <RENDER_DIR>/controller_<uuid8>_<view>.png (default RENDER_DIR = %TEMP%\vreecad_renders). Set RENDER_DIR before exec to change it.
 import glob
 import importlib
 import os
 import time
 
-import freecad.BlocksCAD.gltf as _gltf
-import freecad.BlocksCAD.render.gltf_coin as _gc
-import freecad.BlocksCAD.render.offscreen as _off
+import freecad.VReeCAD.gltf as _gltf
+import freecad.VReeCAD.render.gltf_coin as _gc
+import freecad.VReeCAD.render.offscreen as _off
 for _m in (_gltf, _gc, _off):
     importlib.reload(_m)
 
-_out = globals().get("RENDER_DIR", os.path.join(os.environ.get("TEMP", "."), "blockscad_renders"))
+_out = globals().get("RENDER_DIR", os.path.join(os.environ.get("TEMP", "."), "vreecad_renders"))
 os.makedirs(_out, exist_ok=True)
-_cache = os.path.join(os.environ.get("LOCALAPPDATA", "."), "BlocksCAD", "cache", "rendermodels")
+_cache = os.path.join(os.environ.get("LOCALAPPDATA", "."), "VReeCAD", "cache", "rendermodels")
 _views = {  # eye, target, up (metres, model space; the model extends along +Z)
     "side": ((0.35, 0.05, 0.08), (0.0, -0.01, 0.08), (0, 1, 0)),
     "top": ((0.0, 0.40, 0.08), (0.0, 0.0, 0.08), (0, 0, -1)),

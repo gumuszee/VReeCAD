@@ -8,7 +8,7 @@ import os
 import sys
 import unittest
 
-import freecad.BlocksCAD as _pkg
+import freecad.VReeCAD as _pkg
 
 _repo = globals().get("LIVE_TESTS_DIR") or os.path.abspath(os.path.join(os.path.dirname(_pkg.__file__), "..", ".."))
 _tests = os.path.join(_repo, "tests")
@@ -17,15 +17,15 @@ for _p in (os.path.join(_tests, "live"), _tests):
         sys.path.insert(0, _p)
 for _name in ("support", "test_gltf", "test_coin"):
     sys.modules.pop(_name, None)
-for _name in ("freecad.BlocksCAD.core.mathutil", "freecad.BlocksCAD.core.units", "freecad.BlocksCAD.core.navigation", "freecad.BlocksCAD.input", "freecad.BlocksCAD.gltf", "freecad.BlocksCAD.render.gltf_coin",
-              "freecad.BlocksCAD.render.controller_shape", "freecad.BlocksCAD.render.offscreen",
-              "freecad.BlocksCAD.ui.layout", "freecad.BlocksCAD.ui.style", "freecad.BlocksCAD.ui.ring", "freecad.BlocksCAD.ui.ring_view", "freecad.BlocksCAD.ui.radial", "freecad.BlocksCAD.ui.radial_view",
-              "freecad.BlocksCAD.ui.ruler", "freecad.BlocksCAD.ui.settings", "freecad.BlocksCAD.ui.pointing", "freecad.BlocksCAD.ui.pointer", "freecad.BlocksCAD.ui.defaults", "freecad.BlocksCAD.ui.toast", "freecad.BlocksCAD.ui.undo_button", "freecad.BlocksCAD.ui.options",
-              "freecad.BlocksCAD.ui.feedback_view", "freecad.BlocksCAD.tools.base", "freecad.BlocksCAD.tools.registry", "freecad.BlocksCAD.tools",
-              "freecad.BlocksCAD.core.stage", "freecad.BlocksCAD.core.snapping", "freecad.BlocksCAD.cad", "freecad.BlocksCAD.cad.primitives",
-              "freecad.BlocksCAD.core.grab", "freecad.BlocksCAD.core.selecting", "freecad.BlocksCAD.cad.edit", "freecad.BlocksCAD.cad.picking", "freecad.BlocksCAD.cad.meshes",
-              "freecad.BlocksCAD.render.ghost", "freecad.BlocksCAD.render.highlight", "freecad.BlocksCAD.tools.primitives", "freecad.BlocksCAD.tools.touch", "freecad.BlocksCAD.tools.select", "freecad.BlocksCAD.tools.move", "freecad.BlocksCAD.ui.controller",
-              "freecad.BlocksCAD.backends.sim"):
+for _name in ("freecad.VReeCAD.core.mathutil", "freecad.VReeCAD.core.units", "freecad.VReeCAD.core.navigation", "freecad.VReeCAD.input", "freecad.VReeCAD.gltf", "freecad.VReeCAD.render.gltf_coin",
+              "freecad.VReeCAD.render.controller_shape", "freecad.VReeCAD.render.offscreen",
+              "freecad.VReeCAD.ui.layout", "freecad.VReeCAD.ui.style", "freecad.VReeCAD.ui.ring", "freecad.VReeCAD.ui.ring_view", "freecad.VReeCAD.ui.radial", "freecad.VReeCAD.ui.radial_view",
+              "freecad.VReeCAD.ui.ruler", "freecad.VReeCAD.ui.settings", "freecad.VReeCAD.ui.pointing", "freecad.VReeCAD.ui.pointer", "freecad.VReeCAD.ui.defaults", "freecad.VReeCAD.ui.toast", "freecad.VReeCAD.ui.undo_button", "freecad.VReeCAD.ui.options",
+              "freecad.VReeCAD.ui.feedback_view", "freecad.VReeCAD.tools.base", "freecad.VReeCAD.tools.registry", "freecad.VReeCAD.tools",
+              "freecad.VReeCAD.core.stage", "freecad.VReeCAD.core.snapping", "freecad.VReeCAD.cad", "freecad.VReeCAD.cad.primitives",
+              "freecad.VReeCAD.core.grab", "freecad.VReeCAD.core.selecting", "freecad.VReeCAD.cad.edit", "freecad.VReeCAD.cad.picking", "freecad.VReeCAD.cad.meshes",
+              "freecad.VReeCAD.render.ghost", "freecad.VReeCAD.render.highlight", "freecad.VReeCAD.tools.primitives", "freecad.VReeCAD.tools.touch", "freecad.VReeCAD.tools.select", "freecad.VReeCAD.tools.move", "freecad.VReeCAD.ui.controller",
+              "freecad.VReeCAD.backends.sim"):
     if _name in sys.modules:
         importlib.reload(sys.modules[_name])
 _suite = unittest.defaultTestLoader.loadTestsFromName("test_coin")

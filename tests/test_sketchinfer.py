@@ -2,7 +2,7 @@ import math
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.cad import sketchinfer as si
+from freecad.VReeCAD.cad import sketchinfer as si
 
 
 class DirectionTest(unittest.TestCase):

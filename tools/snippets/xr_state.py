@@ -1,5 +1,5 @@
 # Print the VR addon's live OpenXR state (run via fc_rpc.py exec -f). Needs the XR viewer started.
-import freecad.BlocksCAD.commonXR as _c
+import freecad.VReeCAD.commonXR as _c
 _w = _c.xr_dock_w
 if _w is None:
     print("XR viewer not started")

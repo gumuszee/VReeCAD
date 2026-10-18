@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.core import inference
+from freecad.VReeCAD.core import inference
 
 MM = 1000.0          # one metre of hand space is a thousand millimetres of the document
 FAR, NEAR_ANCHOR = (900.0, 0.0, 0.0), (30.0, 0.0, 0.0)

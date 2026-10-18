@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
-  Reproduce the whole BlocksCAD dev environment on a fresh Windows machine (idempotent - safe to re-run).
+  Reproduce the whole VReeCAD dev environment on a fresh Windows machine (idempotent - safe to re-run).
 .DESCRIPTION
-  0. run it from a clone of https://github.com/gumuszee/BlocksCAD_VR (the repo root is the addon; remote 'upstream' = kwahoo2)
+  0. run it from a clone of https://github.com/gumuszee/VReeCAD (the repo root is the addon; remote 'upstream' = kwahoo2)
   1. clones the reference repos into refs\ (shallow)
   2. installs pyopenxr + PyOpenGL into FreeCAD's bundled Python
   3. installs uv (winget) and syncs the freecad-mcp environment

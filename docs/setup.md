@@ -10,7 +10,7 @@ this page records *what* it does and *why*, plus the facts you need when somethi
 | FreeCAD 1.1.4 (installed release) | `%LOCALAPPDATA%\Programs\FreeCAD 1.1` | bundled Python 3.11.14, PySide6 6.8.3, numpy 1.26. **We do not build from source**: both addons are Python. |
 | FreeCAD user dir | `%APPDATA%\FreeCAD\v1-1` | `Mod\` holds our junctions; `user.cfg`; `freecad_mcp_settings.json` |
 | `pyopenxr` 1.1.6302, `PyOpenGL` 3.1.10 (+glfw) | FreeCAD's `bin\Lib\site-packages` | `bin\python.exe -m pip install ...`. **Lost if FreeCAD is reinstalled/upgraded** - rerun bootstrap. |
-| The addon (this repo) | repo root -> junction `Mod\BlocksCAD` | Namespace `freecad.BlocksCAD`, workbench `BlocksCADWorkbench`. It has its own namespace, distinct from upstream's `freecad.XR`; do not install both. Edit repo, restart FreeCAD (or `tools/snippets/xr_restart.py`). |
+| The addon (this repo) | repo root -> junction `Mod\VReeCAD` | Namespace `freecad.VReeCAD`, workbench `VReeCADWorkbench`. It has its own namespace, distinct from upstream's `freecad.XR`; do not install both. Edit repo, restart FreeCAD (or `tools/snippets/xr_restart.py`). |
 | OpenXR spec sources (sparse) | `refs\OpenXR-Docs\specification\sources\chapters\extensions\{ext,valve}` | Khronos spec text (AsciiDoc) for extension questions, e.g. `ext\ext_render_model.adoc` |
 | Open Brush (sparse) | `refs\open-brush\Assets\Scripts` | Reference for the UX: `SketchControlsScript.cs` (grip world transform), `Util\MathUtils.cs` (two point transform), `GUI\PanelManager.cs` (palette ring), `GUI\PinCushion.cs` (quick radial). Apache-2.0, behaviour reference only |
 | MCP RPC addon (DEV-ONLY) | `refs\freecad-mcp\addon\FreeCADMCP` -> junction `Mod\FreeCADMCP` | Runs XML-RPC on `127.0.0.1:9875`, auto-start enabled. If we start modifying it, copy it out of `refs/` into our own repo. |
@@ -67,8 +67,8 @@ uv run --directory refs/freecad-mcp python ../../tools/mcp_smoke_test.py   # who
 
 ## Installing as an addon
 
-The repository root is the addon (`package.xml`, `freecad/BlocksCAD/`, `Resources/`). `package.xml` names the workbench class `BlocksCADWorkbench`, the icon, the licence file, `freecadmin` 1.1.0 and `pythonmin` 3.11.0, and declares `pyopenxr` and `PyOpenGL` as Python dependencies (`type="python"`). `tests/test_package.py` checks that the files it names exist and that the declared packages are the ones the code needs; FreeCAD's own `App.Metadata` reads it without error (FreeCAD 1.1.4).
+The repository root is the addon (`package.xml`, `freecad/VReeCAD/`, `Resources/`). `package.xml` names the workbench class `VReeCADWorkbench`, the icon, the licence file, `freecadmin` 1.1.0 and `pythonmin` 3.11.0, and declares `pyopenxr` and `PyOpenGL` as Python dependencies (`type="python"`). `tests/test_package.py` checks that the files it names exist and that the declared packages are the ones the code needs; FreeCAD's own `App.Metadata` reads it without error (FreeCAD 1.1.4).
 
-- **Addon Manager (custom repository):** Edit, Preferences, Addon Manager, Custom repositories: add `https://github.com/gumuszee/BlocksCAD_VR` with the branch `main`, then install BlocksCAD from the list. The Addon Manager offers to install the two Python packages.
+- **Addon Manager (custom repository):** Edit, Preferences, Addon Manager, Custom repositories: add `https://github.com/gumuszee/VReeCAD` with the branch `main`, then install VReeCAD from the list. The Addon Manager offers to install the two Python packages.
 - **By hand:** put (or link) the repository folder into the `Mod` directory of the FreeCAD user data folder and install the two packages into FreeCAD's Python (`tools/bootstrap.ps1` does both for the development setup).
-- An OpenXR runtime with `XR_KHR_opengl_enable` is needed; the workbench is `BlocksCAD`, its command "Open XR viewer" starts the session.
+- An OpenXR runtime with `XR_KHR_opengl_enable` is needed; the workbench is `VReeCAD`, its command "Open XR viewer" starts the session.

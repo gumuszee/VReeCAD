@@ -1,4 +1,4 @@
-# BlocksCAD design
+# VReeCAD design
 
 Status: agreed direction. Milestone M0 (platform) is implemented except the `rig.py` extraction. The interface foundation is implemented: grip navigation (U1), the palette carousel with panels, sliders and arrangement (U2) and the laser and tip pointer are verified in the headset; the quick radial, the moving and hiding of single faces (U3), tool options, undo and redo on `button2`, toasts and tooltips (U4) the Create tool (M1), the Select and the Move tool (M2), the Sketch tool of M6, the Points tool and the blocks of M5, the Push/Pull tool and the Modify panel with booleans, copies, mirrors, patterns and colour (M4) and the value panels with variables (sliders, number pad, stick steps and variables for the values of the selected object, M3) are tested in the Sim and wait for the headset. Open checks are listed in `verification.md`.
 Inspiration: Open Blocks' simple direct manipulation; substance: real parametric CAD in FreeCAD.
@@ -18,7 +18,7 @@ Inspiration: Open Blocks' simple direct manipulation; substance: real parametric
 
 ## Architecture
 
-Python addon (`freecad.BlocksCAD`), no FreeCAD C++ changes. Layers, bottom-up (`*` marks planned modules):
+Python addon (`freecad.VReeCAD`), no FreeCAD C++ changes. Layers, bottom-up (`*` marks planned modules):
 
 ```
 backends/   openxr_input.py   action set, bindings per profile, polling into InputFrame, haptics
@@ -47,7 +47,7 @@ The interface is specified in [ux-design.md](ux-design.md): the Open Brush contr
 free orbit/scale, quick radial, modular faces and panels with a user layout). Hardware independence rests on the five abstract inputs per hand (`input-profiles.md`).
 
 ### The Blocks-like core: "move points"
-A parametric solid made of **editable points**: `BlocksCAD::Block` (FeaturePython, a polyhedron: `Vertices` (VectorList) + `Faces` (index lists), solid built with OCCT).
+A parametric solid made of **editable points**: `VReeCAD::Block` (FeaturePython, a polyhedron: `Vertices` (VectorList) + `Faces` (index lists), solid built with OCCT).
 Grab a vertex, drag, snap (grid / other vertices / edges / faces / work planes); vertex positions are the parameters, so they can carry
 expressions, be driven from spreadsheet variables, be constrained (planar faces, fixed distance, symmetry, aligned-with) and can be typed in via the value panel.
 Non-planar results are prevented (triangulate or constrain). Same "grab a point" gesture also edits: sketch points (solver keeps constraints),
@@ -90,7 +90,7 @@ primitive handles (box face -> Length/Width/Height), Pad/Pocket length, fillet r
 - Python per-frame cost: keep gesture math light; do OCCT work on release only.
 - FeaturePython `Block` objects need the addon to be installed to recompute on reopen (shape is cached; document remains viewable without it).
 - Controller models come from the runtime and are not bundled (`controller-models.md`); the repository contains no controller meshes.
-- Naming: see `licensing.md` (trademark and an existing product called "BlocksCAD").
+- Naming: see `licensing.md` (trademark and an existing product called "VReeCAD").
 
 ## Known limitations
 - `commonXR.py` hosts the OpenXR session, the render loop and the services of the tools in one module; the extraction into `rig.py` is open.

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
 <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
 
-  <name>BlocksCAD</name>
+  <name>VReeCAD</name>
 
   <tag>VR</tag>
   <tag>Virtual Reality</tag>
@@ -24,20 +24,20 @@
 
   <freecadmin>1.1.0</freecadmin>
 
-  <url branch="main" type="repository">https://github.com/gumuszee/BlocksCAD_VR</url>
+  <url branch="main" type="repository">https://github.com/gumuszee/VReeCAD</url>
 
-  <url type="bugtracker">https://github.com/gumuszee/BlocksCAD_VR/issues</url>
+  <url type="bugtracker">https://github.com/gumuszee/VReeCAD/issues</url>
 
-  <url type="readme">https://github.com/gumuszee/BlocksCAD_VR/blob/main/README.md</url>
+  <url type="readme">https://github.com/gumuszee/VReeCAD/blob/main/README.md</url>
 
   <icon>Resources/Gui/Resources/icons/preferences-virtual_reality.svg</icon>
 
   <content>
     <workbench>
-      <name>BlocksCAD</name>
+      <name>VReeCAD</name>
       <description>Parametric CAD modelling in virtual reality: create, select, move, push and pull, edit points and sketch with controllers.</description>
       <icon>Resources/Gui/Resources/icons/preferences-virtual_reality.svg</icon>
-      <classname>BlocksCADWorkbench</classname>
+      <classname>VReeCADWorkbench</classname>
       <subdirectory>./</subdirectory>
       <depend type="python">pyopenxr</depend>
       <depend type="python">PyOpenGL</depend>

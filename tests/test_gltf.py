@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 import support  # noqa: F401
-from freecad.BlocksCAD import gltf
+from freecad.VReeCAD import gltf
 
 
 def make_glb(doc, blob):

@@ -1,21 +1,21 @@
 # Headset-free test of the Sim backend: scripted head and controllers over the active document, rendered offscreen.
 # Prerequisite: a document with some geometry is active in the running FreeCAD (the script creates a box if there is none).
 # Run:  python tools/fc_rpc.py exec -f tools/snippets/sim_demo.py
-# Output: <SIM_DIR>/sim_*.png (default %TEMP%\blockscad_renders) and the edge events of the scripted frames.
+# Output: <SIM_DIR>/sim_*.png (default %TEMP%\vreecad_renders) and the edge events of the scripted frames.
 import importlib
 import os
 
 import FreeCAD
 import FreeCADGui
-import freecad.BlocksCAD.input as _input
-import freecad.BlocksCAD.render.gltf_coin as _gc
-import freecad.BlocksCAD.render.controller_shape as _cs
-import freecad.BlocksCAD.render.offscreen as _off
-import freecad.BlocksCAD.backends.sim as _sim
+import freecad.VReeCAD.input as _input
+import freecad.VReeCAD.render.gltf_coin as _gc
+import freecad.VReeCAD.render.controller_shape as _cs
+import freecad.VReeCAD.render.offscreen as _off
+import freecad.VReeCAD.backends.sim as _sim
 for _m in (_input, _gc, _cs, _off, _sim):
     importlib.reload(_m)
 
-_out = globals().get("SIM_DIR", os.path.join(os.environ.get("TEMP", "."), "blockscad_renders"))
+_out = globals().get("SIM_DIR", os.path.join(os.environ.get("TEMP", "."), "vreecad_renders"))
 os.makedirs(_out, exist_ok=True)
 if FreeCAD.ActiveDocument is None:
     FreeCAD.newDocument("SimDemo")

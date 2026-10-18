@@ -1,7 +1,7 @@
 # The VR integration layer (from freecad-xr-workbench)
 
 Upstream: https://github.com/kwahoo2/freecad-xr-workbench (LGPL-3.0+, base version 1.0.3.1). The addon keeps the VR integration of that module and nothing else (`design.md`, D8): the OpenXR session and render loop, input, controller models, the desktop mirror, the spectator camera, and the lighting and anti-aliasing preferences. Its tools, in-world menus, Qt panel overlay and document code are not part of the addon.
-Pure Python addon in the `freecad.BlocksCAD` namespace package (`freecad/BlocksCAD/`). Targets FreeCAD 1.1 / Python 3.11+.
+Pure Python addon in the `freecad.VReeCAD` namespace package (`freecad/VReeCAD/`). Targets FreeCAD 1.1 / Python 3.11+.
 Deps: `pyopenxr`, `PyOpenGL`. Needs a runtime with `XR_KHR_opengl_enable`.
 
 ## Compatibility
@@ -12,7 +12,7 @@ Runs on FreeCAD 1.1.4 with SteamVR OpenXR 2.17.10 (see `verification.md`).
 
 | File | Role |
 |---|---|
-| `init_gui.py` | `BlocksCADWorkbench` (Gui::PythonWorkbench); toolbar and menu with 6 commands; preferences page |
+| `init_gui.py` | `VReeCADWorkbench` (Gui::PythonWorkbench); toolbar and menu with 6 commands; preferences page |
 | `startXR/stopXR/enableMirror/disableMirror/reloadScenegraph/toggleTPPCamera.py` | One-class command wrappers that call `commonXR` functions |
 | `commonXR.py` | `DockWidget` (Qt dock hosting) + `XRwidget(QOpenGLWidget)`: OpenXR instance, session and swapchains, the Coin scene (`setup_scene`), the render loop (`update_render`, `paintGL`), the per-frame input (`update_xr_controls`), the tool manager and the services the tools use (`setup_tool_services`), the actions of the interface (`setup_ui`) |
 | `controllerXR.py` | `xrController`: the Coin node of one controller (the generated shape or the runtime model, hidden while untracked) and where a part of it is (`part_frame`) |

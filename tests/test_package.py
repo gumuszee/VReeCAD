@@ -22,11 +22,11 @@ class PackageTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(ROOT, root.find("p:icon", NS).text)))
         workbench = root.find("p:content/p:workbench", NS)
         self.assertTrue(os.path.isfile(os.path.join(ROOT, workbench.find("p:icon", NS).text)))
-        self.assertTrue(os.path.isdir(os.path.join(ROOT, "freecad", "BlocksCAD")))
+        self.assertTrue(os.path.isdir(os.path.join(ROOT, "freecad", "VReeCAD")))
 
     def test_the_workbench_class_is_the_one_the_gui_registers(self):
         classname = package().find("p:content/p:workbench/p:classname", NS).text
-        with open(os.path.join(ROOT, "freecad", "BlocksCAD", "init_gui.py"), encoding="utf-8") as f:
+        with open(os.path.join(ROOT, "freecad", "VReeCAD", "init_gui.py"), encoding="utf-8") as f:
             self.assertIn(f"class {classname}", f.read())
 
     def test_the_python_packages_are_declared_as_such_and_the_code_needs_no_others(self):

@@ -3,21 +3,21 @@
   Link the addon (this repo) into FreeCAD's user Mod directory with a directory junction,
   so edits are live after a FreeCAD restart (no copying).
 .DESCRIPTION
-  Mod\BlocksCAD  -> <repo root>                       the addon itself
+  Mod\VReeCAD  -> <repo root>                       the addon itself
   Mod\FreeCADMCP -> refs\freecad-mcp\addon\FreeCADMCP  DEV-ONLY remote-control channel for tools\fc_rpc.py
-                                                       (third-party addon; BlocksCAD never depends on it). Skip with -NoDevControl.
+                                                       (third-party addon; VReeCAD never depends on it). Skip with -NoDevControl.
   Junctions need no admin rights. Re-running is safe (existing links are kept).
-  -Remove unlinks (never deletes targets), including the link names "BlocksCAD-XR" and "BloCADVR-XR".
+  -Remove unlinks (never deletes targets), including the link names "VReeCAD-XR" and "BloCADVR-XR".
 #>
 param([switch]$Remove, [switch]$NoDevControl)
 . "$PSScriptRoot\env.ps1"
 
-$links = [ordered]@{ "BlocksCAD" = $AddonDir }
+$links = [ordered]@{ "VReeCAD" = $AddonDir }
 if (-not $NoDevControl) { $links["FreeCADMCP"] = $McpAddonDir }
 New-Item -ItemType Directory -Force $FreeCADModDir | Out-Null
 
 if ($Remove) {
-    foreach ($name in @($links.Keys) + @("BlocksCAD-XR", "BloCADVR-XR")) {
+    foreach ($name in @($links.Keys) + @("VReeCAD-XR", "BloCADVR-XR")) {
         $link = Join-Path $FreeCADModDir $name
         if (Test-Path $link) { (Get-Item $link).Delete(); "removed $link" }
     }

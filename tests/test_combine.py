@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.cad import colour, combine, duplicate
+from freecad.VReeCAD.cad import colour, combine, duplicate
 
 
 class SelectedNamesTest(unittest.TestCase):
@@ -73,14 +73,14 @@ class SetColourTest(unittest.TestCase):
 
     class Obj(ColourViewsTest.Obj):
         Label = "Thing"
-        PropertiesList = ["BlocksCADColour"]
-        BlocksCADColour = (0.5, 0.5, 0.5)
+        PropertiesList = ["VReeCADColour"]
+        VReeCADColour = (0.5, 0.5, 0.5)
 
     def test_a_swatch_colours_the_objects_in_one_transaction_and_other_objects_are_left_alone(self):
         thing = self.Obj(ColourViewsTest.View(True))
         doc = self.Doc(thing=thing, body=ColourViewsTest.Obj(ColourViewsTest.View(False)))
         text = colour.set_colour(doc, [("thing", ""), ("body", "")], 1)
-        self.assertEqual((tuple(thing.BlocksCADColour), tuple(thing.ViewObject.ShapeColor)), (colour.SWATCHES[1][1],) * 2)
+        self.assertEqual((tuple(thing.VReeCADColour), tuple(thing.ViewObject.ShapeColor)), (colour.SWATCHES[1][1],) * 2)
         self.assertEqual((doc.log, text), (["open", "commit"], "Thing: Red"))
         self.assertEqual(colour.set_colour(doc, [("body", "")], 1), "Nothing to colour")
 

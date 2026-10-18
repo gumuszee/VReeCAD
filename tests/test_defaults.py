@@ -1,9 +1,9 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.core import snapping
-from freecad.BlocksCAD.ui import defaults
-from freecad.BlocksCAD.ui import layout as lay
+from freecad.VReeCAD.core import snapping
+from freecad.VReeCAD.ui import defaults
+from freecad.VReeCAD.ui import layout as lay
 
 TOOLS = ["primitive", "select", "move", "pushpull", "points", "sketch"]
 

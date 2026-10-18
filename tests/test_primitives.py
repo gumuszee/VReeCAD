@@ -4,14 +4,14 @@ import math
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.cad import meshes
-from freecad.BlocksCAD.cad import primitives as prim
-from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.core import snapping, stage
-from freecad.BlocksCAD.core.navigation import WorldPose
-from freecad.BlocksCAD.tools import base
-from freecad.BlocksCAD.tools.primitives import PrimitiveTool
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.cad import meshes
+from freecad.VReeCAD.cad import primitives as prim
+from freecad.VReeCAD.core import mathutil as mu
+from freecad.VReeCAD.core import snapping, stage
+from freecad.VReeCAD.core.navigation import WorldPose
+from freecad.VReeCAD.tools import base
+from freecad.VReeCAD.tools.primitives import PrimitiveTool
 
 
 def close(a, b, places=6):
@@ -234,7 +234,7 @@ class ToolTest(unittest.TestCase):
         self.assertEqual(self.ghost.calls[-1], ("hide_marker",))
 
     def test_the_cursor_lines_up_with_the_points_of_the_model_and_the_guides_are_drawn(self):
-        from freecad.BlocksCAD.core import guides
+        from freecad.VReeCAD.core import guides
         self.tool.ctx.services["guides"] = lambda raw, point, exclude: guides.align(raw, point, [(7.0, 40.0, 0.0)], 5.0)
         self.hand_at((9.0, 28.0, 12.0))
         self.step()
@@ -249,7 +249,7 @@ class ToolTest(unittest.TestCase):
         self.assertEqual(self.ghost.guide_calls[-1], [])
 
     def test_a_drag_from_a_guide_makes_a_box_that_starts_at_the_anchor(self):
-        from freecad.BlocksCAD.core import guides
+        from freecad.VReeCAD.core import guides
         self.tool.ctx.services["guides"] = lambda raw, point, exclude: guides.align(raw, point, [(7.0, 0.0, 0.0)], 5.0)
         self.hand_at((8.0, 0.0, 0.0))
         self.step()
@@ -393,7 +393,7 @@ class ToolTest(unittest.TestCase):
         self.assertIsNone(self.tool._start)
 
     def test_the_tool_is_registered_first_with_a_hint(self):
-        from freecad.BlocksCAD.tools import registry
+        from freecad.VReeCAD.tools import registry
         self.assertIn("primitive", registry.names())
         self.assertEqual(registry.label_of("primitive"), "Create")
         self.assertTrue(registry.hint_of("primitive"))

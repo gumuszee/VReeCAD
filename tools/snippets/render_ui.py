@@ -2,52 +2,52 @@
 # The Sim session runs the same UiController as the headset path: a scripted head looks at the left controller, the right
 # controller points at a face, the trigger activates it; with both grips the ruler is drawn over a test cube.
 # Run:  python tools/fc_rpc.py exec -f tools/snippets/render_ui.py
-# Output: <RENDER_DIR>/ui_*.png (default %TEMP%\blockscad_renders). Globals: UI_DISTANCE (metres from the head to the controller),
+# Output: <RENDER_DIR>/ui_*.png (default %TEMP%\vreecad_renders). Globals: UI_DISTANCE (metres from the head to the controller),
 # UNIT_SYSTEM (name of a FreeCAD document unit system for the ruler, default "Standard (mm, kg, s, degree)").
 import importlib
 import os
 
-import freecad.BlocksCAD.core.mathutil as _mu
-import freecad.BlocksCAD.core.units as _un
-import freecad.BlocksCAD.core.navigation as _nav
-import freecad.BlocksCAD.ui.style as _st
-import freecad.BlocksCAD.ui.layout as _lay
-import freecad.BlocksCAD.ui.ring as _ring
-import freecad.BlocksCAD.ui.ring_view as _rv
-import freecad.BlocksCAD.ui.radial as _rd
-import freecad.BlocksCAD.ui.radial_view as _rdv
-import freecad.BlocksCAD.ui.toast as _ts
-import freecad.BlocksCAD.ui.undo_button as _ub
-import freecad.BlocksCAD.ui.options as _op
-import freecad.BlocksCAD.ui.feedback_view as _fv
-import freecad.BlocksCAD.core.stage as _sg
-import freecad.BlocksCAD.core.snapping as _sn
-import freecad.BlocksCAD.cad.primitives as _pm
-import freecad.BlocksCAD.render.ghost as _gh
-import freecad.BlocksCAD.tools.primitives as _tp
-import freecad.BlocksCAD.core.grab as _gb
-import freecad.BlocksCAD.cad.edit as _ed
-import freecad.BlocksCAD.cad.picking as _pk
-import freecad.BlocksCAD.cad.meshes as _ms
-import freecad.BlocksCAD.render.highlight as _hl
-import freecad.BlocksCAD.tools.move as _tg
-import freecad.BlocksCAD.render.model_anchor as _ma
-import freecad.BlocksCAD.ui.ruler as _ru
-import freecad.BlocksCAD.ui.settings as _cf
-import freecad.BlocksCAD.ui.pointing as _pg
-import freecad.BlocksCAD.ui.pointer as _pt
-import freecad.BlocksCAD.ui.defaults as _df
-import freecad.BlocksCAD.tools.base as _tb
-import freecad.BlocksCAD.tools.registry as _tr
-import freecad.BlocksCAD.tools as _tools
-import freecad.BlocksCAD.ui.controller as _ctl
-import freecad.BlocksCAD.backends.sim as _sim
-import freecad.BlocksCAD.render.offscreen as _off
+import freecad.VReeCAD.core.mathutil as _mu
+import freecad.VReeCAD.core.units as _un
+import freecad.VReeCAD.core.navigation as _nav
+import freecad.VReeCAD.ui.style as _st
+import freecad.VReeCAD.ui.layout as _lay
+import freecad.VReeCAD.ui.ring as _ring
+import freecad.VReeCAD.ui.ring_view as _rv
+import freecad.VReeCAD.ui.radial as _rd
+import freecad.VReeCAD.ui.radial_view as _rdv
+import freecad.VReeCAD.ui.toast as _ts
+import freecad.VReeCAD.ui.undo_button as _ub
+import freecad.VReeCAD.ui.options as _op
+import freecad.VReeCAD.ui.feedback_view as _fv
+import freecad.VReeCAD.core.stage as _sg
+import freecad.VReeCAD.core.snapping as _sn
+import freecad.VReeCAD.cad.primitives as _pm
+import freecad.VReeCAD.render.ghost as _gh
+import freecad.VReeCAD.tools.primitives as _tp
+import freecad.VReeCAD.core.grab as _gb
+import freecad.VReeCAD.cad.edit as _ed
+import freecad.VReeCAD.cad.picking as _pk
+import freecad.VReeCAD.cad.meshes as _ms
+import freecad.VReeCAD.render.highlight as _hl
+import freecad.VReeCAD.tools.move as _tg
+import freecad.VReeCAD.render.model_anchor as _ma
+import freecad.VReeCAD.ui.ruler as _ru
+import freecad.VReeCAD.ui.settings as _cf
+import freecad.VReeCAD.ui.pointing as _pg
+import freecad.VReeCAD.ui.pointer as _pt
+import freecad.VReeCAD.ui.defaults as _df
+import freecad.VReeCAD.tools.base as _tb
+import freecad.VReeCAD.tools.registry as _tr
+import freecad.VReeCAD.tools as _tools
+import freecad.VReeCAD.ui.controller as _ctl
+import freecad.VReeCAD.backends.sim as _sim
+import freecad.VReeCAD.render.offscreen as _off
 for _m in (_mu, _un, _nav, _st, _lay, _ring, _rv, _rd, _rdv, _ts, _ub, _op, _fv, _sg, _sn, _gb, _ed, _pk, _ms, _pm, _gh, _hl, _ma, _tb, _tr, _tools, _tp, _tg, _ru, _cf, _pg, _pt, _df, _ctl, _sim):
     importlib.reload(_m)
 from pivy import coin as _coin
 
-_out = globals().get("RENDER_DIR", os.path.join(os.environ.get("TEMP", "."), "blockscad_renders"))
+_out = globals().get("RENDER_DIR", os.path.join(os.environ.get("TEMP", "."), "vreecad_renders"))
 os.makedirs(_out, exist_ok=True)
 _dist = globals().get("UI_DISTANCE", 0.55)
 _system = globals().get("UNIT_SYSTEM", "Standard (mm, kg, s, degree)")
@@ -225,7 +225,7 @@ try:
     for _ in range(3):
         _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_primitive_marker.png"))
-    from freecad.BlocksCAD.core import guides as _guides
+    from freecad.VReeCAD.core import guides as _guides
     _anchors = [(300.0, 0.0, 0.0), (300.0, 300.0, 300.0), (0.0, 0.0, 300.0)]      # corners of the test cube
     _tool.ctx.services["guides"] = lambda raw, point, exclude: _guides.align(raw, point, _anchors, 12.0)
     _cursor((296.0, -40.0, 6.0))
@@ -270,7 +270,7 @@ try:
     # the Move tool: what the tip touches is highlighted (face, edge, vertex), a tap selects it; shown on objects of a temporary document
     import FreeCAD as _App
     _previous = _App.ActiveDocument.Name if _App.ActiveDocument is not None else None
-    _temp = _App.newDocument("BlocksCADRender")
+    _temp = _App.newDocument("VReeCADRender")
     _nodes = []
     try:
         _pm.create(_temp, "Box", (200.0, -60.0, 0.0), (120.0, 120.0, 80.0))
@@ -388,7 +388,7 @@ try:
         _s.frame(0.02)
         _pk.clear_selection()
         # the Points tool: every point of a block is marked, the point under the tip is highlighted, a drag moves it (a grip cancels)
-        from freecad.BlocksCAD.cad import block as _blk
+        from freecad.VReeCAD.cad import block as _blk
         _b = _blk.create(_temp, (500.0, -60.0, 0.0), (100.0, 100.0, 80.0))
         _bn = _node_of(_b)
         _s.doc_scene.insertChild(_bn, 2)
@@ -452,7 +452,7 @@ try:
         _pk.clear_selection()
         # the value panels: they follow the selection, so selecting the box swaps the palette carousel for the values carousel: the Values panel
         # under the Value panel on the front side, the Number pad, Keys and Variables under another Value panel on the next one
-        from freecad.BlocksCAD.cad import picking as _pk
+        from freecad.VReeCAD.cad import picking as _pk
         _pk.set_selection(_temp, [(_temp.Objects[0].Name, "")])
         _cursor((600.0, 0.0, 400.0))
         for _ in range(3):

@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.core import units as un
+from freecad.VReeCAD.core import units as un
 
 
 class UnitsTest(unittest.TestCase):

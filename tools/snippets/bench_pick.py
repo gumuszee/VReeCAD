@@ -8,9 +8,9 @@
 import time
 
 import FreeCAD as _App
-import freecad.BlocksCAD.cad.anchors as _anchors
-import freecad.BlocksCAD.cad.picking as _pk
-import freecad.BlocksCAD.cad.primitives as _pm
+import freecad.VReeCAD.cad.anchors as _anchors
+import freecad.VReeCAD.cad.picking as _pk
+import freecad.VReeCAD.cad.primitives as _pm
 
 COUNTS = (50, 200, 800)
 CALLS = 30

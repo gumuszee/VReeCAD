@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.cad import attach
+from freecad.VReeCAD.cad import attach
 
 
 class PlanTest(unittest.TestCase):

@@ -2,9 +2,9 @@ import json
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.tools import registry
-from freecad.BlocksCAD.ui import help as controls_help
-from freecad.BlocksCAD.ui import settings as cfg
+from freecad.VReeCAD.tools import registry
+from freecad.VReeCAD.ui import help as controls_help
+from freecad.VReeCAD.ui import settings as cfg
 
 
 class CardTest(unittest.TestCase):
@@ -26,7 +26,7 @@ class CardTest(unittest.TestCase):
         self.assertEqual([line.split(":")[0] for line in lines], ["Stick", "Trigger", "Grip", "A", "D-pad", "Menu"])
 
     def test_every_tool_declares_what_its_trigger_does_and_the_card_fits(self):
-        import freecad.BlocksCAD.tools  # noqa: F401  (registers the tools)
+        import freecad.VReeCAD.tools  # noqa: F401  (registers the tools)
         for name in registry.names():
             controls = registry.controls_of(name)
             self.assertTrue(controls, name)

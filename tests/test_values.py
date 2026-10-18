@@ -1,8 +1,8 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.core import units
-from freecad.BlocksCAD.core import values as v
+from freecad.VReeCAD.core import units
+from freecad.VReeCAD.core import values as v
 
 
 class Target(v.ValueTarget):

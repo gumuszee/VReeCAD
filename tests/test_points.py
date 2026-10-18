@@ -1,13 +1,13 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.cad import block as real_block
-from freecad.BlocksCAD.cad import blockgeom as bg
-from freecad.BlocksCAD.cad import picking
-from freecad.BlocksCAD.core import grab
-from freecad.BlocksCAD.tools import base
-from freecad.BlocksCAD.tools.points import PointsTool
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.cad import block as real_block
+from freecad.VReeCAD.cad import blockgeom as bg
+from freecad.VReeCAD.cad import picking
+from freecad.VReeCAD.core import grab
+from freecad.VReeCAD.tools import base
+from freecad.VReeCAD.tools.points import PointsTool
 
 
 class FakeShape:

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD import profiling
+from freecad.VReeCAD import profiling
 
 
 class FakeClock:

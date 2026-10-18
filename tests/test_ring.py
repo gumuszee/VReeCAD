@@ -5,12 +5,12 @@ import tempfile
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.ui import defaults
-from freecad.BlocksCAD.ui import layout as lay
-from freecad.BlocksCAD.ui import pointing
-from freecad.BlocksCAD.ui import ring as rg
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.core import mathutil as mu
+from freecad.VReeCAD.ui import defaults
+from freecad.VReeCAD.ui import layout as lay
+from freecad.VReeCAD.ui import pointing
+from freecad.VReeCAD.ui import ring as rg
 
 CONTROLLER = (-0.2, 1.15, -0.35)
 HEAD = (0.0, 1.6, 0.0)

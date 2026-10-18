@@ -1,10 +1,10 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.cad import picking, sketchinfer, sketching
-from freecad.BlocksCAD.tools import base
-from freecad.BlocksCAD.tools.sketch import SketchTool, plane_square
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.cad import picking, sketchinfer, sketching
+from freecad.VReeCAD.tools import base
+from freecad.VReeCAD.tools.sketch import SketchTool, plane_square
 
 
 class FakeShape:

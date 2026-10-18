@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.cad import blockgeom as bg
+from freecad.VReeCAD.cad import blockgeom as bg
 
 
 def pyramid():

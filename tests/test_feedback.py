@@ -2,12 +2,12 @@ import math
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.core import units
-from freecad.BlocksCAD.tools import base
-from freecad.BlocksCAD.ui import options as opt
-from freecad.BlocksCAD.ui import toast as ts
-from freecad.BlocksCAD.ui import undo_button as ub
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.core import units
+from freecad.VReeCAD.tools import base
+from freecad.VReeCAD.ui import options as opt
+from freecad.VReeCAD.ui import toast as ts
+from freecad.VReeCAD.ui import undo_button as ub
 
 
 class ToastTest(unittest.TestCase):

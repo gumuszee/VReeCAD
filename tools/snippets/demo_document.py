@@ -17,7 +17,7 @@ if not doc.getObjectsByLabel("Plate"):
     block.Length, block.Width, block.Height = 40, 40, 60
     block.Placement.Base = App.Vector(20, 20, 10)
     doc.recompute()
-Gui.activateWorkbench("BlocksCADWorkbench")
+Gui.activateWorkbench("VReeCADWorkbench")
 Gui.ActiveDocument = Gui.getDocument(doc.Name)
 Gui.ActiveDocument.ActiveView.viewIsometric()
 Gui.SendMsgToActiveView("ViewFit")

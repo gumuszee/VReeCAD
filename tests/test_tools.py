@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.tools import base, manager, registry
+from freecad.VReeCAD.tools import base, manager, registry
 
 
 class TickLimitTest(unittest.TestCase):

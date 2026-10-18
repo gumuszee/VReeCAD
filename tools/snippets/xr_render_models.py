@@ -2,7 +2,7 @@
 # Prerequisites: XR viewer started; the session must have run at least one successful xrSyncActions (headset worn -> FOCUSED).
 # Run:  python tools/fc_rpc.py exec -f tools/snippets/xr_render_models.py
 # Output per model: cache id, animatable node names, GLB size, glTF summary (meshes, materials, textures, extensions).
-# GLB assets are written to %LOCALAPPDATA%\BlocksCAD\cache\rendermodels\<uuid>.glb (local cache; never committed or bundled).
+# GLB assets are written to %LOCALAPPDATA%\VReeCAD\cache\rendermodels\<uuid>.glb (local cache; never committed or bundled).
 import ctypes
 import json
 import os
@@ -12,13 +12,13 @@ import uuid as _uuid
 
 import xr
 from xr.exception import check_result as _check
-import freecad.BlocksCAD.commonXR as _cxr
+import freecad.VReeCAD.commonXR as _cxr
 
 _w = _cxr.xr_dock_w.xr_widget if _cxr.xr_dock_w else None
 if _w is None or not getattr(_w, "render_model_support", False):
     print("XR viewer not running or render model extensions not enabled")
 else:
-    _cache = os.path.join(os.environ.get("LOCALAPPDATA", "."), "BlocksCAD", "cache", "rendermodels")
+    _cache = os.path.join(os.environ.get("LOCALAPPDATA", "."), "VReeCAD", "cache", "rendermodels")
     os.makedirs(_cache, exist_ok=True)
     _ids = list(xr.enumerate_interaction_render_model_ids_ext(
         _w.session, xr.InteractionRenderModelIdsEnumerateInfoEXT()))

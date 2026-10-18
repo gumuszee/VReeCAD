@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.cad import edges
+from freecad.VReeCAD.cad import edges
 
 
 class EdgeSelectionTest(unittest.TestCase):

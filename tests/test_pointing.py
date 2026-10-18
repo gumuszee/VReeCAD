@@ -5,10 +5,10 @@ import tempfile
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.input import Pose
-from freecad.BlocksCAD.ui import pointing
-from freecad.BlocksCAD.ui import settings as cfg
+from freecad.VReeCAD.core import mathutil as mu
+from freecad.VReeCAD.input import Pose
+from freecad.VReeCAD.ui import pointing
+from freecad.VReeCAD.ui import settings as cfg
 
 
 def close(a, b, tol=1e-9):

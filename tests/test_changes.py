@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.cad import anchors, changes
+from freecad.VReeCAD.cad import anchors, changes
 
 
 class FakeObject:

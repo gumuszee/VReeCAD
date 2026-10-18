@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD import profiles
+from freecad.VReeCAD import profiles
 
 FRAME = "/interaction_profiles/valve/frame_controller_valve"
 QUEST = "/interaction_profiles/oculus/touch_controller"

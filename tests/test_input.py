@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.input import HandInput, InputFrame, InputTracker, PRESS_THRESHOLD, RELEASE_THRESHOLD
+from freecad.VReeCAD.input import HandInput, InputFrame, InputTracker, PRESS_THRESHOLD, RELEASE_THRESHOLD
 
 
 def frame(t, **right):

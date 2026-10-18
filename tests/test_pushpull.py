@@ -1,10 +1,10 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.cad import picking, pushpull
-from freecad.BlocksCAD.tools import base
-from freecad.BlocksCAD.tools.pushpull import PushPullTool
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.cad import picking, pushpull
+from freecad.VReeCAD.tools import base
+from freecad.VReeCAD.tools.pushpull import PushPullTool
 
 
 class SnappedTest(unittest.TestCase):

@@ -1,4 +1,4 @@
-# BlocksCAD
+# VReeCAD
 
 Intuitive parametric CAD modelling in virtual reality (OpenXR) for FreeCAD.
 

@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.cad import edit
+from freecad.VReeCAD.cad import edit
 
 
 class FakeObject:

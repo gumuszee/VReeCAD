@@ -4,8 +4,8 @@ import unittest
 import support  # noqa: F401
 
 # backends.sim imports Coin only inside SimSession methods, so the pose math is testable without FreeCAD
-from freecad.BlocksCAD.backends import sim
-from freecad.BlocksCAD.input import PRESS_THRESHOLD
+from freecad.VReeCAD.backends import sim
+from freecad.VReeCAD.input import PRESS_THRESHOLD
 
 
 def close(a, b, tol=1e-6):

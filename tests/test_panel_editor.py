@@ -1,8 +1,8 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.ui import layout as lay
-from freecad.BlocksCAD.ui import panel_editor as pe
+from freecad.VReeCAD.ui import layout as lay
+from freecad.VReeCAD.ui import panel_editor as pe
 
 
 def press(editor, text):

@@ -1,7 +1,7 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.cad import joints
+from freecad.VReeCAD.cad import joints
 
 
 class FakeObject:

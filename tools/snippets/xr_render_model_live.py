@@ -7,7 +7,7 @@ import traceback
 
 import xr
 from xr.exception import check_result as _check
-import freecad.BlocksCAD.commonXR as _cxr
+import freecad.VReeCAD.commonXR as _cxr
 
 _w = _cxr.xr_dock_w.xr_widget if _cxr.xr_dock_w else None
 

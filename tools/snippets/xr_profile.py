@@ -6,7 +6,7 @@
 # Run:  python tools\fc_rpc.py exec -f tools\snippets\xr_profile.py        (the Report view: tools\snippets\report_view.py)
 import os
 
-from freecad.BlocksCAD import profiling
+from freecad.VReeCAD import profiling
 
 _root = os.path.abspath(os.path.join(os.path.dirname(profiling.__file__), "..", ".."))
 _path = os.path.join(_root, "tools", "logs", "xr_profile.csv")
@@ -14,7 +14,7 @@ os.makedirs(os.path.dirname(_path), exist_ok=True)
 if profiling.PROFILER.on:
     profiling.PROFILER.stop()
 else:
-    import freecad.BlocksCAD.commonXR as _c
+    import freecad.VReeCAD.commonXR as _c
     from pivy import coin as _coin
     _w = _c.xr_dock_w
     _x = getattr(_w, "xr_widget", None) or getattr(_w, "xr", None) or _w

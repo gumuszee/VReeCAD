@@ -16,7 +16,7 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 
 | Area | Status | Notes |
 |---|---|---|
-| Addon loads in FreeCAD (workbench `BlocksCADWorkbench`, package `freecad.BlocksCAD`) | Verified | all modules import; no Report-view errors |
+| Addon loads in FreeCAD (workbench `VReeCADWorkbench`, package `freecad.VReeCAD`) | Verified | all modules import; no Report-view errors |
 | OpenXR session starts, reaches `FOCUSED` when the headset is worn | Verified | `tools/xr_probe.py`, `tools/snippets/xr_state.py` |
 | Document geometry visible in the headset | Verified | owner-confirmed |
 | Frame rate with a small scene | Verified | owner-reported "excellent" |
@@ -39,7 +39,7 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Performance with large scenes (rendering the model) | Unverified | |
 | Compact tinted panels (face edge 3.6 cm, 7 mm text) and a carousel that costs no visible frame rate while shown | Unverified | `tests/live/test_coin.py` (contrast of every tint, no scene graph writes while still, a moving hand writes only the transform of the carousel, a panel whose input has not changed is not refreshed, the panels are a handful of shapes without cubes, contents of back-facing panels not drawn), `tools/snippets/bench_ui.py` (Sim, desktop GPU: the user interface alone 0.14 ms with the six default panels shown, 0.21 ms with the ten panels of the value module, 0.16 ms hidden; the Coin render of the carousel adds 0.1 ms per frame; 612 scene nodes and 8550 triangles with the value panels, nearly all of them the glyphs of the text) |
 | The carousel stays shown while the value sliders are worked, however far the Value panel is from the controller | Unverified | `tests/test_ring.py` (the gaze is measured to the centres of the panels with a wider cone to stay, a wider one still while the pointer works on it) |
-| Frame rate and frame time in the headset with the carousel shown and hidden | Verified | measured in the headset (render target 5288 x 2644, MSAA 4) with `tools/snippets/xr_profile.py` (the frame profiler of `freecad/BlocksCAD/profiling.py`: a summary in the Report view every 3 s, one line for the frames with the carousel shown and one for the frames with it hidden, with the time of each part of the frame and of each eye including the GPU; rows of every frame in `tools/logs/xr_profile.csv`): with the carousel shown the render takes 1.3 ms per eye and a frame 9 ms, with it hidden 1.3 ms and 8.4 ms; without `renderCaching` ON on its separators the render takes 17 ms per eye and a frame 42 ms (the text, not the plates, blending or the interface, which takes 0.3 ms) |
+| Frame rate and frame time in the headset with the carousel shown and hidden | Verified | measured in the headset (render target 5288 x 2644, MSAA 4) with `tools/snippets/xr_profile.py` (the frame profiler of `freecad/VReeCAD/profiling.py`: a summary in the Report view every 3 s, one line for the frames with the carousel shown and one for the frames with it hidden, with the time of each part of the frame and of each eye including the GPU; rows of every frame in `tools/logs/xr_profile.csv`): with the carousel shown the render takes 1.3 ms per eye and a frame 9 ms, with it hidden 1.3 ms and 8.4 ms; without `renderCaching` ON on its separators the render takes 17 ms per eye and a frame 42 ms (the text, not the plates, blending or the interface, which takes 0.3 ms) |
 
 ## Interface in the headset
 
@@ -98,7 +98,7 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 
 ## Remaining in-headset checks (owner)
 
-Start the viewer (workbench BlocksCAD, "Open XR viewer"), wear the headset until the session is `FOCUSED`, then check what the table lists as unverified:
+Start the viewer (workbench VReeCAD, "Open XR viewer"), wear the headset until the session is `FOCUSED`, then check what the table lists as unverified:
 
 1. Joints (Hinge, Slider, Fixed joint, Unjoint): control of the rotation, display of the selection after moves.
 2. Sketch tool: dragging a circle radius, constraints that keep snapped points, extruding an arc sketch, adding lines to a sketch that lies on no base plane.

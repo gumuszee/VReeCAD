@@ -1,6 +1,6 @@
 # Controller models
 
-BlocksCAD renders the controller models that the **OpenXR runtime** provides. No controller meshes or textures are bundled
+VReeCAD renders the controller models that the **OpenXR runtime** provides. No controller meshes or textures are bundled
 with the addon, so every user sees the exact devices in use (Steam Frame, Quest Touch, Index, ...), with animated parts, and the
 repository stays free of third-party assets.
 
@@ -41,7 +41,7 @@ space and the tool tip comes from the aim pose.
 | Location | both spaces are located (position and orientation valid and tracked) near the controllers while `FOCUSED`; unlocatable while `VISIBLE` |
 
 Probes: `tools/snippets/xr_render_models.py` (download and summarise) and `tools/snippets/xr_render_model_live.py` (hands, location, node state).
-The assets are cached as `%LOCALAPPDATA%\BlocksCAD\cache\rendermodels\<uuid>.glb`.
+The assets are cached as `%LOCALAPPDATA%\VReeCAD\cache\rendermodels\<uuid>.glb`.
 
 ## Loading into Coin3D
 

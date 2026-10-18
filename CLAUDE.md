@@ -1,13 +1,13 @@
-# BlocksCAD - instructions for AI sessions
+# VReeCAD - instructions for AI sessions
 
 Goal: parametric CAD modelling in VR on FreeCAD (installed 1.1.4) with Blocks-inspired intuitive controls. This repo
-(github.com/gumuszee/BlocksCAD_VR, a fork of kwahoo2/freecad-xr-workbench) **is the addon**. Overview `README.md`;
+(github.com/gumuszee/VReeCAD, a fork of kwahoo2/freecad-xr-workbench) **is the addon**. Overview `README.md`;
 direction `docs/design.md`; verification state `docs/verification.md`.
 
 ## Read first
 - `docs/design.md` (decisions D1-D7, architecture, milestones) and `docs/ux-design.md` (the Open Brush derived UI; reference code in `refs/open-brush`) - the owner's answers there are binding.
 - `docs/controller-models.md` and `docs/input-profiles.md` (runtime controller models, measured input components), `docs/setup.md` (environment + **gotchas**), `docs/toolbox.md` (existing tools - extend, don't reinvent), `docs/licensing.md`.
-- `docs/analysis-xr-workbench.md` before touching `freecad/BlocksCAD/`.
+- `docs/analysis-xr-workbench.md` before touching `freecad/VReeCAD/`.
 
 ## Hard rules
 - **Never mention Claude/AI in commits or sign off as Claude.** Commits use the owner's git identity (global config: Vojtech Tuma). No `Co-Authored-By`, no "Generated with" lines. Don't push unless asked.
@@ -25,7 +25,7 @@ direction `docs/design.md`; verification state `docs/verification.md`.
 
 ## Tests
 - Pure unit tests (no FreeCAD): `& "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" -m unittest discover -s tests`. GUI-dependent tests: `& "$env:LOCALAPPDATA\Programs\FreeCAD 1.1\bin\python.exe" tools\run_headless_tests.py --render` runs them in a separate headless process and never touches the running FreeCAD or the viewer (use it whenever the headset may be in use; `tools\run_headless_render.py` does the same for the render snippets). `python tools\fc_rpc.py exec -f tools\snippets\run_live_tests.py` runs them in the live GUI and reloads modules there: close the viewer first and only when nobody wears the headset. Run the unit tests, the live tests and `tools\lint_imports.py` before committing addon changes.
-- Tools are classes in `freecad/BlocksCAD/tools/` (registered with `@register`); they see only the `InputFrame`. Drive them headless with `backends/sim.py` (`tools/snippets/sim_demo.py`).
+- Tools are classes in `freecad/VReeCAD/tools/` (registered with `@register`); they see only the `InputFrame`. Drive them headless with `backends/sim.py` (`tools/snippets/sim_demo.py`).
 
 ## Conventions
 - New script -> `tools/` (FreeCAD-side snippets in `tools/snippets/`), header comment with purpose/usage, row in `docs/toolbox.md`.

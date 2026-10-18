@@ -2,11 +2,11 @@ import math
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.cad import edit
-from freecad.BlocksCAD.cad import primitives as prim
-from freecad.BlocksCAD.core import grab, stage
-from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.core.navigation import WorldPose
+from freecad.VReeCAD.cad import edit
+from freecad.VReeCAD.cad import primitives as prim
+from freecad.VReeCAD.core import grab, stage
+from freecad.VReeCAD.core import mathutil as mu
+from freecad.VReeCAD.core.navigation import WorldPose
 
 
 def close(a, b, places=6):

@@ -1,9 +1,9 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.ui import radial as rd
-from freecad.BlocksCAD.ui import settings as cfg
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.ui import radial as rd
+from freecad.VReeCAD.ui import settings as cfg
 
 HAND = (0.25, 1.2, -0.4)
 ITEMS = ["a", "b", "c", "d"]

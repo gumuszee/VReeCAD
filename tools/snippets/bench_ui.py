@@ -8,9 +8,9 @@ import os
 import time
 
 import FreeCAD as _App
-import freecad.BlocksCAD.backends.sim as _sim
-import freecad.BlocksCAD.cad.primitives as _pm
-import freecad.BlocksCAD.cad.picking as _pk
+import freecad.VReeCAD.backends.sim as _sim
+import freecad.VReeCAD.cad.primitives as _pm
+import freecad.VReeCAD.cad.picking as _pk
 from pivy import coin as _coin
 
 FRAMES = 60
@@ -112,7 +112,7 @@ _report("default panels")
 if os.environ.get("BENCH_PROFILE"):
     _profile()
 
-_temp = _App.newDocument("BlocksCADBench")
+_temp = _App.newDocument("VReeCADBench")
 _pm.create(_temp, "Box", (200.0, -60.0, 0.0), (120.0, 120.0, 80.0))
 _s.tool_manager.ctx.services["document"] = _s._document
 _pk.set_selection(_temp, [(_temp.Objects[0].Name, "")])

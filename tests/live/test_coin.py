@@ -8,8 +8,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import support  # noqa: F401,E402
 import test_gltf  # noqa: E402  (synthetic GLB builder)
 
-from freecad.BlocksCAD.render import controller_shape, gltf_coin, offscreen  # noqa: E402
-from freecad.BlocksCAD.backends import sim  # noqa: E402
+from freecad.VReeCAD.render import controller_shape, gltf_coin, offscreen  # noqa: E402
+from freecad.VReeCAD.backends import sim  # noqa: E402
 
 
 def non_background(image, background=(31, 31, 36), tol=6):
@@ -35,7 +35,7 @@ class GltfCoinTest(unittest.TestCase):
         self.assertEqual(non_background(image), 0)
 
     def test_cached_runtime_models_build_when_present(self):
-        folder = os.path.join(os.environ.get("LOCALAPPDATA", ""), "BlocksCAD", "cache", "rendermodels")
+        folder = os.path.join(os.environ.get("LOCALAPPDATA", ""), "VReeCAD", "cache", "rendermodels")
         files = [f for f in os.listdir(folder) if f.endswith(".glb")] if os.path.isdir(folder) else []
         if not files:
             self.skipTest("no cached runtime controller models")
@@ -113,7 +113,7 @@ class DepthOrderTest(unittest.TestCase):
         return offscreen.render(scene, (1.5, 1.0, 3.0), target=(0.0, 0.0, 0.0), size=(160, 120), ambient=1.0)
 
     def test_the_object_that_comes_later_wins_a_shared_plane_whatever_the_drawing_order_and_releasing_gives_the_scene_back(self):
-        from freecad.BlocksCAD.render import depth_order
+        from freecad.VReeCAD.render import depth_order
         red, blue = self.quad((1.0, 0.0, 0.0)), self.quad((0.0, 0.0, 1.0))
         before = (red.getNumChildren(), blue.getNumChildren())
         shares = self.share(self.render(red, blue))
@@ -133,7 +133,7 @@ class DepthOrderTest(unittest.TestCase):
         self.assertEqual(self.share(self.render(red, blue))[0], 0)
 
     def test_new_objects_get_the_next_place_gone_ones_lose_theirs_and_objects_without_a_view_are_left_alone(self):
-        from freecad.BlocksCAD.render import depth_order
+        from freecad.VReeCAD.render import depth_order
         first, second = self.quad((1.0, 0.0, 0.0)), self.quad((0.0, 0.0, 1.0))
         order = depth_order.DepthOrder()
         order.sync(self.Doc([self.Obj("A", first), self.Obj("NoView", None)]))
@@ -151,7 +151,7 @@ class DepthOrderTest(unittest.TestCase):
         order.release()
 
     def test_the_offsets_wrap_after_the_levels_and_stay_a_few_steps_of_the_depth_buffer(self):
-        from freecad.BlocksCAD.render import depth_order
+        from freecad.VReeCAD.render import depth_order
         factors = [depth_order.offset_for(rank) for rank in range(depth_order.LEVELS + 2)]
         self.assertEqual(factors[depth_order.LEVELS - 1], (0.0, 0.0))                  # the newest level is not pushed
         self.assertEqual(factors[depth_order.LEVELS], factors[0])
@@ -161,7 +161,7 @@ class DepthOrderTest(unittest.TestCase):
     def test_the_polygon_offset_a_part_view_provider_has_is_shifted_and_put_back(self):
         """The view provider of a Part object has a polygon offset between its points and its faces, which replaces any node before it."""
         from pivy import coin
-        from freecad.BlocksCAD.render import depth_order
+        from freecad.VReeCAD.render import depth_order
 
         def part(rgb):
             root = self.quad(rgb)
@@ -383,7 +383,7 @@ class SimUiTest(unittest.TestCase):
         self.settle()
 
     def aim_at_slot(self, slot, page=0):
-        from freecad.BlocksCAD.ui import ring as rg
+        from freecad.VReeCAD.ui import ring as rg
         pose = self.s.ui.ring.poses[page]
         shown = self.s.ui.shown_layout().pages[page]
         x = (slot % shown.cols - (shown.cols - 1) / 2) * (rg.CELL + rg.GAP)
@@ -460,7 +460,7 @@ class SimUiTest(unittest.TestCase):
         self.s.input.set_hand(1, trigger=1.0)
         self.settle(30)
         self.assertEqual(ui.ring.lifted_face, (tools, free))
-        from freecad.BlocksCAD.ui import ring as rg
+        from freecad.VReeCAD.ui import ring as rg
         pose = ui.ring.poses[tools]
         point = tuple(c + u * (rg.HIDE_X[0] + rg.HIDE_X[1]) / 2 + v * (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2 for c, u, v in zip(pose.centre, pose.u, pose.v))
         self.s.input.set_hand(1, position=tuple(c + n * 0.3 for c, n in zip(point, pose.n)), point_at=point)
@@ -475,7 +475,7 @@ class SimUiTest(unittest.TestCase):
 
     def tap_menu_of(self, name):
         """Tap the menu mark in the title bar of the panel called `name` with the laser."""
-        from freecad.BlocksCAD.ui import ring as rg
+        from freecad.VReeCAD.ui import ring as rg
         ui = self.s.ui
         page = [p.name for p in ui.layout.pages].index(name)
         pose = ui.ring.poses[page]
@@ -501,7 +501,7 @@ class SimUiTest(unittest.TestCase):
         self.settle(3)
 
     def test_a_tap_on_the_menu_mark_of_a_panel_opens_the_editor_that_renames_and_colours_it(self):
-        from freecad.BlocksCAD.ui import panel_editor as pe
+        from freecad.VReeCAD.ui import panel_editor as pe
         self.show_carousel()
         ui = self.s.ui
         names = [p.name for p in ui.layout.pages]
@@ -527,7 +527,7 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual([t.text for t in ui.toasts.items][-1], "Panel: Hammer")
 
     def test_the_editor_shows_the_panel_as_it_will_be_and_nothing_on_it_is_pressed(self):
-        from freecad.BlocksCAD.ui import panel_editor as pe
+        from freecad.VReeCAD.ui import panel_editor as pe
         self.show_carousel()
         ui = self.s.ui
         self.settle(5)
@@ -567,7 +567,7 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual([t.text for t in ui.toasts.items][-1], "Colour failed: division by zero")
 
     def test_cancel_leaves_the_panel_and_an_empty_name_is_refused(self):
-        from freecad.BlocksCAD.ui import panel_editor as pe
+        from freecad.VReeCAD.ui import panel_editor as pe
         self.show_carousel()
         ui = self.s.ui
         self.tap_menu_of("Tools")
@@ -583,12 +583,12 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual((page.name, page.hue), ("Tools", None))
 
     def test_the_editor_keeps_the_carousel_while_the_selection_changes_and_the_other_carousel_comes_back(self):
-        from freecad.BlocksCAD.ui import panel_editor as pe
-        from freecad.BlocksCAD.cad import picking
+        from freecad.VReeCAD.ui import panel_editor as pe
+        from freecad.VReeCAD.cad import picking
         import FreeCAD as App
-        doc = App.newDocument("BlocksCADEditor")
+        doc = App.newDocument("VReeCADEditor")
         try:
-            from freecad.BlocksCAD.cad import primitives as prim
+            from freecad.VReeCAD.cad import primitives as prim
             box = prim.create(doc, "Box", (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
             self.show_carousel()
             ui = self.s.ui
@@ -612,8 +612,8 @@ class SimUiTest(unittest.TestCase):
     def test_the_hue_and_the_name_of_a_panel_are_saved_with_the_layout(self):
         import os
         import tempfile
-        from freecad.BlocksCAD.tools import registry
-        from freecad.BlocksCAD.ui.controller import UiController
+        from freecad.VReeCAD.tools import registry
+        from freecad.VReeCAD.ui.controller import UiController
         with tempfile.TemporaryDirectory() as folder:
             paths = dict(layout_path=os.path.join(folder, "layout.json"), settings_path=os.path.join(folder, "settings.json"),
                          values_layout_path=os.path.join(folder, "values_layout.json"))
@@ -714,10 +714,10 @@ class SimUiTest(unittest.TestCase):
     def test_the_cards_show_once_on_the_first_run_and_the_setting_is_saved_when_they_go(self):
         import os
         import tempfile
-        from freecad.BlocksCAD.tools import registry
-        from freecad.BlocksCAD.ui import help as controls_help
-        from freecad.BlocksCAD.ui import settings as cfg
-        from freecad.BlocksCAD.ui.controller import UiController
+        from freecad.VReeCAD.tools import registry
+        from freecad.VReeCAD.ui import help as controls_help
+        from freecad.VReeCAD.ui import settings as cfg
+        from freecad.VReeCAD.ui.controller import UiController
         with tempfile.TemporaryDirectory() as folder:
             paths = dict(layout_path=os.path.join(folder, "layout.json"), settings_path=os.path.join(folder, "settings.json"))
             first = UiController(registry.names(), registry.label_of, {}, **paths)
@@ -765,9 +765,9 @@ class SimUiTest(unittest.TestCase):
     def test_the_tool_hand_is_saved_and_the_next_start_has_the_hands_the_way_they_were(self):
         import os
         import tempfile
-        from freecad.BlocksCAD.tools import registry
-        from freecad.BlocksCAD.ui import settings as cfg
-        from freecad.BlocksCAD.ui.controller import UiController
+        from freecad.VReeCAD.tools import registry
+        from freecad.VReeCAD.ui import settings as cfg
+        from freecad.VReeCAD.ui.controller import UiController
         with tempfile.TemporaryDirectory() as folder:
             paths = dict(layout_path=os.path.join(folder, "layout.json"), settings_path=os.path.join(folder, "settings.json"))
             first = UiController(registry.names(), registry.label_of, {}, **paths)
@@ -791,10 +791,10 @@ class SimUiTest(unittest.TestCase):
         import os
         import tempfile
         import types
-        from freecad.BlocksCAD.core import units
-        from freecad.BlocksCAD.tools import registry
-        from freecad.BlocksCAD.ui import settings as cfg
-        from freecad.BlocksCAD.ui.controller import UiController
+        from freecad.VReeCAD.core import units
+        from freecad.VReeCAD.tools import registry
+        from freecad.VReeCAD.ui import settings as cfg
+        from freecad.VReeCAD.ui.controller import UiController
         ui = self.s.ui
         face = ui.faces["pointer.submm"]
         self.assertEqual(face.action, "units:submm")
@@ -845,7 +845,7 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
 
     def test_a_hovered_face_stands_half_a_centimetre_in_front_of_its_panel_and_goes_back(self):
-        from freecad.BlocksCAD.ui import ring_view as rv
+        from freecad.VReeCAD.ui import ring_view as rv
         self.show_carousel()
         ui = self.s.ui
         tools = [p.name for p in ui.layout.pages].index("Tools")
@@ -863,7 +863,7 @@ class SimUiTest(unittest.TestCase):
         self.assertAlmostEqual(z(), rv.DEPTH * 0.5)
 
     def test_the_keys_of_the_number_pad_have_no_tooltip(self):
-        from freecad.BlocksCAD.ui import value_module as vm
+        from freecad.VReeCAD.ui import value_module as vm
         ui = self.s.ui
         for face_id in ("key.0", "key.9", "key.point", "key.plus", "key.open"):
             self.assertIn(face_id, vm.NO_TOOLTIP)
@@ -871,7 +871,7 @@ class SimUiTest(unittest.TestCase):
             self.assertNotIn(face_id, vm.NO_TOOLTIP)
 
     def test_a_label_plate_is_as_wide_as_its_text_and_a_long_tooltip_is_broken_into_lines(self):
-        from freecad.BlocksCAD.ui import feedback_view as fv
+        from freecad.VReeCAD.ui import feedback_view as fv
         plate = fv.LabelPlate()
         plate.set_text("Undo")
         short = plate._plate_width.getValue()
@@ -895,7 +895,7 @@ class SimUiTest(unittest.TestCase):
 
     def test_the_stick_of_the_tool_hand_adjusts_the_options_of_the_active_tool(self):
         from pivy import coin
-        from freecad.BlocksCAD.tools import base, registry
+        from freecad.VReeCAD.tools import base, registry
 
         class Sized(base.Tool):
             name, label = "sized", "Sized"
@@ -920,7 +920,7 @@ class SimUiTest(unittest.TestCase):
 
     def test_the_controller_hides_the_base_of_the_tip(self):
         """The cone of the tip starts inside the controller model: that part must not show in the inverted colours."""
-        from freecad.BlocksCAD.ui import style
+        from freecad.VReeCAD.ui import style
         target = tuple(round(c * 255) for c in style.invert((0.4, 0.5, 0.65)))     # the inverted colour of the cone
 
         def inverted_cone_pixels():
@@ -944,7 +944,7 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(self.s.scene.findChild(self.s.ui.overlay), self.s.scene.getNumChildren() - 1)
 
     def test_the_panels_are_tinted_by_name_and_the_value_panels_stay_grey(self):
-        from freecad.BlocksCAD.ui import style, value_module
+        from freecad.VReeCAD.ui import style, value_module
 
         def contrast(a, b):
             high, low = sorted((style.luminance(a), style.luminance(b)), reverse=True)
@@ -1049,7 +1049,7 @@ class SimUiTest(unittest.TestCase):
         views = self.s.ui.view._panels
         ring = self.s.ui.ring
         head = self.s.input.head.position
-        from freecad.BlocksCAD.core import mathutil as mu
+        from freecad.VReeCAD.core import mathutil as mu
         for index, view in enumerate(views):
             pose = ring.poses[index]
             facing = mu.dot(mu.sub(head, pose.centre), pose.n) > 0.0
@@ -1069,7 +1069,7 @@ class PrimitiveLiveTest(unittest.TestCase):
     def setUp(self):
         import FreeCAD as App
         self.App = App
-        self.doc = App.newDocument("BlocksCADPrimitives")
+        self.doc = App.newDocument("VReeCADPrimitives")
         self.doc.UndoMode = 1                       # the desktop has it on; a document without a GUI has not
 
     def tearDown(self):
@@ -1080,7 +1080,7 @@ class PrimitiveLiveTest(unittest.TestCase):
         return tuple(round(v, 2) for v in (b.XMin, b.YMin, b.ZMin)), tuple(round(v, 2) for v in (b.XLength, b.YLength, b.ZLength))
 
     def test_every_shape_is_made_inside_its_box_and_the_preview_mesh_matches_the_feature(self):
-        from freecad.BlocksCAD.cad import meshes, primitives as prim
+        from freecad.VReeCAD.cad import meshes, primitives as prim
         for name in prim.SHAPES:
             obj = prim.create(self.doc, name, self.LO, self.SIZE)
             lo, size = self.bounds(obj.Shape)
@@ -1107,13 +1107,13 @@ class PrimitiveLiveTest(unittest.TestCase):
         self.assertEqual(len(self.doc.Objects), len(prim.SHAPES))
 
     def test_the_wedge_is_a_ramp_that_rises_towards_plus_y(self):
-        from freecad.BlocksCAD.cad import primitives as prim
+        from freecad.VReeCAD.cad import primitives as prim
         wedge = prim.create(self.doc, "Wedge", (0.0, 0.0, 0.0), (40.0, 60.0, 80.0))
         self.assertAlmostEqual(wedge.Shape.Volume, 40.0 * 60.0 * 80.0 / 2, places=3)
         self.assertGreater(wedge.Shape.CenterOfMass.y, 30.0)                        # heavier on the +Y side where the ramp is tall
 
     def test_a_shape_is_one_undo_step_and_a_parametric_feature(self):
-        from freecad.BlocksCAD.cad import primitives as prim
+        from freecad.VReeCAD.cad import primitives as prim
         obj = prim.create(self.doc, "Cylinder", self.LO, self.SIZE)
         self.assertEqual((obj.TypeId, obj.Radius.Value, obj.Height.Value), ("Part::Cylinder", 20.0, 80.0))
         obj.Radius = 10.0                                                          # editable afterwards
@@ -1126,14 +1126,14 @@ class PrimitiveLiveTest(unittest.TestCase):
         self.assertEqual(len(self.doc.Objects), 1)
 
     def test_a_failed_shape_leaves_the_document_unchanged(self):
-        from freecad.BlocksCAD.cad import primitives as prim
+        from freecad.VReeCAD.cad import primitives as prim
         with self.assertRaises(Exception):
             prim.create(self.doc, "Box", self.LO, (0.0, 0.0, 0.0))
         self.assertEqual(len(self.doc.Objects), 0)
 
     def test_the_tool_makes_a_box_from_a_drag_in_the_sim_and_undo_removes_it(self):
         from pivy import coin
-        from freecad.BlocksCAD.core import stage
+        from freecad.VReeCAD.core import stage
         s = sim.SimSession(None)
         try:
             s.ui.settings.pointer_mode = "tip"
@@ -1182,7 +1182,7 @@ class PrimitiveLiveTest(unittest.TestCase):
 
     def test_dragging_a_torus_updates_the_preview_quickly(self):
         import time
-        from freecad.BlocksCAD.core import stage
+        from freecad.VReeCAD.core import stage
         s = sim.SimSession(None)
         try:
             s.ui.settings.pointer_mode = "tip"
@@ -1262,9 +1262,9 @@ class MoveLiveTest(unittest.TestCase):
 
     def setUp(self):
         import FreeCAD as App
-        from freecad.BlocksCAD.cad import primitives as prim
+        from freecad.VReeCAD.cad import primitives as prim
         self.App = App
-        self.doc = App.newDocument("BlocksCADMove")
+        self.doc = App.newDocument("VReeCADMove")
         self.doc.UndoMode = 1
         self.box = prim.create(self.doc, "Box", (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         self.s = None
@@ -1275,7 +1275,7 @@ class MoveLiveTest(unittest.TestCase):
         self.App.closeDocument(self.doc.Name)
 
     def session(self):
-        from freecad.BlocksCAD.core import mathutil as mu, stage
+        from freecad.VReeCAD.core import mathutil as mu, stage
         s = self.s = sim.SimSession(None)
         s.ui.settings.pointer_mode = "tip"
         s.ui.settings.tip_angle = 0.0
@@ -1301,7 +1301,7 @@ class MoveLiveTest(unittest.TestCase):
         return [(o.ObjectName, tuple(o.SubElementNames)) for o in Gui.Selection.getSelectionEx(self.doc.Name)]
 
     def test_picking_prefers_a_corner_over_an_edge_over_a_face_over_the_inside(self):
-        from freecad.BlocksCAD.cad import picking
+        from freecad.VReeCAD.cad import picking
         probe = lambda p: picking.pick(self.doc, p, 1000.0)
         self.assertIsNone(probe((400.0, 400.0, 400.0)))
         self.assertEqual(probe((3.0, 3.0, 3.0)).kind, "vertex")
@@ -1316,12 +1316,12 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNone(probe((50.0, 50.0, 96.0)))                                          # hidden objects are not touched
 
     def test_the_reach_shrinks_when_the_world_is_enlarged(self):
-        from freecad.BlocksCAD.cad import picking
+        from freecad.VReeCAD.cad import picking
         self.assertEqual(picking.pick(self.doc, (50.0, 50.0, 125.0), 1000.0).kind, "face")     # 25 mm above the top: within 30 mm
         self.assertIsNone(picking.pick(self.doc, (50.0, 50.0, 125.0), 500.0))                  # at twice the scale only 15 mm
 
     def test_the_display_of_each_kind_of_element(self):
-        from freecad.BlocksCAD.cad import picking
+        from freecad.VReeCAD.cad import picking
         self.assertEqual(len(picking.display(self.box, "Vertex1").markers), 1)
         edge = picking.display(self.box, "Edge1")
         self.assertEqual((len(edge.polylines), len(edge.triangles[1])), (1, 0))
@@ -1362,11 +1362,11 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(tool._hover.kind, "object")
         display = tool._display(self.doc, tool._hover.name, "")[0]
         self.assertGreater(len(display.triangles[1]), 0)                         # the whole object is filled, not just outlined
-        from freecad.BlocksCAD.render import highlight
+        from freecad.VReeCAD.render import highlight
         self.assertLess(highlight.DEPTH_RANGE[1], highlight.DEPTH_RANGE[0])      # the hover is nearer to the viewer
 
     def test_b_during_a_grab_fixes_the_body_in_one_undo_step_and_a_fixed_body_is_not_moved(self):
-        from freecad.BlocksCAD.cad import fixing
+        from freecad.VReeCAD.cad import fixing
         s = self.session()
         self.hand(1, (50.0, 50.0, 96.0))
         self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
@@ -1404,7 +1404,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertFalse(fixing.is_fixed(self.box))
 
     def test_a_body_attached_to_a_fixed_body_holds_its_support(self):
-        from freecad.BlocksCAD.cad import attach, fixing
+        from freecad.VReeCAD.cad import attach, fixing
         other = self.doc.addObject("Part::Box", "Other")
         other.Length, other.Width, other.Height = 50.0, 40.0, 30.0
         self.doc.recompute()
@@ -1428,7 +1428,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNone(fixing.blocker(self.box))
 
     def test_b_during_a_point_drag_of_a_sketch_makes_the_constraints_that_fix_it(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         s = self.session()
         s.select_tool("sketch")
         s.tool_manager.active.values["mode"] = "Rectangle"
@@ -1475,7 +1475,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual([c for c in sketch.Constraints if c.Name.startswith("lock")], [])
 
     def test_b_during_a_point_drag_of_a_block_fixes_the_point_and_a_removal_renumbers_the_fixed_points(self):
-        from freecad.BlocksCAD.cad import block
+        from freecad.VReeCAD.cad import block
         made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         s = self.session()
         s.select_tool("points")
@@ -1554,13 +1554,13 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNone(s.ui.gesture_text)
         self.assertEqual([t.text for t in s.ui.toasts.items][-1], "Moved " + self.box.Label)
         self.assertEqual(self.selection(), [(self.box.Name, ())])           # the moved object is selected as a whole
-        from freecad.BlocksCAD.cad import picking
+        from freecad.VReeCAD.cad import picking
         self.assertEqual(picking.get_selection(self.doc), [(self.box.Name, "")])
         self.doc.undo()
         self.assertEqual(tuple(self.box.Placement.Base), (0.0, 0.0, 0.0))
 
     def test_a_free_grab_lines_the_box_of_the_object_up_with_the_model_and_a_locked_grab_does_not(self):
-        from freecad.BlocksCAD.cad import anchors, primitives as prim
+        from freecad.VReeCAD.cad import anchors, primitives as prim
         prim.create(self.doc, "Box", (300.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         s = self.session()
         s.tool_manager.active.ctx.services["guide_anchors"] = lambda exclude, probes=None: (anchors.collect(self.doc, exclude), 8.0)
@@ -1656,7 +1656,7 @@ class MoveLiveTest(unittest.TestCase):
         self.hand(1, (350.0, 50.0, 96.0), trigger=0.0)
 
     def test_deleting_removes_whole_objects_in_one_undo_step_and_leaves_selected_elements_alone(self):
-        from freecad.BlocksCAD.cad import edit
+        from freecad.VReeCAD.cad import edit
         name, label = self.box.Name, self.box.Label
         self.assertEqual(edit.delete_objects(self.doc, [(name, "Face1")]), "Select a whole object to delete")
         self.assertIsNotNone(self.doc.getObject(name))
@@ -1666,11 +1666,11 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNotNone(self.doc.getObject(name))                                        # one undo step brings it back
 
     def second_shape(self, shape="Cylinder", lo=(50.0, 50.0, 0.0), size=(100.0, 100.0, 100.0)):
-        from freecad.BlocksCAD.cad import primitives as prim
+        from freecad.VReeCAD.cad import primitives as prim
         return prim.create(self.doc, shape, lo, size)
 
     def test_the_sources_of_a_boolean_are_selected_even_hidden_and_their_size_is_a_value(self):
-        from freecad.BlocksCAD.cad import combine, values
+        from freecad.VReeCAD.cad import combine, values
         other = self.second_shape()
         text, name = combine.combine(self.doc, "cut", [(self.box.Name, ""), (other.Name, "")])
         cut = self.doc.getObject(name)
@@ -1691,7 +1691,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(combine.sources(self.doc, []), ("Select a feature first", []))
 
     def test_a_fuse_is_one_undo_step_keeps_its_sources_and_follows_them(self):
-        from freecad.BlocksCAD.cad import combine
+        from freecad.VReeCAD.cad import combine
         other = self.second_shape()
         text, name = combine.combine(self.doc, "fuse", [(self.box.Name, ""), (other.Name, "")])
         self.assertEqual(text, "Fuse: 2 objects")
@@ -1708,7 +1708,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNotNone(self.doc.getObject(self.box.Name))
 
     def test_a_cut_takes_every_later_object_from_the_first(self):
-        from freecad.BlocksCAD.cad import combine
+        from freecad.VReeCAD.cad import combine
         other = self.second_shape("Box", (50.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         third = self.second_shape("Box", (0.0, 50.0, 0.0), (50.0, 50.0, 100.0))
         text, name = combine.combine(self.doc, "cut", [(self.box.Name, ""), (other.Name, "")])
@@ -1721,7 +1721,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(cut.Shape.Volume, 50.0 * 50.0 * 100.0)
 
     def test_a_common_keeps_what_the_objects_share_and_an_empty_one_is_refused(self):
-        from freecad.BlocksCAD.cad import combine
+        from freecad.VReeCAD.cad import combine
         other = self.second_shape("Box", (50.0, 50.0, 0.0), (100.0, 100.0, 100.0))
         text, name = combine.combine(self.doc, "common", [(self.box.Name, ""), (other.Name, "")])
         self.assertAlmostEqual(self.doc.getObject(name).Shape.Volume, 50.0 * 50.0 * 100.0)
@@ -1733,7 +1733,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(len(self.doc.Objects), count)                                      # nothing was left behind
 
     def test_a_copy_has_its_own_parameters_and_lies_beside_the_original(self):
-        from freecad.BlocksCAD.cad import combine
+        from freecad.VReeCAD.cad import combine
         other = self.second_shape()
         text, names = combine.copy_objects(self.doc, [(self.box.Name, "")])
         self.assertEqual(len(names), 1)
@@ -1753,8 +1753,8 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNone(self.doc.getObject(names[0]))
 
     def test_variables_live_in_a_sheet_and_everything_bound_to_one_follows_it(self):
-        from freecad.BlocksCAD.cad import values as object_values, variables
-        from freecad.BlocksCAD.core import values as editing
+        from freecad.VReeCAD.cad import values as object_values, variables
+        from freecad.VReeCAD.core import values as editing
         self.assertEqual(variables.list_variables(self.doc), [])
         target = object_values.ObjectValues(self.doc, self.box)
         editor = editing.ValueEditor(target, step=10.0)
@@ -1791,8 +1791,8 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(self.box.ExpressionEngine, [])
 
     def test_a_position_can_be_bound_and_a_variable_the_shape_cannot_take_is_refused(self):
-        from freecad.BlocksCAD.cad import values as object_values, variables
-        from freecad.BlocksCAD.core import values as editing
+        from freecad.VReeCAD.cad import values as object_values, variables
+        from freecad.VReeCAD.core import values as editing
         editor = editing.ValueEditor(object_values.ObjectValues(self.doc, self.box), step=10.0)
         editor.select(3)                                                                     # X
         editor.entry = "40"
@@ -1813,7 +1813,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(self.box.Placement.Base.x, 70.0)
 
     def test_a_block_is_a_solid_of_points_in_one_undo_step_and_moving_a_point_rebuilds_it(self):
-        from freecad.BlocksCAD.cad import block, blockgeom
+        from freecad.VReeCAD.cad import block, blockgeom
         made = block.create(self.doc, (200.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         self.assertTrue(block.is_block(made))
         self.assertFalse(block.is_block(self.box))
@@ -1830,7 +1830,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertNotIn(made.Name, [o.Name for o in self.doc.Objects])
 
     def test_a_block_that_cannot_be_built_is_refused_and_stays_as_it_was(self):
-        from freecad.BlocksCAD.cad import block, blockgeom
+        from freecad.VReeCAD.cad import block, blockgeom
         made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         vertices, faces = block.read(made)
         flat = [(x, y, 0.0) for x, y, _ in vertices]
@@ -1841,7 +1841,7 @@ class MoveLiveTest(unittest.TestCase):
             block.make_shape(vertices, faces[:4])
 
     def test_a_block_splits_an_edge_and_the_new_point_moves(self):
-        from freecad.BlocksCAD.cad import block, blockgeom
+        from freecad.VReeCAD.cad import block, blockgeom
         made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         vertices, faces = block.read(made)
         vertices, faces, index = blockgeom.split_edge(vertices, faces, 0, 1, (50.0, 0.0, 0.0))
@@ -1854,7 +1854,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(made.Shape.isValid())
 
     def test_the_block_is_picked_by_its_points_and_edges(self):
-        from freecad.BlocksCAD.cad import block
+        from freecad.VReeCAD.cad import block
         made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         found = block.pick(self.doc, (498.0, 1.0, 1.0), 1000.0, "vertex")
         self.assertEqual((found.name, found.sub), (made.Name, "Point1"))
@@ -1869,7 +1869,7 @@ class MoveLiveTest(unittest.TestCase):
     def test_a_block_comes_back_from_a_saved_document_and_recomputes(self):
         import os
         import tempfile
-        from freecad.BlocksCAD.cad import block
+        from freecad.VReeCAD.cad import block
         made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         name = made.Name
         path = os.path.join(tempfile.mkdtemp(), "block.FCStd")
@@ -1884,7 +1884,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(again.Shape.Volume, 1.5e6)
 
     def test_a_point_pulled_through_the_block_makes_no_solid_and_is_refused(self):
-        from freecad.BlocksCAD.cad import block, blockgeom
+        from freecad.VReeCAD.cad import block, blockgeom
         made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         vertices, faces = block.read(made)
         error = block.apply(self.doc, made, blockgeom.move_vertex(vertices, 6, (-60.0, -60.0, -60.0)))
@@ -1901,7 +1901,7 @@ class MoveLiveTest(unittest.TestCase):
         self.hand(1, (400.0, 0.0, 0.0), trigger=1.0)
         self.hand(1, (500.0, 100.0, 100.0), trigger=1.0)
         self.hand(1, (500.0, 100.0, 100.0), trigger=0.0)
-        from freecad.BlocksCAD.cad import block
+        from freecad.VReeCAD.cad import block
         made = [o for o in self.doc.Objects if block.is_block(o)]
         self.assertEqual(len(made), 1)
         made = made[0]
@@ -1920,7 +1920,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
 
     def test_the_points_tool_turns_a_box_into_a_block_as_the_press_starts_and_one_undo_step_takes_both_back(self):
-        from freecad.BlocksCAD.cad import block
+        from freecad.VReeCAD.cad import block
         import FreeCAD as App
         placement = App.Placement(App.Vector(300.0, 40.0, 50.0), App.Rotation(App.Vector(0, 0, 1), 30.0))
         self.box.Placement = placement
@@ -1947,7 +1947,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(self.doc.Objects[0].Shape.Volume, volume)
 
     def test_a_box_that_another_object_uses_or_that_has_expressions_is_not_editable(self):
-        from freecad.BlocksCAD.cad import block, primitives as prim
+        from freecad.VReeCAD.cad import block, primitives as prim
         other = prim.create(self.doc, "Box", (500.0, 0.0, 0.0), (50.0, 50.0, 50.0))
         self.assertTrue(block.editable_box(self.box))
         self.box.setExpression("Length", "100 mm")
@@ -1960,7 +1960,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertFalse(block.editable_box(fused))
 
     def test_a_block_can_be_attached_to_a_face_and_follows_it(self):
-        from freecad.BlocksCAD.cad import attach, block
+        from freecad.VReeCAD.cad import attach, block
         import FreeCAD as App
         small = block.create(self.doc, (500.0, 0.0, 0.0), (40.0, 40.0, 40.0))
         face = lambda o, z: next(f"Face{i + 1}" for i, f in enumerate(o.Shape.Faces)
@@ -1978,7 +1978,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(small.Shape.BoundBox.Center.x, 80.0)                           # and stays where it was
 
     def test_the_points_tool_splits_an_edge_and_drags_the_new_point_in_one_undo_step(self):
-        from freecad.BlocksCAD.cad import block
+        from freecad.VReeCAD.cad import block
         made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         s = self.session()
         s.select_tool("points")
@@ -1996,7 +1996,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(len(made.Shape.Faces), 6)
 
     def test_with_flat_faces_a_dragged_corner_stays_in_its_planes_and_the_block_keeps_its_faces(self):
-        from freecad.BlocksCAD.cad import block
+        from freecad.VReeCAD.cad import block
         made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         s = self.session()
         s.select_tool("points")
@@ -2013,8 +2013,8 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
 
     def test_the_coordinates_of_a_picked_point_are_values_that_can_be_bound_to_a_variable(self):
-        from freecad.BlocksCAD.cad import block, values as object_values, variables
-        from freecad.BlocksCAD.core import values as editing
+        from freecad.VReeCAD.cad import block, values as object_values, variables
+        from freecad.VReeCAD.core import values as editing
         made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         key, factory = object_values.source(self.doc, lambda doc: [(made.Name, "")])
         self.assertEqual(key, (self.doc.Name, made.Name))                                      # no point picked: the position only
@@ -2058,7 +2058,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(variables.list_variables(self.doc), [])
 
     def test_the_points_tool_shows_the_point_it_moved_on_the_value_panels(self):
-        from freecad.BlocksCAD.cad import block
+        from freecad.VReeCAD.cad import block
         made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         s = self.session()
         s.select_tool("points")
@@ -2072,7 +2072,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(s.ui.module.readouts()["val.readout"], ("Point X", "500 mm", False))
 
     def test_a_vertex_chosen_with_the_select_tool_is_the_point_of_the_value_panels(self):
-        from freecad.BlocksCAD.cad import block, values
+        from freecad.VReeCAD.cad import block, values
         made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         names = [f"Vertex{i + 1}" for i, v in enumerate(made.Shape.Vertexes)]
         corner = next(n for n, v in zip(names, made.Shape.Vertexes) if (v.X, v.Y, v.Z) == (500.0, 100.0, 100.0))
@@ -2087,7 +2087,7 @@ class MoveLiveTest(unittest.TestCase):
         block.set_picked(made, None)                                                          # the picked point is kept per name: forget it
 
     def test_the_remove_mode_of_the_points_tool_cuts_a_corner_off_a_real_block_in_one_undo_step(self):
-        from freecad.BlocksCAD.cad import block
+        from freecad.VReeCAD.cad import block
         made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         s = self.session()
         s.select_tool("points")
@@ -2105,14 +2105,14 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual((len(made.Vertices), len(block.read(made)[1])), (8, 6))
 
     def sketch_on(self, plane="XY", point=(0.0, 0.0, 0.0)):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         self.doc.openTransaction("sketch")
         sketch = sketching.create_on_plane(self.doc, plane, point, 10.0)
         self.doc.recompute()
         return sketch
 
     def test_a_sketch_lies_on_a_plane_at_the_height_of_the_cursor_and_maps_points_both_ways(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         for plane, point, height_axis in (("XY", (5.0, 6.0, 33.0), 2), ("XZ", (5.0, 44.0, 7.0), 1), ("YZ", (52.0, 6.0, 7.0), 0)):
             sketch = self.sketch_on(plane, point)
             world = sketching.to_world(sketch, (10.0, 20.0, 0.0))
@@ -2126,7 +2126,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(tuple(round(c, 6) for c in sketching.to_world(xz, (10.0, 20.0, 0.0))), (10.0, 0.0, 20.0))   # x to X, y to Z
 
     def test_frames_of_planes_and_sketches_agree_and_name_the_axes_of_the_document(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         for plane, axes in (("XY", (0, 1)), ("XZ", (0, 2)), ("YZ", (1, 2))):
             frame = sketching.plane_frame(plane, (5.0, 44.0, 7.0), 10.0)
             sketch = self.sketch_on(plane, (5.0, 44.0, 7.0))
@@ -2138,7 +2138,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(sketching.world_axes(tilted), (3, 1))
 
     def test_an_arc_passes_through_its_three_points_is_tied_at_its_ends_and_can_be_picked_and_dimensioned(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))
         geo, kept = sketching.add_arc(self.doc, sketch, (0.0, 40.0), (60.0, 40.0), (30.0, 70.0))      # over the top side
@@ -2166,7 +2166,7 @@ class MoveLiveTest(unittest.TestCase):
         return [c.Type for c in sketch.Constraints]
 
     def test_a_line_and_an_arc_that_run_along_each_other_are_tangent_and_the_solver_keeps_them_so(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         geo, kept = sketching.add_arc(self.doc, sketch, (0.0, 30.0), (60.0, 30.0), (30.0, 60.0))     # a half circle over the top
         self.doc.recompute()
@@ -2181,7 +2181,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(sketching.solved(sketch))
 
     def test_a_line_that_continues_an_arc_or_runs_beside_a_slanted_line_gets_the_relation_and_stays_solvable(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         sketching.add_line(self.doc, sketch, (0.0, 5.0), (40.0, 25.0))
         sketching.add_line(self.doc, sketch, (10.0, 50.0), (50.0, 70.0))                              # parallel
@@ -2193,8 +2193,8 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(sketching.solved(sketch))
 
     def test_a_line_drawn_to_the_end_that_the_direction_guide_gives_is_parallel_by_constraint(self):
-        from freecad.BlocksCAD.cad import sketching
-        from freecad.BlocksCAD.core import guides
+        from freecad.VReeCAD.cad import sketching
+        from freecad.VReeCAD.core import guides
         sketch = self.sketch_on()
         sketching.add_line(self.doc, sketch, (0.0, 5.0), (40.0, 25.0))
         slanted = sketching.slanted_lines(sketch)
@@ -2209,7 +2209,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(len(sketching.slanted_lines(sketch)), 2)                                  # the sides of a rectangle are not slanted
 
     def test_a_line_as_long_as_another_is_equal_to_it_by_constraint_and_follows_when_that_one_changes(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))                     # the bottom side is 60 mm
         geo, kept = sketching.add_line(self.doc, sketch, (100.0, 100.0), (160.0, 100.0))
@@ -2225,7 +2225,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual((line.EndPoint - line.StartPoint).Length, 80.0, places=5)          # the equal line followed
 
     def test_the_own_points_of_a_sketch_leave_out_the_dragged_point_and_those_that_move_with_it(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         first, _ = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
         points = sketching.own_points(sketch)
@@ -2235,7 +2235,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertNotIn((10.0, 10.0, 0.0), [tuple(round(c, 6) for c in p) for p in apart])
 
     def test_a_rectangle_is_four_joined_horizontal_and_vertical_lines_with_free_size_and_position(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         first, kept = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
         self.doc.recompute()
@@ -2247,7 +2247,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual((box.XMin, box.YMin, box.XMax, box.YMax), (10.0, 10.0, 60.0, 40.0))
 
     def test_shapes_are_tied_to_the_origin_the_axes_and_to_each_other(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         first, kept = sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))
         self.assertEqual(kept, 9)                                                            # 8 and the corner on the origin
@@ -2264,7 +2264,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(sketch.isValid())
 
     def test_a_constraint_the_solver_refuses_is_left_out_and_the_shape_stays(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))
         geo, kept = sketching.add_line(self.doc, sketch, (0.0, 0.0), (60.0, 0.0))            # on top of the lower side: redundant ties
@@ -2272,7 +2272,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(len(sketch.Geometry), 5)
 
     def test_dragging_a_point_keeps_the_constraints_and_a_dimension_fixes_a_length(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         first, _ = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
         self.assertIsNone(sketching.move_point(self.doc, sketch, first + 1, 2, (80.0, 55.0)))       # the far corner
@@ -2290,7 +2290,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(sketch.Shape.BoundBox.XMax - sketch.Shape.BoundBox.XMin, 90.0, places=4)
 
     def test_a_circle_gets_a_radius_and_a_value_the_solver_cannot_take_is_refused(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         geo, _ = sketching.add_circle(self.doc, sketch, (30.0, 30.0), 10.0)
         self.assertEqual(sketching.dimension(self.doc, sketch, geo), ("Dimension radius = 10 mm", "radius"))
@@ -2301,7 +2301,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(sketching.dimensions(sketch)[0][3], 25.0)
 
     def test_a_sketch_attached_to_a_face_follows_the_face(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         self.doc.openTransaction("sketch")
         sketch = sketching.create_on_face(self.doc, self.box, "Face6")
         self.assertAlmostEqual(sketching.to_world(sketch, (5.0, 5.0, 0.0))[2], 100.0)
@@ -2314,7 +2314,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNone(sketching.current_sketch(self.doc, [(self.box.Name, "")]))
 
     def test_a_sketch_is_extruded_into_a_solid_that_follows_it_and_an_open_sketch_is_refused(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
         self.doc.commitTransaction()
@@ -2333,7 +2333,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(sketching.extrude(self.doc, [(self.box.Name, "")], 20.0), ("Select a sketch to extrude", []))
 
     def test_an_arc_or_a_chain_that_is_open_at_two_ends_is_closed_with_a_line_when_extruded(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on()
         sketching.add_arc(self.doc, sketch, (0.0, 40.0), (60.0, 40.0), (30.0, 70.0))          # a half circle: open
         self.doc.commitTransaction()
@@ -2360,7 +2360,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual((text.startswith("Extrude failed"), names, len(three.Geometry)), (True, [], 3))
 
     def test_the_points_and_curves_of_a_sketch_are_picked_and_drawn(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         sketch = self.sketch_on("XY", (0.0, 0.0, 0.0))
         sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
         sketching.add_circle(self.doc, sketch, (30.0, 25.0), 5.0)
@@ -2376,8 +2376,8 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(len(sketching.display(sketch, "Curve4").polylines[0]), sketching.CIRCLE_POINTS + 1)
 
     def test_the_dimensions_of_a_sketch_are_values_that_can_be_set_and_bound_to_a_variable(self):
-        from freecad.BlocksCAD.cad import sketching, values as object_values, variables
-        from freecad.BlocksCAD.core import values as editing
+        from freecad.VReeCAD.cad import sketching, values as object_values, variables
+        from freecad.VReeCAD.core import values as editing
         sketch = self.sketch_on()
         first, _ = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
         sketching.dimension(self.doc, sketch, first)
@@ -2405,8 +2405,8 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(variables.list_variables(self.doc), [("length", 0.1)])
 
     def test_an_attached_sketch_shows_only_its_dimensions_and_an_extrusion_has_a_length_to_edit(self):
-        from freecad.BlocksCAD.cad import sketching, values as object_values
-        from freecad.BlocksCAD.core import values as editing
+        from freecad.VReeCAD.cad import sketching, values as object_values
+        from freecad.VReeCAD.core import values as editing
         self.doc.openTransaction("sketch")
         sketch = sketching.create_on_face(self.doc, self.box, "Face6")
         first, _ = sketching.add_rectangle(self.doc, sketch, (10.0, 10.0), (60.0, 40.0))
@@ -2424,7 +2424,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(solid.LengthFwd.Value, 30.0)
 
     def test_the_sketch_tool_draws_edits_and_dimensions_a_rectangle_in_the_sim(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         s = self.session()
         s.select_tool("sketch")
         s.tool_manager.active.values["mode"] = "Rectangle"
@@ -2461,7 +2461,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual([o for o in self.doc.Objects if sketching.is_sketch(o)], [])
 
     def test_the_radius_of_a_circle_is_dragged_with_the_sketch_tool_in_one_undo_step_and_is_a_value(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         s = self.session()
         s.select_tool("sketch")
         s.tool_manager.active.values["mode"] = "Circle"
@@ -2497,7 +2497,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(sketch.Geometry[0].Radius, 20.0)
 
     def test_a_circle_and_a_line_join_the_sketch_and_a_press_on_a_face_attaches_a_new_one(self):
-        from freecad.BlocksCAD.cad import sketching
+        from freecad.VReeCAD.cad import sketching
         s = self.session()
         s.select_tool("sketch")
         s.tool_manager.active.values["mode"] = "Circle"
@@ -2521,7 +2521,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(sketching.solved(sketch))
 
     def test_a_mirror_is_a_parametric_image_one_gap_beyond_the_object(self):
-        from freecad.BlocksCAD.cad import duplicate
+        from freecad.VReeCAD.cad import duplicate
         text, names = duplicate.mirror(self.doc, [(self.box.Name, "")], 0)
         image = self.doc.getObject(names[0])
         self.assertEqual(image.TypeId, "Part::Mirroring")
@@ -2534,7 +2534,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNone(self.doc.getObject(names[0]))
 
     def test_a_pattern_repeats_an_object_three_times_and_its_numbers_stay_editable(self):
-        from freecad.BlocksCAD.cad import duplicate
+        from freecad.VReeCAD.cad import duplicate
         text, names = duplicate.pattern(self.doc, [(self.box.Name, "")], 1)
         array = self.doc.getObject(names[0])
         self.assertEqual(array.NumberY, 3)
@@ -2547,7 +2547,7 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_a_fillet_and_a_chamfer_take_the_selected_edges_and_their_size_is_a_value(self):
         import math
-        from freecad.BlocksCAD.cad import edges, values
+        from freecad.VReeCAD.cad import edges, values
         text, names = edges.make(self.doc, [(self.box.Name, "Edge1"), (self.box.Name, "Edge3")], "fillet", 5.0)
         rounded = self.doc.getObject(names[0])
         self.assertEqual(rounded.TypeId, "Part::Fillet")
@@ -2576,7 +2576,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(self.doc.getObject(names[0]).isValid())
 
     def test_the_faces_that_a_fillet_or_a_chamfer_adds_are_selected_and_the_panels_follow(self):
-        from freecad.BlocksCAD.cad import edges, values
+        from freecad.VReeCAD.cad import edges, values
         text, names = edges.make(self.doc, [(self.box.Name, "Edge1"), (self.box.Name, "Edge3")], "fillet", 5.0)
         rounded = self.doc.getObject(names[0])
         self.assertEqual(len(rounded.Shape.Faces), 8)                                         # the box has six faces and each rounded edge adds one
@@ -2596,7 +2596,7 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_attaching_mates_two_faces_and_the_object_follows_its_support(self):
         import FreeCAD as App
-        from freecad.BlocksCAD.cad import attach, edit
+        from freecad.VReeCAD.cad import attach, edit
         other = self.doc.addObject("Part::Box", "Other")
         other.Length, other.Width, other.Height = 50.0, 40.0, 30.0
         other.Placement = App.Placement(App.Vector(300, 300, 300), App.Rotation(App.Vector(1, 1, 0), 33))
@@ -2628,7 +2628,7 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_attaching_refuses_curved_faces_and_a_loop(self):
         import FreeCAD as App
-        from freecad.BlocksCAD.cad import attach
+        from freecad.VReeCAD.cad import attach
         cylinder = self.doc.addObject("Part::Cylinder", "Tube")
         self.doc.recompute()
         text, name = attach.attach(self.doc, [(cylinder.Name, "Face1"), (self.box.Name, "Face6")])
@@ -2649,7 +2649,7 @@ class MoveLiveTest(unittest.TestCase):
         return other
 
     def test_a_fixed_joint_lays_the_faces_together_inside_an_assembly_with_the_target_grounded(self):
-        from freecad.BlocksCAD.cad import joints
+        from freecad.VReeCAD.cad import joints
         other = self._small_box()
         text, name = joints.make(self.doc, [(other.Name, "Face5"), (self.box.Name, "Face6")], "Fixed")
         self.assertEqual(name, other.Name, text)
@@ -2670,7 +2670,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(self.doc.findObjects("Assembly::AssemblyObject"), [])
 
     def test_a_slider_keeps_the_object_on_its_axis_and_a_hinge_keeps_it_on_the_pin(self):
-        from freecad.BlocksCAD.cad import edit, joints
+        from freecad.VReeCAD.cad import edit, joints
         other = self._small_box()
         joints.make(self.doc, [(other.Name, "Face5"), (self.box.Name, "Face6")], "Slider")
         base, rotation = edit.placement(other)
@@ -2690,7 +2690,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(centre.z, 100.0, places=2)
 
     def test_a_joint_of_an_attached_object_or_of_a_part_of_itself_is_refused(self):
-        from freecad.BlocksCAD.cad import attach, joints
+        from freecad.VReeCAD.cad import attach, joints
         other = self._small_box()
         attach.attach(self.doc, [(other.Name, "Face5"), (self.box.Name, "Face6")])
         text, name = joints.make(self.doc, [(other.Name, "Face1"), (self.box.Name, "Face2")], "Fixed")
@@ -2699,7 +2699,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(self.doc.findObjects("Assembly::AssemblyObject"), [])
 
     def test_the_anchors_are_the_corners_and_straight_edge_middles_of_the_visible_objects(self):
-        from freecad.BlocksCAD.cad import anchors
+        from freecad.VReeCAD.cad import anchors
         found = anchors.collect(self.doc)
         self.assertEqual(len(found), 8 + 12)                                                 # a box: corners and the middles of its edges
         self.assertIn((50.0, 0.0, 0.0), found)
@@ -2713,7 +2713,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(len(anchors.collect(self.doc)), 20 + 3)                              # a cylinder: the two seam vertices and the middle of the seam line, its circles are no anchors
 
     def test_the_straight_edges_of_the_objects_are_what_inference_snaps_to(self):
-        from freecad.BlocksCAD.cad import anchors, primitives as prim
+        from freecad.VReeCAD.cad import anchors, primitives as prim
         edges = anchors.object_edges(self.box)
         self.assertEqual(len(edges), 12)                                                      # a box has twelve straight edges
         self.assertIn(((0.0, 0.0, 0.0), (100.0, 0.0, 0.0)), [tuple(sorted(e)) for e in edges])
@@ -2728,7 +2728,7 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_the_ghost_highlights_the_feature_that_drives_a_guide_and_hides_it(self):
         from pivy import coin
-        from freecad.BlocksCAD.render.ghost import Ghost
+        from freecad.VReeCAD.render.ghost import Ghost
         ghost = Ghost()
         ghost.show_feature([((0.0, 0.0, 0.0), (10.0, 0.0, 0.0))], [(5.0, 0.0, 0.0)], 2.0)
         self.assertEqual(ghost._feature.whichChild.getValue(), coin.SO_SWITCH_ALL)
@@ -2740,8 +2740,8 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(ghost._feature.whichChild.getValue(), coin.SO_SWITCH_NONE)
 
     def test_the_tools_ask_the_host_to_highlight_what_drives_their_guides(self):
-        from freecad.BlocksCAD.core import guides
-        from freecad.BlocksCAD.tools import base
+        from freecad.VReeCAD.core import guides
+        from freecad.VReeCAD.tools import base
         calls = []
         ctx = base.ToolContext()
         ctx.services.update({"feature": lambda found: calls.append(list(found)), "ghost": type("G", (), {
@@ -2753,8 +2753,8 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(calls, [found, []])
 
     def test_the_ghost_draws_guides_of_every_kind_and_hides_them(self):
-        from freecad.BlocksCAD.core import guides
-        from freecad.BlocksCAD.render.ghost import Ghost
+        from freecad.VReeCAD.core import guides
+        from freecad.VReeCAD.render.ghost import Ghost
         from pivy import coin
         ghost = Ghost()
         found = [guides.Guide("axis", 0, (0.0, 0.0, 0.0), (0.0, 20.0, 0.0)), guides.Guide("point", -1, (5.0, 5.0, 5.0), (5.0, 5.0, 5.0))]
@@ -2768,7 +2768,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(ghost._guides.whichChild.getValue(), coin.SO_SWITCH_NONE)
 
     def test_a_push_fuses_an_extrusion_of_the_face_a_pull_cuts_it_and_the_length_stays_editable(self):
-        from freecad.BlocksCAD.cad import pushpull
+        from freecad.VReeCAD.cad import pushpull
         self.box.setExpression("Height", "100 mm")                                           # a bound size is not changed directly
         self.doc.recompute()
         top = pushpull.face_info(self.box, "Face6")
@@ -2791,7 +2791,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(sorted({round(p[2]) for p in mesh.points}), [100, 120])
 
     def test_a_face_that_a_size_moves_is_pushed_by_changing_the_size_and_adds_nothing(self):
-        from freecad.BlocksCAD.cad import pushpull
+        from freecad.VReeCAD.cad import pushpull
         count = len(self.doc.Objects)
         text, name = pushpull.apply(self.doc, self.box.Name, "Face6", 30.0)                 # the top: Height
         self.assertEqual((name, text), (self.box.Name, "Pushed Box by 30 mm"))
@@ -2809,7 +2809,7 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_a_turned_box_and_a_cylinder_end_are_pushed_along_their_own_axes(self):
         import FreeCAD as App
-        from freecad.BlocksCAD.cad import pushpull, primitives as prim
+        from freecad.VReeCAD.cad import pushpull, primitives as prim
         self.box.Placement = App.Placement(App.Vector(0, 0, 0), App.Rotation(App.Vector(0, 0, 1), 90))   # Length now runs along Y
         self.doc.recompute()
         sub = next(f"Face{i + 1}" for i, f in enumerate(self.box.Shape.Faces) if abs(f.normalAt(0, 0).y - 1.0) < 1e-6)
@@ -2821,7 +2821,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(cylinder.Height.Value, 50.0)
 
     def test_the_ends_of_the_extrusion_of_a_sketch_are_pushed_by_its_lengths(self):
-        from freecad.BlocksCAD.cad import pushpull, sketching
+        from freecad.VReeCAD.cad import pushpull, sketching
         sketch = self.sketch_on()
         sketching.add_rectangle(self.doc, sketch, (0.0, 0.0), (60.0, 40.0))
         text, names = sketching.extrude(self.doc, [(sketch.Name, "")], 20.0)
@@ -2841,7 +2841,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertTrue(text.startswith("Pull failed"), text)
 
     def test_a_curved_face_cannot_be_pushed_and_a_failed_pull_leaves_the_document_alone(self):
-        from freecad.BlocksCAD.cad import pushpull, primitives as prim
+        from freecad.VReeCAD.cad import pushpull, primitives as prim
         cylinder = prim.create(self.doc, "Cylinder", (300.0, 0.0, 0.0), (50.0, 50.0, 80.0))
         self.assertEqual(pushpull.apply(self.doc, cylinder.Name, "Face1", 10.0), ("Only flat faces can be pushed or pulled", None))
         count = len(self.doc.Objects)
@@ -2868,7 +2868,7 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_picking_and_the_anchors_follow_the_changes_of_the_document_through_the_change_log(self):
         import FreeCAD as App
-        from freecad.BlocksCAD.cad import anchors, picking
+        from freecad.VReeCAD.cad import anchors, picking
         probe = lambda p: picking.pick(self.doc, p, 1000.0, "object")
         cache = anchors.Anchors()
         top = (50.0, 50.0, 96.0)
@@ -2894,21 +2894,21 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.undo()
         self.assertIsNotNone(probe((550.0, 50.0, 96.0)))                                 # the object is back, and so are its points
         self.assertEqual(len(cache.get(self.doc)), 20)
-        other = App.newDocument("BlocksCADOther")                                       # a document of its own is read of its own
+        other = App.newDocument("VReeCADOther")                                       # a document of its own is read of its own
         try:
             self.assertIsNone(picking.pick(other, (550.0, 50.0, 96.0), 1000.0, "object"))
         finally:
             App.closeDocument(other.Name)
 
     def test_the_anchors_of_a_sphere_skip_its_degenerated_pole_edges(self):
-        from freecad.BlocksCAD.cad import anchors, primitives as prim
+        from freecad.VReeCAD.cad import anchors, primitives as prim
         sphere = prim.create(self.doc, "Sphere", (300.0, 0.0, 0.0), (50.0, 50.0, 50.0))
         points = anchors.object_points(sphere)
         self.assertIsNotNone(points)
         self.assertTrue(all(len(p) == 3 for p in points))
 
     def test_warming_reads_every_box_at_once_and_a_pick_after_it_reads_nothing(self):
-        from freecad.BlocksCAD.cad import picking, primitives as prim
+        from freecad.VReeCAD.cad import picking, primitives as prim
         for i in range(5):
             prim.create(self.doc, "Box", (300.0 + 150.0 * i, 0.0, 0.0), (100.0, 100.0, 100.0))
         picking.warm(self.doc)
@@ -2919,7 +2919,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(picking._BOXES.sync(self.doc)[1], set())
 
     def test_picking_one_sort_of_element_ignores_closer_elements_of_another_sort(self):
-        from freecad.BlocksCAD.cad import picking
+        from freecad.VReeCAD.cad import picking
         probe = lambda p, kind: picking.pick(self.doc, p, 1000.0, kind)
         corner = (3.0, 3.0, 3.0)                                                              # a corner is nearest, but a face may be asked for
         self.assertEqual([probe(corner, k).kind for k in ("vertex", "edge", "face", "object")], ["vertex", "edge", "face", "object"])
@@ -2942,7 +2942,7 @@ class MoveLiveTest(unittest.TestCase):
         self.hand(1, point, trigger=0.0)
 
     def test_the_select_tool_selects_many_faces_edges_vertices_and_objects(self):
-        from freecad.BlocksCAD.cad import picking, primitives as prim
+        from freecad.VReeCAD.cad import picking, primitives as prim
         cylinder = prim.create(self.doc, "Cylinder", (300.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         s = self.session()
         s.select_tool("select")
@@ -2975,7 +2975,7 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_the_select_tool_highlights_the_element_of_its_target_and_the_selection_opens_the_value_panels(self):
         from pivy import coin
-        from freecad.BlocksCAD.cad import picking
+        from freecad.VReeCAD.cad import picking
         picking.clear_selection()
         s = self.session()
         s.select_tool("select")
@@ -2995,7 +2995,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(s.highlights.selected.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
 
     def test_releasing_the_a_button_without_moving_the_hand_chooses_the_select_tool_and_the_hub_is_lit(self):
-        from freecad.BlocksCAD.ui import style
+        from freecad.VReeCAD.ui import style
         s = self.session()
         self.assertEqual(s.tool_manager.active_name, "move")
         self.hand(1, (60.0, 50.0, 96.0), button1=True)
@@ -3031,8 +3031,8 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_the_padlock_lies_flat_over_the_a_button_of_the_model(self):
         from pivy import coin
-        from freecad.BlocksCAD.render.model_anchor import button_anchor
-        from freecad.BlocksCAD.ui import controller
+        from freecad.VReeCAD.render.model_anchor import button_anchor
+        from freecad.VReeCAD.ui import controller
         s = self.session()
         self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
         self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
@@ -3051,8 +3051,8 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_the_option_disc_is_centred_over_the_thumbstick_in_the_plane_of_the_controller_top(self):
         import math
-        from freecad.BlocksCAD.render.model_anchor import STICK_PARTS, button_anchor
-        from freecad.BlocksCAD.ui import controller
+        from freecad.VReeCAD.render.model_anchor import STICK_PARTS, button_anchor
+        from freecad.VReeCAD.ui import controller
         s = self.session()
         self.hand(1, (50.0, 50.0, 96.0))
         s.input.set_hand(1, stick=(0.0, 1.0))
@@ -3067,7 +3067,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(math.sqrt(sum(c * c for c in found[2])), 1.0, places=6)
 
     def test_the_option_disc_falls_back_to_a_point_above_a_controller_without_a_thumbstick(self):
-        from freecad.BlocksCAD.render.model_anchor import STICK_PARTS
+        from freecad.VReeCAD.render.model_anchor import STICK_PARTS
         s = self.session()
         self.hand(1, (50.0, 50.0, 96.0))
         s.ui.part_frame = None
@@ -3079,7 +3079,7 @@ class MoveLiveTest(unittest.TestCase):
 
     def test_toasts_hang_behind_the_face_buttons_of_the_tool_hand_and_face_the_head(self):
         from pivy import coin
-        from freecad.BlocksCAD.ui import controller, feedback_view
+        from freecad.VReeCAD.ui import controller, feedback_view
         s = self.session()
         self.hand(1, (50.0, 50.0, 96.0))
         s.ui.toast("Hello")
@@ -3134,7 +3134,7 @@ class MoveLiveTest(unittest.TestCase):
     # the value panels
     def select(self, name=None, sub=""):
         """Select an object as a whole (the panels follow the selection) and let the carousel with the panels fade in."""
-        from freecad.BlocksCAD.cad import picking
+        from freecad.VReeCAD.cad import picking
         s = self.s or self.session()
         picking.set_selection(self.doc, [(name or self.box.Name, sub)] if name != "" else [])
         s.input.set_head(position=(0.0, 1.5, 0.0), look_at_point=s.input.hands[0].aim.position)       # looking at the left controller
@@ -3153,7 +3153,7 @@ class MoveLiveTest(unittest.TestCase):
 
     def face_point(self, face_id, along=None, dy=0.0, front=0.01):
         """The point `front` in front of a face of the carousel (a slider: at `along` of its track, `dy` above the middle of its row)."""
-        from freecad.BlocksCAD.ui import ring as rg
+        from freecad.VReeCAD.ui import ring as rg
         ui = self.s.ui
         pages = ui.shown_layout().pages
         candidates = [i for i, p in enumerate(pages) if face_id in p.slots]
@@ -3273,7 +3273,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(s.ui.carousel, "tools")                                       # after the grab it swaps again
 
     def test_the_panels_follow_the_selection_from_one_object_to_the_next_and_stay_where_they_are(self):
-        from freecad.BlocksCAD.cad import primitives as prim
+        from freecad.VReeCAD.cad import primitives as prim
         cylinder = prim.create(self.doc, "Cylinder", (200.0, 0.0, 0.0), (80.0, 80.0, 60.0))
         s = self.session()
         module = self.select()
@@ -3302,8 +3302,8 @@ class MoveLiveTest(unittest.TestCase):
     def test_the_value_panels_are_rearranged_like_the_palette_panels_and_the_value_panel_stays_on_top(self):
         import os
         import tempfile
-        from freecad.BlocksCAD.ui.controller import UiController
-        from freecad.BlocksCAD.tools import registry
+        from freecad.VReeCAD.ui.controller import UiController
+        from freecad.VReeCAD.tools import registry
         s = self.session()
         self.select()
         ui = s.ui
@@ -3480,7 +3480,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(s.ui.layout.hidden, [])
 
     def test_a_torus_cannot_get_a_tube_wider_than_its_ring(self):
-        from freecad.BlocksCAD.cad import primitives as prim
+        from freecad.VReeCAD.cad import primitives as prim
         torus = prim.create(self.doc, "Torus", (200.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         s = self.session()
         module = self.select(torus.Name)
@@ -3507,12 +3507,12 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(tool.disc_hub(), ["Move and rotate", "Grid 50 mm, angle 45 deg"])
 
     def test_a_cone_may_end_in_a_point(self):
-        from freecad.BlocksCAD.cad import values as object_values
+        from freecad.VReeCAD.cad import values as object_values
         specs = {name: low for name, _, low in object_values.field_specs("Part::Cone")}
         self.assertEqual((specs["Radius1"], specs["Radius2"], specs["Height"]), (0.0, 0.0, 0.1))
 
     def test_the_source_finds_the_first_editable_object_of_the_selection(self):
-        from freecad.BlocksCAD.cad import values as object_values
+        from freecad.VReeCAD.cad import values as object_values
         self.assertIsNone(object_values.source(self.doc, lambda doc: []))
         self.assertIsNone(object_values.source(None))
         self.assertIsNone(object_values.source(self.doc, lambda doc: [("Nothing", "")]))
@@ -3521,7 +3521,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(factory().title, self.box.Label)
 
     def test_the_target_edits_properties_in_one_transaction_that_cancel_aborts(self):
-        from freecad.BlocksCAD.cad import values as object_values
+        from freecad.VReeCAD.cad import values as object_values
         target = object_values.ObjectValues(self.doc, self.box)
         self.assertEqual([(f.name, f.value) for f in target.fields()][:3], [("Length", 100.0), ("Width", 100.0), ("Height", 100.0)])
         target.set("Length", 130.0)

@@ -1,4 +1,4 @@
-# Shared paths for all BlocksCAD tools. Dot-source it:  . "$PSScriptRoot\env.ps1"
+# Shared paths for all VReeCAD tools. Dot-source it:  . "$PSScriptRoot\env.ps1"
 # Override any value by setting the same-named environment variable first.
 
 $script:ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -15,7 +15,7 @@ $script:FreeCADModDir  = "$FreeCADUserDir\Mod"
 
 # Project layout
 $script:AddonDir   = $ProjectRoot                                          # this repo IS the addon (fork of freecad-xr-workbench)
-# DEV-ONLY remote-control channel (third-party freecad-mcp RPC addon); the BlocksCAD addon never depends on it
+# DEV-ONLY remote-control channel (third-party freecad-mcp RPC addon); the VReeCAD addon never depends on it
 $script:McpAddonDir = "$ProjectRoot\refs\freecad-mcp\addon\FreeCADMCP"
 $script:McpRepoDir  = "$ProjectRoot\refs\freecad-mcp"                      # MCP server (run with uv)
 $script:RefsDir    = "$ProjectRoot\refs"

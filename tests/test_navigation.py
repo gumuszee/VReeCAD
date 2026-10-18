@@ -2,10 +2,10 @@ import math
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.core import mathutil as mu
-from freecad.BlocksCAD.core import navigation as nav
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.input import Pose
+from freecad.VReeCAD.core import mathutil as mu
+from freecad.VReeCAD.core import navigation as nav
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.input import Pose
 
 
 def close(a, b, tol=1e-6):

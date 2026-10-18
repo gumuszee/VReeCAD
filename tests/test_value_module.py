@@ -1,10 +1,10 @@
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.core import values as v
-from freecad.BlocksCAD.ui import layout as lay
-from freecad.BlocksCAD.ui import value_module as vm
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.core import values as v
+from freecad.VReeCAD.ui import layout as lay
+from freecad.VReeCAD.ui import value_module as vm
 from test_values import Target, VarTarget
 
 
@@ -509,7 +509,7 @@ if __name__ == "__main__":
 
 class ColourPanelTest(unittest.TestCase):
     def test_the_colour_panel_has_a_face_in_the_actual_colour_of_every_swatch_that_colours_the_selection(self):
-        from freecad.BlocksCAD.cad import colour
+        from freecad.VReeCAD.cad import colour
         faces = vm.faces()
         self.assertEqual(len(colour.SWATCHES), vm.COLOURS)
         for i, fid in enumerate(vm.COLOUR_IDS):

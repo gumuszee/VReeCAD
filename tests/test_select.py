@@ -2,15 +2,15 @@ import math
 import unittest
 
 import support  # noqa: F401
-from freecad.BlocksCAD.backends.sim import SimInput
-from freecad.BlocksCAD.cad import picking
-from freecad.BlocksCAD.core import selecting
-from freecad.BlocksCAD.tools import base
-from freecad.BlocksCAD.tools.select import SelectTool
-from freecad.BlocksCAD.ui import layout as lay
-from freecad.BlocksCAD.ui import options as opt
-from freecad.BlocksCAD.ui import radial as rd
-from freecad.BlocksCAD.ui import settings as cfg
+from freecad.VReeCAD.backends.sim import SimInput
+from freecad.VReeCAD.cad import picking
+from freecad.VReeCAD.core import selecting
+from freecad.VReeCAD.tools import base
+from freecad.VReeCAD.tools.select import SelectTool
+from freecad.VReeCAD.ui import layout as lay
+from freecad.VReeCAD.ui import options as opt
+from freecad.VReeCAD.ui import radial as rd
+from freecad.VReeCAD.ui import settings as cfg
 
 
 class CombineTest(unittest.TestCase):
