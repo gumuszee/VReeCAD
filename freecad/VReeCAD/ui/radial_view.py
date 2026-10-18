@@ -130,7 +130,7 @@ class RadialView:
         _strip(self._items, _disc(self.outer + BACKDROP), style.PLATE, -DEPTH)
         self._hub_plate = _strip(self._items, _disc(self.inner - rd.GAP), style.EMPTY, 0.0)
         self._hub_rgb = style.EMPTY
-        plates = [_strip(self._items, rd.segment_strip(i, count, self.inner, self.outer), style.FACE, 0.0) for i in range(count)]
+        plates = [_strip(self._items, rd.segment_strip(i, count, self.inner, self.outer), style.BUTTON, 0.0) for i in range(count)]
         radius = (self.inner + self.outer) / 2 + 0.004
         for i, label in enumerate(labels):
             a = 2 * math.pi * i / count
@@ -163,7 +163,7 @@ class RadialView:
         scale = min(reach, self.outer) / reach if reach > 1e-9 else 0.0
         self._cursor_at.setValue(state.cursor[0] * scale, state.cursor[1] * scale, DEPTH)
         self._write_hub(list(hub or lay.wrap_label(centre or "")))
-        rgb = style.EMPTY if not centre else style.HOVER if state.selected is None else style.FACE
+        rgb = style.EMPTY if not centre else style.HOVER if state.selected is None else style.BUTTON
         if rgb != self._hub_rgb:
             self._hub_rgb = rgb
             self._hub_plate.set(rgb)
@@ -172,5 +172,5 @@ class RadialView:
                 plate.set(style.EMPTY)
                 continue
             lit = bool(active and active[i])
-            plate.set(style.HOVER if state.selected == i else style.ACTIVE if lit else style.FACE)
+            plate.set(style.HOVER if state.selected == i else style.ACTIVE if lit else style.BUTTON)
             text.set(style.TEXT_ON_ACTIVE if lit and state.selected != i else style.TEXT)

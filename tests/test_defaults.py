@@ -9,14 +9,14 @@ TOOLS = ["primitive", "select", "move", "pushpull", "points", "sketch"]
 
 
 class DefaultLayoutTest(unittest.TestCase):
-    def test_every_face_has_a_slot_in_the_default_layout(self):
-        # a panel holds 12 slots and drops what does not fit, so a face that is missing here is a face nobody can reach
-        faces = defaults.build_faces(TOOLS, lambda name: name)
-        placed = [face for page in defaults.default_layout(TOOLS).pages for face in page.slots if face]
-        self.assertEqual(sorted(placed), sorted(faces))
+    def test_every_button_has_a_slot_in_the_default_layout(self):
+        # a panel holds 12 slots and drops what does not fit, so a button that is missing here is a button nobody can reach
+        buttons = defaults.build_buttons(TOOLS, lambda name: name)
+        placed = [button for page in defaults.default_layout(TOOLS).pages for button in page.slots if button]
+        self.assertEqual(sorted(placed), sorted(buttons))
 
-    def test_no_face_is_placed_twice(self):
-        placed = [face for page in defaults.default_layout(TOOLS).pages for face in page.slots if face]
+    def test_no_button_is_placed_twice(self):
+        placed = [button for page in defaults.default_layout(TOOLS).pages for button in page.slots if button]
         self.assertEqual(len(placed), len(set(placed)))
 
 
@@ -27,7 +27,7 @@ class DefaultLayoutTest(unittest.TestCase):
         self.assertEqual((pages["Pointer"].slots[4], pages["Pointer"].slots[8]), ("pointer.angle", "pointer.length"))
         self.assertEqual((pages["Settings"].slots[4], pages["Settings"].slots[8]), ("settings.grid", "settings.angle"))
         self.assertIn("settings.tutorial", pages["Settings"].slots)
-        self.assertNotIn("view.controls", defaults.build_faces(TOOLS, lambda name: name))
+        self.assertNotIn("view.controls", defaults.build_buttons(TOOLS, lambda name: name))
 
 
 class SliderTest(unittest.TestCase):
@@ -48,7 +48,7 @@ class SliderTest(unittest.TestCase):
 
 class MigrationTest(unittest.TestCase):
     def saved(self):
-        """A layout as it was saved before the pointer got a panel: the panel called Session holds the pointer faces."""
+        """A layout as it was saved before the pointer got a panel: the panel called Session holds the pointer buttons."""
         layout = defaults.default_layout(TOOLS)
         layout.pages = [p for p in layout.pages if p.name not in ("Pointer", "Settings")]
         for page in layout.pages:
@@ -58,7 +58,7 @@ class MigrationTest(unittest.TestCase):
         layout.normalize()
         return layout
 
-    def test_the_session_panel_is_the_settings_panel_and_the_pointer_faces_move_to_a_pointer_panel(self):
+    def test_the_session_panel_is_the_settings_panel_and_the_pointer_buttons_move_to_a_pointer_panel(self):
         loaded = lay.Layout.from_json(self.saved().to_json().replace('"version": 5', '"version": 4'))      # a file of the version before the Pointer panel
         self.assertIn("Settings", [p.name for p in loaded.pages])
         default = defaults.default_layout(TOOLS)
@@ -68,7 +68,7 @@ class MigrationTest(unittest.TestCase):
         self.assertEqual([f for f in pages["Settings"].slots if f], ["app.close", "pointer.hands", "pointer.submm"])
         self.assertTrue(loaded.add_missing(default, {"pointer.angle", "pointer.length", "settings.grid", "settings.angle"}))
         placed = [f for p in loaded.pages for f in p.slots if f]
-        self.assertEqual(sorted(placed), sorted(defaults.build_faces(TOOLS, lambda name: name)))
+        self.assertEqual(sorted(placed), sorted(defaults.build_buttons(TOOLS, lambda name: name)))
         self.assertEqual(len(placed), len(set(placed)))
         self.assertEqual((pages["Settings"].slots[4], pages["Settings"].slots[8]), ("settings.grid", "settings.angle"))
 
@@ -90,11 +90,11 @@ class MigrationTest(unittest.TestCase):
         self.assertEqual(lay.default_hue("Tools"), 0.38)
         self.assertIn(lay.default_hue("Anything else"), lay.SPARE_HUES)
 
-    def test_a_panel_has_a_grid_of_its_own_that_grows_and_shrinks_without_losing_a_face(self):
+    def test_a_panel_has_a_grid_of_its_own_that_grows_and_shrinks_without_losing_a_button(self):
         page = lay.Page("A", ["a", "b", None, None, "c"], cols=2, rows=3)
         self.assertEqual((page.cols, page.rows, len(page.slots)), (2, 3, 6))
         self.assertEqual(page.slots, ["a", "b", None, None, "c", None])
-        self.assertTrue(page.resize(4, 4))                                         # every face keeps its row and column
+        self.assertTrue(page.resize(4, 4))                                         # every button keeps its row and column
         self.assertEqual(page.slots[:9], ["a", "b", None, None, None, None, None, None, "c"])
         self.assertEqual(len(page.slots), 16)
         self.assertFalse(page.resize(1, 4))                                        # b would be cut off
@@ -114,7 +114,7 @@ class MigrationTest(unittest.TestCase):
         odd = lay.Layout.from_json('{"version": 5, "pages": [{"name": "A", "cols": "x", "rows": 99, "slots": ["a"]}]}')
         self.assertEqual((odd.pages[0].cols, odd.pages[0].rows), (4, lay.MAX_ROWS))
 
-    def test_missing_faces_are_placed_by_the_grid_of_the_panel_and_a_slider_keeps_its_whole_row(self):
+    def test_missing_buttons_are_placed_by_the_grid_of_the_panel_and_a_slider_keeps_its_whole_row(self):
         page = lay.Page("W", ["s"] + [None] * 5 + ["b"] + [None] * 4, cols=6, rows=2)
         default = lay.Layout([lay.Page("W", ["s", None, None, None, None, None, "t", "b", None, None, None, None], cols=6, rows=2)])
         self.assertTrue(lay.Layout([page]).add_missing(default, {"s"}))
@@ -125,8 +125,8 @@ class MigrationTest(unittest.TestCase):
         layout = defaults.default_layout(TOOLS)
         self.assertFalse(defaults.migrate(layout, defaults.default_layout(TOOLS)))
 
-    def test_the_old_id_of_the_controls_face_is_the_tutorial_face(self):
-        self.assertEqual(lay.current_face("view.controls"), "settings.tutorial")
+    def test_the_old_id_of_the_controls_button_is_the_tutorial_button(self):
+        self.assertEqual(lay.current_button("view.controls"), "settings.tutorial")
         text = '{"version": 4, "hidden": ["view.controls"], "pages": [{"name": "View", "slots": ["view.controls", "view.reset"]}]}'
         loaded = lay.Layout.from_json(text, {"settings.tutorial", "view.reset"})
         self.assertEqual((loaded.hidden, loaded.pages[0].slots[:2]), (["settings.tutorial"], ["settings.tutorial", "view.reset"]))

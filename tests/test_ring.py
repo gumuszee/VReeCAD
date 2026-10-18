@@ -161,7 +161,7 @@ class RingTest(unittest.TestCase):
         controller = self.sim.hands[0]
         up = mu.rotate(controller.aim.orientation, (0.0, 1.0, 0.0))
         forward = mu.rotate(controller.aim.orientation, (0.0, 0.0, -1.0))
-        self.assertLess(mu.length(mu.sub(pose.n, up)), 1e-6)         # faces the thumb side of the controller
+        self.assertLess(mu.length(mu.sub(pose.n, up)), 1e-6)         # buttons the thumb side of the controller
         self.assertLess(mu.length(mu.sub(pose.v, forward)), 1e-6)    # its top points the way the controller points
         offset = mu.sub(pose.centre, controller.aim.position)
         self.assertAlmostEqual(mu.dot(offset, forward), rg.FORWARD, places=6)
@@ -192,12 +192,12 @@ class RingTest(unittest.TestCase):
         self.assertIsNone(r.activated)
         self.sim.set_hand(1, trigger=1.0)
         r = self.run_frames(1)
-        self.assertIsNone(r.activated)           # a press only arms the face
+        self.assertIsNone(r.activated)           # a press only arms the button
         self.assertTrue(r.consume_trigger)
         r = self.run_frames(1)
         self.assertIsNone(r.activated)
         self.sim.set_hand(1, trigger=0.0)
-        r = self.run_frames(1)                   # released over the same face: activated once
+        r = self.run_frames(1)                   # released over the same button: activated once
         self.assertEqual(r.activated, (0, 5))
         self.assertIsNone(self.run_frames(1).activated)
 
@@ -234,7 +234,7 @@ class RingTest(unittest.TestCase):
         gap = mu.sub(b.centre, a.centre)
         self.assertAlmostEqual(mu.dot(gap, a.u), rg.PANEL_W + rg.PANEL_GAP, places=6)
         self.assertAlmostEqual(mu.dot(gap, a.v), 0.0, places=6)
-        point, n = self.slot_point(3, page=1)    # a face of the second panel hovers
+        point, n = self.slot_point(3, page=1)    # a button of the second panel hovers
         self.aim_at(point, n)
         self.assertEqual(self.run_frames(1).hover, (1, 3))
 
@@ -337,7 +337,7 @@ class RingTest(unittest.TestCase):
             result = self.ring.update(frame, pointers=pointers)
         return result
 
-    def test_tip_touching_a_face_hovers_and_activates(self):
+    def test_tip_touching_a_button_hovers_and_activates(self):
         self.run_tip(30)
         point, n = self.slot_point(5)
         self.tip_at(point, n, 0.02)
@@ -386,7 +386,7 @@ class RingTest(unittest.TestCase):
 
 
     def slider_setup(self):
-        """One panel with a slider in its middle row (face ids are irrelevant to the ring)."""
+        """One panel with a slider in its middle row (button ids are irrelevant to the ring)."""
         self.ring = rg.PaletteRing([[[0]], [[1]], [[2]]])
         self.ring.slider_rows = {0: {1: "pointer.angle"}}
         self.run_frames(30)
@@ -436,7 +436,7 @@ class RingTest(unittest.TestCase):
         self.sim.set_hand(1, trigger=0.0)
         self.assertEqual(self.run_tip().slider_done, (0, 4))
 
-    def test_a_readout_row_is_one_face_over_the_whole_row_and_is_never_dragged(self):
+    def test_a_readout_row_is_one_button_over_the_whole_row_and_is_never_dragged(self):
         self.ring = rg.PaletteRing([[[0]], [[1]], [[2]]])
         self.ring.readout_rows = {0: {0: "val.readout"}}
         self.run_frames(30)
@@ -546,7 +546,7 @@ class RingTest(unittest.TestCase):
         self.assertIsNone(r.drop_target)                             # over a fixed page: nowhere to drop
         self.assertIsNone(r.drop_marker)
 
-    def test_the_other_rows_of_a_slider_panel_still_hold_faces(self):
+    def test_the_other_rows_of_a_slider_panel_still_hold_buttons(self):
         self.slider_setup()
         point, n = self.slot_point(0)
         self.aim_at(point, n)
@@ -556,31 +556,31 @@ class RingTest(unittest.TestCase):
         self.sim.set_hand(1, trigger=0.0)
         self.assertEqual(self.run_frames(1).activated, (0, 0))
 
-    def press_face(self, slot, page=0):
+    def press_button(self, slot, page=0):
         point, n = self.slot_point(slot, page)
         self.aim_at(point, n)
         self.run_frames(1)
         self.sim.set_hand(1, trigger=1.0)
         return self.run_frames(1)
 
-    def test_a_long_hold_on_a_face_lifts_it_instead_of_activating_it(self):
+    def test_a_long_hold_on_a_button_lifts_it_instead_of_activating_it(self):
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         r = self.run_frames(int(rg.HOLD_LIFT / 0.02) + 3)
-        self.assertEqual(self.ring.lifted_face, (0, 5))
-        self.assertEqual(r.lifted_face, (0, 5))
+        self.assertEqual(self.ring.lifted_button, (0, 5))
+        self.assertEqual(r.lifted_button, (0, 5))
         self.assertTrue(r.consume_trigger)
         self.assertIsNotNone(r.lift_point)
         self.assertEqual(len(self.ring.display_sides()), len(SIDES))           # no extra side: every panel shows a hide slot
         self.sim.set_hand(1, trigger=0.0)
         r = self.run_frames(1)                   # released over its own slot: nothing happens
         self.assertIsNone(r.activated)
-        self.assertIsNone(r.face_dropped)
-        self.assertIsNone(self.ring.lifted_face)
+        self.assertIsNone(r.button_dropped)
+        self.assertIsNone(self.ring.lifted_button)
 
-    def test_leaving_the_face_while_pressed_cancels_the_press(self):
+    def test_leaving_the_button_while_pressed_cancels_the_press(self):
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         point, n = self.slot_point(6)
         self.aim_at(point, n)
         self.run_frames(2)
@@ -590,7 +590,7 @@ class RingTest(unittest.TestCase):
         self.assertIsNone(self.ring.press)
         point, n = self.slot_point(5)            # coming back and releasing does not activate either
         self.aim_at(point, n)
-        self.press_face(5)
+        self.press_button(5)
         point, n = self.slot_point(6)
         self.aim_at(point, n)
         self.run_frames(1)
@@ -600,38 +600,38 @@ class RingTest(unittest.TestCase):
         self.sim.set_hand(1, trigger=0.0)
         self.assertIsNone(self.run_frames(1).activated)
 
-    def test_a_lifted_face_is_dropped_on_another_slot(self):
+    def test_a_lifted_button_is_dropped_on_another_slot(self):
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         self.run_frames(25)
         point, n = self.slot_point(6)
         self.aim_at(point, n)
         r = self.run_frames(1)
-        self.assertEqual(r.face_target, (0, 6))
-        self.assertFalse(r.face_hide)
+        self.assertEqual(r.button_target, (0, 6))
+        self.assertFalse(r.button_hide)
         self.assertIsNone(r.hover)
         self.sim.set_hand(1, trigger=0.0)
         r = self.run_frames(1)
-        self.assertEqual(r.face_dropped, (0, 5, 0, 6))
+        self.assertEqual(r.button_dropped, (0, 5, 0, 6))
 
     def test_slots_the_host_refuses_are_no_drop_target(self):
         self.ring.can_drop = lambda src, dst: dst != (0, 6)
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         self.run_frames(25)
         point, n = self.slot_point(6)
         self.aim_at(point, n)
         r = self.run_frames(1)
-        self.assertIsNone(r.face_target)
+        self.assertIsNone(r.button_target)
         self.sim.set_hand(1, trigger=0.0)
-        self.assertIsNone(self.run_frames(1).face_dropped)
+        self.assertIsNone(self.run_frames(1).button_dropped)
 
     def test_a_slot_the_host_says_is_empty_cannot_be_lifted(self):
         self.ring.can_lift = lambda page, slot: slot != 5
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         self.run_frames(25)
-        self.assertIsNone(self.ring.lifted_face)
+        self.assertIsNone(self.ring.lifted_button)
         self.sim.set_hand(1, trigger=0.0)
         self.assertIsNone(self.run_frames(1).activated)                       # a long press is not a tap
 
@@ -642,7 +642,7 @@ class RingTest(unittest.TestCase):
         y = ((d.rows - 1) / 2 - slot // d.cols) * (rg.CELL + rg.GAP) + rg.GRID_Y
         return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.n
 
-    def test_a_panel_with_a_grid_of_its_own_is_as_large_as_its_grid_and_every_face_of_it_is_hit(self):
+    def test_a_panel_with_a_grid_of_its_own_is_as_large_as_its_grid_and_every_button_of_it_is_hit(self):
         self.ring.set_dims({0: (10, 4)})
         self.run_frames()
         d = self.ring.poses[0].dims
@@ -732,7 +732,7 @@ class RingTest(unittest.TestCase):
         self.run_frames(1)
         self.sim.set_hand(1, trigger=1.0)
         self.run_frames(2)
-        self.assertEqual(self.ring.press, (3, 5))                                     # a face of it is pressed and activated on release as usual
+        self.assertEqual(self.ring.press, (3, 5))                                     # a button of it is pressed and activated on release as usual
         self.sim.set_hand(1, trigger=0.0)
         self.assertEqual(self.run_frames(1).activated, (3, 5))
 
@@ -742,37 +742,37 @@ class RingTest(unittest.TestCase):
         y = (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2
         return mu.add(pose.centre, mu.add(mu.mul(pose.u, x), mu.mul(pose.v, y))), pose.n
 
-    def test_a_lifted_face_dropped_on_the_hide_slot_of_a_panel_is_hidden(self):
+    def test_a_lifted_button_dropped_on_the_hide_slot_of_a_panel_is_hidden(self):
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         self.run_frames(25)
-        self.assertEqual(sorted(self.ring.ghosts), [])                         # a face has no empty side to go to
+        self.assertEqual(sorted(self.ring.ghosts), [])                         # a button has no empty side to go to
         point, n = self.hide_slot_point()
         self.aim_at(point, n)
         r = self.run_frames(1)
-        self.assertTrue(r.face_hide)
+        self.assertTrue(r.button_hide)
         self.assertEqual(r.hide_page, 0)
-        self.assertIsNone(r.face_target)
+        self.assertIsNone(r.button_target)
         self.assertIsNone(r.hover)
         self.sim.set_hand(1, trigger=0.0)
-        self.assertEqual(self.run_frames(1).face_dropped, (0, 5, None, None))
+        self.assertEqual(self.run_frames(1).button_dropped, (0, 5, None, None))
 
     def test_the_hide_slot_of_another_panel_hides_too_and_its_title_is_still_a_title_elsewhere(self):
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         self.run_frames(25)
         self.flick(1.0)                                                        # another side to the front
         front = self.ring.front_side()
         point, n = self.hide_slot_point(front)
         self.aim_at(point, n)
         r = self.run_frames(1)
-        self.assertEqual((r.face_hide, r.hide_page), (True, front))
+        self.assertEqual((r.button_hide, r.hide_page), (True, front))
         point, n = self.title_point(front)                                     # the middle of the title bar is no hide slot
         self.aim_at(point, n)
         r = self.run_frames(1)
-        self.assertEqual((r.face_hide, r.hide_page), (False, None))
+        self.assertEqual((r.button_hide, r.hide_page), (False, None))
         self.sim.set_hand(1, trigger=0.0)
-        self.assertIsNone(self.run_frames(1).face_dropped)
+        self.assertIsNone(self.run_frames(1).button_dropped)
 
     def menu_point(self, page=0):
         pose = self.ring.poses[page]
@@ -818,14 +818,14 @@ class RingTest(unittest.TestCase):
         self.run_frames(1)
         self.assertEqual(self.ring.lifted, 0)
 
-    def test_the_menu_mark_is_no_menu_while_a_panel_or_a_face_is_lifted(self):
+    def test_the_menu_mark_is_no_menu_while_a_panel_or_a_button_is_lifted(self):
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         self.run_frames(25)
         point, n = self.menu_point()
         self.aim_at(point, n)
         r = self.run_frames(1)
-        self.assertEqual((r.menu_hover, r.face_hide), (None, False))
+        self.assertEqual((r.menu_hover, r.button_hide), (None, False))
         self.sim.set_hand(1, trigger=0.0)
         self.run_frames(2)
         point, n = self.title_point(0)
@@ -838,31 +838,31 @@ class RingTest(unittest.TestCase):
         self.aim_at(point, n)
         self.assertIsNone(self.run_frames(1).menu_hover)
 
-    def test_without_a_lifted_face_the_place_of_the_hide_slot_is_part_of_the_title_bar(self):
+    def test_without_a_lifted_button_the_place_of_the_hide_slot_is_part_of_the_title_bar(self):
         self.run_frames()
         point, n = self.hide_slot_point()
         self.aim_at(point, n)
         r = self.run_frames(1)
-        self.assertEqual((r.hover_title, r.face_hide, r.hide_page), (0, False, None))
+        self.assertEqual((r.hover_title, r.button_hide, r.hide_page), (0, False, None))
 
-    def test_releasing_a_lifted_face_over_nothing_cancels(self):
+    def test_releasing_a_lifted_button_over_nothing_cancels(self):
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         self.run_frames(25)
         self.sim.set_hand(1, position=(0.3, 1.5, -0.3), point_at=(0.3, 1.5, -2.0))
         self.run_frames(2)
         self.sim.set_hand(1, trigger=0.0)
         r = self.run_frames(1)
-        self.assertIsNone(r.face_dropped)
-        self.assertIsNone(self.ring.lifted_face)
+        self.assertIsNone(r.button_dropped)
+        self.assertIsNone(self.ring.lifted_button)
 
-    def test_the_carousel_stays_while_a_face_is_lifted_without_looking_at_it(self):
+    def test_the_carousel_stays_while_a_button_is_lifted_without_looking_at_it(self):
         self.run_frames()
-        self.press_face(5)
+        self.press_button(5)
         self.run_frames(25)
         self.sim.set_head(look_at_point=(0.0, 1.6, 2.0))
         self.assertTrue(self.run_frames(10).visible)
-        self.assertEqual(self.ring.lifted_face, (0, 5))
+        self.assertEqual(self.ring.lifted_button, (0, 5))
 
 
 class LayoutTest(unittest.TestCase):
@@ -879,8 +879,8 @@ class LayoutTest(unittest.TestCase):
         layout = lay.Layout.from_json(self.make().to_json())
         self.assertEqual(self.names(layout), ["Tools", "View"])
         self.assertEqual(len(layout.pages[0].slots), lay.SLOTS)
-        self.assertEqual(layout.face_at(0, 1), "b")
-        self.assertIsNone(layout.face_at(1, 5))
+        self.assertEqual(layout.button_at(0, 1), "b")
+        self.assertIsNone(layout.button_at(1, 5))
 
     def test_sides_and_rows_survive_the_roundtrip_and_old_files_get_a_side_per_page(self):
         layout = self.three()
@@ -892,16 +892,16 @@ class LayoutTest(unittest.TestCase):
         stacked = json.dumps({"version": 2, "pages": [{"name": "A", "side": 0}, {"name": "B", "side": 0}]})
         self.assertEqual(lay.Layout.from_json(stacked).sides(), [[[0, 1]]])      # one row
 
-    def test_unknown_faces_become_empty(self):
-        layout = lay.Layout.from_json(self.make().to_json(), known_faces={"a", "c"})
-        self.assertEqual((layout.face_at(0, 0), layout.face_at(0, 1)), ("a", None))
+    def test_unknown_buttons_become_empty(self):
+        layout = lay.Layout.from_json(self.make().to_json(), known_buttons={"a", "c"})
+        self.assertEqual((layout.button_at(0, 0), layout.button_at(0, 1)), ("a", None))
 
     def test_swap_and_remove(self):
         layout = self.make()
         layout.swap(0, 0, 1, 0)
-        self.assertEqual((layout.face_at(0, 0), layout.face_at(1, 0)), ("c", "a"))
+        self.assertEqual((layout.button_at(0, 0), layout.button_at(1, 0)), ("c", "a"))
         layout.remove(0, 0)
-        self.assertIsNone(layout.face_at(0, 0))
+        self.assertIsNone(layout.button_at(0, 0))
 
     def test_every_page_starts_on_its_own_side(self):
         self.assertEqual(self.three().sides(), [[[0]], [[1]], [[2]]])
@@ -945,7 +945,7 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(self.names(layout), ["B", "C", "A"])
         self.assertEqual(layout.sides(), [[[0]], [[1]], [[2]]])
 
-    def test_faces_added_since_a_layout_was_saved_are_placed(self):
+    def test_buttons_added_since_a_layout_was_saved_are_placed(self):
         default = lay.Layout([lay.Page("Tools", ["a", "b"]), lay.Page("Session", ["x", "y", "z"])])
         saved = lay.Layout([lay.Page("Tools", ["a"]), lay.Page("Session", ["x"])])
         self.assertTrue(saved.add_missing(default))
@@ -965,40 +965,40 @@ class LayoutTest(unittest.TestCase):
         crowded = lay.Layout([lay.Page("Session", ["m", "c", "x", "y", "z", "u", "v", "w", "q", "r", "s", "t"])])
         self.assertFalse(crowded.add_missing(default, wide={"angle", "length"}))   # no free row: nothing is squeezed in
 
-    def test_a_face_moves_to_a_free_slot_or_changes_places(self):
+    def test_a_button_moves_to_a_free_slot_or_changes_places(self):
         layout = lay.Layout([lay.Page("A", ["a", "b"]), lay.Page("B", ["c"])])
-        self.assertTrue(layout.move_face(0, 0, 1, 5))
-        self.assertEqual((layout.face_at(0, 0), layout.face_at(1, 5)), (None, "a"))
-        self.assertTrue(layout.move_face(1, 5, 0, 1))                          # onto an occupied slot: swap
-        self.assertEqual((layout.face_at(0, 1), layout.face_at(1, 5)), ("a", "b"))
-        self.assertFalse(layout.move_face(0, 1, 0, 1))                         # onto itself
-        self.assertFalse(layout.move_face(0, 7, 1, 2))                         # an empty slot has no face to move
+        self.assertTrue(layout.move_button(0, 0, 1, 5))
+        self.assertEqual((layout.button_at(0, 0), layout.button_at(1, 5)), (None, "a"))
+        self.assertTrue(layout.move_button(1, 5, 0, 1))                          # onto an occupied slot: swap
+        self.assertEqual((layout.button_at(0, 1), layout.button_at(1, 5)), ("a", "b"))
+        self.assertFalse(layout.move_button(0, 1, 0, 1))                         # onto itself
+        self.assertFalse(layout.move_button(0, 7, 1, 2))                         # an empty slot has no button to move
 
-    def test_sliders_are_not_lifted_and_their_rows_take_no_faces(self):
+    def test_sliders_are_not_lifted_and_their_rows_take_no_buttons(self):
         layout = lay.Layout([lay.Page("A", ["a", "b", None, None, "s"])])
         wide = {"s"}
-        self.assertFalse(layout.can_move_face(0, 4, 0, 8, wide))               # a slider is dragged, not lifted
-        self.assertFalse(layout.can_move_face(0, 0, 0, 6, wide))               # a slot in a slider row
-        self.assertFalse(layout.can_move_face(0, 0, 0, 4, wide))
-        self.assertTrue(layout.can_move_face(0, 0, 0, 9, wide))
-        self.assertFalse(layout.hide_face(0, 4, wide))
+        self.assertFalse(layout.can_move_button(0, 4, 0, 8, wide))               # a slider is dragged, not lifted
+        self.assertFalse(layout.can_move_button(0, 0, 0, 6, wide))               # a slot in a slider row
+        self.assertFalse(layout.can_move_button(0, 0, 0, 4, wide))
+        self.assertTrue(layout.can_move_button(0, 0, 0, 9, wide))
+        self.assertFalse(layout.hide_button(0, 4, wide))
 
-    def test_hidden_faces_stay_out_of_the_panels_and_come_back_on_request(self):
+    def test_hidden_buttons_stay_out_of_the_panels_and_come_back_on_request(self):
         default = lay.Layout([lay.Page("Tools", ["a", "b"]), lay.Page("Session", ["x"])])
         layout = lay.Layout([lay.Page("Tools", ["a", "b"]), lay.Page("Session", ["x"])])
-        self.assertTrue(layout.hide_face(0, 1))
-        self.assertEqual((layout.face_at(0, 1), layout.hidden), (None, ["b"]))
-        self.assertFalse(layout.hide_face(0, 1))                               # nothing left in that slot
+        self.assertTrue(layout.hide_button(0, 1))
+        self.assertEqual((layout.button_at(0, 1), layout.hidden), (None, ["b"]))
+        self.assertFalse(layout.hide_button(0, 1))                               # nothing left in that slot
         self.assertFalse(layout.add_missing(default))                          # hidden is not missing
         again = lay.Layout.from_json(layout.to_json())
         self.assertEqual(again.hidden, ["b"])
         self.assertFalse(again.add_missing(default))
-        self.assertEqual(lay.Layout.from_json(layout.to_json(), known_faces={"a", "x"}).hidden, [])
+        self.assertEqual(lay.Layout.from_json(layout.to_json(), known_buttons={"a", "x"}).hidden, [])
         self.assertTrue(again.show_hidden(default))
         self.assertEqual((again.pages[0].slots[:2], again.hidden), (["a", "b"], []))
         self.assertFalse(again.show_hidden(default))
 
-    def test_hidden_faces_without_room_stay_hidden(self):
+    def test_hidden_buttons_without_room_stay_hidden(self):
         default = lay.Layout([lay.Page("A", ["a"])])
         layout = lay.Layout([lay.Page("A", ["f%d" % i for i in range(lay.SLOTS)])], hidden=["a"])
         self.assertFalse(layout.show_hidden(default))
@@ -1033,7 +1033,7 @@ class LayoutTest(unittest.TestCase):
                 f.write("not json")
             self.assertIs(lay.load_layout(default, {"a"}, path), default)         # broken file
             lay.save_layout(default, path)
-            self.assertEqual(lay.load_layout(None, {"a", "b", "c"}, path).face_at(0, 1), "b")
+            self.assertEqual(lay.load_layout(None, {"a", "b", "c"}, path).button_at(0, 1), "b")
             with open(path, "w") as f:
                 f.write(json.dumps({"pages": []}))
             self.assertIs(lay.load_layout(default, {"a"}, path), default)         # no pages

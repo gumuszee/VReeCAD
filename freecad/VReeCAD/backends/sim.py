@@ -186,7 +186,7 @@ class SimSession:
         return stage_frame((aim.position, aim.orientation), anchor)
 
     def select_tool(self, name):
-        """Make a registered tool the active tool (the same as choosing its face)."""
+        """Make a registered tool the active tool (the same as choosing its button)."""
         self.tool_manager.activate(name)
         self.ui.active_tool = self.tool_manager.active
 

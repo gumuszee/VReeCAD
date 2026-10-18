@@ -14,7 +14,7 @@
 # *                                                                         *
 # ***************************************************************************
 """Coin3D drawing of the small messages (docs/ux-design.md, Toasts, tooltips and readouts): toasts in front of the head, the
-tooltip of a face, the readout of a tool option next to the tool hand, and the padlock over the A button. The text ones are
+tooltip of a button, the readout of a tool option next to the tool hand, and the padlock over the A button. The text ones are
 `LabelPlate`s, drawn over the model in the colours and font of the palette."""
 
 import math
@@ -36,7 +36,7 @@ TOAST_SCALE = 1.5      # toasts are larger than the other labels: they are read 
 TOAST_PITCH = 0.06      # metres between stacked toasts
 WRIST_SCALE = 0.6       # toasts on the wrist are smaller: they are read at arm's length
 WRIST_PITCH = 0.028     # metres between stacked toasts on the wrist
-TOOLTIP_LIFT = 0.045    # metres above the centre of a face
+TOOLTIP_LIFT = 0.045    # metres above the centre of a button
 TOOLTIP_FRONT = 0.01875  # metres in front of the panel, towards the head
 HELP_SCALE = 0.6        # the controls cards are read at arm's length like the toasts on the wrist
 HELP_PITCH = 0.03       # metres between the lines of a controls card (at the scale of the card)
@@ -205,7 +205,7 @@ class HelpCard:
 
     def __init__(self):
         self.title = LabelPlate(style.ACTIVE, style.TEXT_ON_ACTIVE)
-        self.lines = [LabelPlate(style.FACE) for _ in range(HELP_LINES)]
+        self.lines = [LabelPlate(style.BUTTON) for _ in range(HELP_LINES)]
 
     @property
     def plates(self):
@@ -265,7 +265,7 @@ class FeedbackView:
         depth.getField("write").setValue(False)
         self.root.addChild(depth)
         self.root.addChild(style.font())
-        self._toasts = [LabelPlate(style.FACE) for _ in range(max_toasts)]
+        self._toasts = [LabelPlate(style.BUTTON) for _ in range(max_toasts)]
         self._tooltip = LabelPlate(style.PLATE, style.TEXT)
         self._readout = LabelPlate(style.GRAB, style.TEXT_ON_ACTIVE)
         self._lock = LockIcon()
@@ -274,7 +274,7 @@ class FeedbackView:
             self.root.addChild(plate.root)
 
     def update(self, head, toasts, tooltip=None, readout=None, lock=None, wrist=None, cards=None):
-        """`toasts`: the `toast.Toast`s to draw, oldest first. `tooltip`: (text, centre of the face, u, v of its panel) or None.
+        """`toasts`: the `toast.Toast`s to draw, oldest first. `tooltip`: (text, centre of the button, u, v of its panel) or None.
         `readout`: the text of the readout of a gesture or a tool option, or None; it hangs on the wrist like the toasts, at the bottom of the
         stack (the toasts stand above it), so it never covers what the hand works on. `lock`: (position, right, up, locked) of the padlock on the controller, or None.
         `wrist`: the point on the controller where the toasts are attached, or None to show them in front of the head.

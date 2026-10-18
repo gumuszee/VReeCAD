@@ -19,7 +19,7 @@
 - **Modify** with booleans (fuse, cut, common), copy, mirror, linear patterns, colours, fillet and chamfer, attach to a face, and assembly joints (fixed, hinge, slider, ball).
 - **Values**: selecting an object brings up sliders, a number pad and keys for its sizes and position. Values bind to named **variables** (a `Variables` spreadsheet) and to expressions such as `width * 2 + 10 mm`.
 - **Snapping** by guides or by inference (vertices, middles and edges of nearby geometry), with a ruler in the document's unit system while navigating.
-- **Interface**: a palette carousel of panels on one controller that the user rearranges, a quick radial of favourite faces, option discs on the thumbstick, toasts, tooltips and a controls card. Runtime-provided controller models, laser or tip pointer.
+- **Interface**: a palette carousel of panels on one controller that the user rearranges, a quick radial of favourite buttons, option discs on the thumbstick, toasts, tooltips and a controls card. Runtime-provided controller models, laser or tip pointer.
 
 ## Install
 
@@ -41,7 +41,7 @@ Requirements: FreeCAD 1.1 or newer (developed on 1.1.4, Windows 11), an OpenXR r
    powershell -NoProfile -ExecutionPolicy Bypass -File tools\start-freecad.ps1
    ```
 
-Start it: open or create a FreeCAD document, switch to the **VReeCAD** workbench, put the headset on and click **Open XR viewer**. Without a document the viewer does not start. The first run shows a controls card over each controller (the **Tutorial** face of the Settings panel shows it again, and the menu button of either controller toggles it).
+Start it: open or create a FreeCAD document, switch to the **VReeCAD** workbench, put the headset on and click **Open XR viewer**. Without a document the viewer does not start. The first run shows a controls card over each controller (the **Tutorial** button of the Settings panel shows it again, and the menu button of either controller toggles it).
 
 ## Controls
 
@@ -67,13 +67,13 @@ The text below says **A** and **B** for Button 1 and Button 2. Only the Steam Fr
 | Tool hand | right | the active tool (trigger is the primary action), the navigation modifiers, the pointer |
 | Palette hand | left | the palette carousel (or the values carousel), undo and redo shortcuts |
 
-The **Tool hand** face of the Settings panel swaps the roles; everything that belongs to a hand follows and the choice is saved. The D-pad shortcuts belong to the palette hand, so with the tool hand on the left they are not available (B on the tool hand undoes on every controller).
+The **Tool hand** button of the Settings panel swaps the roles; everything that belongs to a hand follows and the choice is saved. The D-pad shortcuts belong to the palette hand, so with the tool hand on the left they are not available (B on the tool hand undoes on every controller).
 
 ### Tool hand
 
 | Input | Action |
 |---|---|
-| Trigger | the primary action of the tool; on the carousel: press and release on a face to activate it, hold on a face (0.4 s) to lift it, hold on a title bar to lift the panel |
+| Trigger | the primary action of the tool; on the carousel: press and release on a button to activate it, hold on a button (0.4 s) to lift it, hold on a title bar to lift the panel |
 | Grip | grab the world (see Navigation) |
 | Stick | the options of the tool (see Tool options) |
 | Stick click | the tool decides: Select goes back to Object and Replace, Points back to Move and Free faces; the other tools ignore it. While gripping: reset the view |
@@ -109,13 +109,13 @@ After a two-grip gesture the grip that stays down does nothing until both are re
 
 ### Pointing
 
-The tool hand points at the carousel and at the model with either a **laser** (a beam along the tilted aim direction) or a **tip** (a cone ending in a small sphere in front of the controller; panels and the model react to what the tip touches). Both are switched with the **Pointer** face; the **Angle** (tilt, default 15 degrees) and **Length** (tip distance, default 40 mm) sliders sit on the Pointer panel. The tip is the cursor of every tool.
+The tool hand points at the carousel and at the model with either a **laser** (a beam along the tilted aim direction) or a **tip** (a cone ending in a small sphere in front of the controller; panels and the model react to what the tip touches). Both are switched with the **Pointer** button; the **Angle** (tilt, default 15 degrees) and **Length** (tip distance, default 40 mm) sliders sit on the Pointer panel. The tip is the cursor of every tool.
 
 ### Palette carousel
 
 The carousel is a prism around the long axis of the palette controller, with every side visible and a stack of panels on each side. It fades in when the head looks at the controller or at a panel.
 
-| Panel | Faces |
+| Panel | Buttons |
 |---|---|
 | Tools | Create, Select, Move, Push/Pull, Points, Sketch |
 | Edit | Undo, Redo, Delete |
@@ -125,16 +125,16 @@ The carousel is a prism around the long axis of the palette controller, with eve
 | Pointer | Pointer (laser or tip), sliders Angle and Length |
 | Settings | Tool hand, Small lengths, Tutorial, Snapping (guides or inference), sliders Grid (1 to 100 mm) and Angle step (5 to 90 degrees) |
 
-- **Activate a face:** press the trigger on it and release over the same face within 0.4 s.
+- **Activate a button:** press the trigger on it and release over the same button within 0.4 s.
 - **Sliders** are dragged by their bar: hold the trigger on the bar and move along the track.
 - **Rearrange panels:** hold the trigger on a title bar and drop the panel next to, above or below another panel, or on the empty side; turn the carousel with the palette stick while holding.
-- **Move or hide a face:** hold the trigger on it for 0.4 s, drop it on a slot (an occupied slot swaps) or on the hide slot in a title bar. **Show hidden** brings them back, **Reset layout** restores the defaults.
-- **Panel editor:** tap the menu mark at the right end of a title bar to rename a panel, give it a hue and set its size (up to 12 by 8 faces) with an on-screen keyboard.
+- **Move or hide a button:** hold the trigger on it for 0.4 s, drop it on a slot (an occupied slot swaps) or on the hide slot in a title bar. **Show hidden** brings them back, **Reset layout** restores the defaults.
+- **Panel editor:** tap the menu mark at the right end of a title bar to rename a panel, give it a hue and set its size (up to 12 by 8 buttons) with an on-screen keyboard.
 - The layout is saved in `%APPDATA%\VReeCAD\layout.json` and the settings in `settings.json`.
 
 ### Quick radial
 
-Hold **A** on the tool hand (outside gestures and navigation) to open a radial of the eight faces used last. Move the hand in the direction of an item (a tick marks each change) and release A to activate it. Releasing A without moving the hand chooses the **Select** tool, which sits in the middle.
+Hold **A** on the tool hand (outside gestures and navigation) to open a radial of the eight buttons used last. Move the hand in the direction of an item (a tick marks each change) and release A to activate it. Releasing A without moving the hand chooses the **Select** tool, which sits in the middle.
 
 ### Tool options
 
@@ -168,11 +168,11 @@ Selecting an editable object brings the **values carousel** onto the palette han
 
 While the value slider is focused (the tip near it, or the laser over its row) the **stick of the tool hand** steps the picked value up and down. The values are the sizes of a primitive, the dimensions of a sketch, the coordinates of a picked point of a block and the position of any object. **Make variable** turns a value into a named length of the `Variables` spreadsheet; a typed text that uses a variable binds the value to the expression.
 
-### Modify, Shape and Edit faces
+### Modify, Shape and Edit buttons
 
 All act on the current selection and make one undo step.
 
-| Face | Action |
+| Button | Action |
 |---|---|
 | Fuse, Common, Cut | `Part::MultiFuse`, `Part::MultiCommon`, `Part::Cut` (everything after the first object is cut away) |
 | Copy | a parametric copy laid beside the original |

@@ -29,7 +29,7 @@ Enter, one push of the stick) is its own undo step.
 The slider of the value is **focused** when the pointer comes near it (the tip within a hand's breadth in front of the panel, the
 laser over the row): as long as it stays focused the stick of the tool hand steps the picked value, up and down, by one step, while
 the tool's own options keep the stick the rest of the time. A slider changes its value only when its bar is pressed and dragged.
-`ValueModule` holds the `core.values.ValueEditor` of the selected object and turns what the carousel reports (a face pressed, a
+`ValueModule` holds the `core.values.ValueEditor` of the selected object and turns what the carousel reports (a button pressed, a
 slider dragged, the value slider focused) into editor calls; the controller shows the panels and swaps the carousels."""
 
 import json
@@ -40,7 +40,7 @@ from typing import List, Optional
 from freecad.VReeCAD.core import snapping, units
 from freecad.VReeCAD.core.values import VALUE_STEPS, ValueEditor, pretty_expression
 from freecad.VReeCAD.ui import layout as lay
-from freecad.VReeCAD.ui.layout import Face, Layout, Page
+from freecad.VReeCAD.ui.layout import Button, Layout, Page
 from freecad.VReeCAD.ui.options import FIRST_REPEAT, PUSH_OFF, PUSH_ON, REPEAT
 
 ROW_CHARS = 36                         # the label line of the readout is cut after this many characters
@@ -52,7 +52,7 @@ PREV, WHICH, NEXT = "val.prev", "val.which", "val.next"
 VARIABLES = 8                          # variables shown on the Variables panel at a time
 VARIABLE_IDS = tuple(f"var.{i}" for i in range(VARIABLES))
 VARIABLE_GROUP = "var.group"
-ITEMS = 12                             # faces of the Values panel; with more values the last one is "More values"
+ITEMS = 12                             # buttons of the Values panel; with more values the last one is "More values"
 ITEM_IDS = tuple(f"val.item.{i}" for i in range(ITEMS))
 COLOURS = 12                           # swatches of the Colour panel (`cad.colour.SWATCHES`)
 COLOUR_IDS = tuple(f"val.colour.{i}" for i in range(COLOURS))
@@ -61,7 +61,7 @@ PAGE_NAMES = (PAGE_VALUE, PAGE_LIST, PAGE_PAD, PAGE_KEYS, PAGE_VARIABLES, PAGE_C
 MOVABLE_NAMES = PAGE_NAMES[1:]         # the panels the user can rearrange: the Value panel is fixed at the top of every side
 TYPED_CHARS = 30                       # the readout shows at most this many characters of what is typed
 
-# face id -> (label, key of the editor, tooltip)
+# button id -> (label, key of the editor, tooltip)
 KEYS = {
     **{f"key.{d}": (d, d, "") for d in "0123456789"},
     "key.point": (".", ".", "Decimal point"),
@@ -86,28 +86,28 @@ KEY_SLOTS = ["key.0", "key.point", "key.minus", "key.plus", "key.times", "key.di
 VARIABLE_SLOTS = [*VARIABLE_IDS, "key.makevar", "key.unbind", VARIABLE_GROUP, None]
 LIST_SLOTS = list(ITEM_IDS)
 COLOUR_SLOTS = list(COLOUR_IDS)
-WIDE_KINDS = ("slider", "readout")     # faces that take a whole row of their panel
+WIDE_KINDS = ("slider", "readout")     # buttons that take a whole row of their panel
 
 
-def faces():
-    """Map of face id to `layout.Face` for every face of the module."""
-    result = {fid: Face(fid, label, f"values:{fid}", tip=tip) for fid, (label, _, tip) in KEYS.items()}
-    result[READOUT] = Face(READOUT, "Value", f"values:{READOUT}", "readout", "The picked value, and what is typed for it")
-    result[VALUE_SLIDER] = Face(VALUE_SLIDER, "Value", f"values:{VALUE_SLIDER}", "slider",
+def buttons():
+    """Map of button id to `layout.Button` for every button of the module."""
+    result = {fid: Button(fid, label, f"values:{fid}", tip=tip) for fid, (label, _, tip) in KEYS.items()}
+    result[READOUT] = Button(READOUT, "Value", f"values:{READOUT}", "readout", "The picked value, and what is typed for it")
+    result[VALUE_SLIDER] = Button(VALUE_SLIDER, "Value", f"values:{VALUE_SLIDER}", "slider",
                                 "Come close to use the stick, press the bar and drag to set the picked value")
-    result[STEP_SLIDER] = Face(STEP_SLIDER, "Step", f"values:{STEP_SLIDER}", "slider", "Press the bar and drag to set the step of the stick and of the value slider")
-    result[PREV] = Face(PREV, "Previous value", f"values:{PREV}", tip="Pick the previous value of the object")
-    result[NEXT] = Face(NEXT, "Next value", f"values:{NEXT}", tip="Pick the next value of the object")
-    result[WHICH] = Face(WHICH, "Value", f"values:{WHICH}", "display", "Which value of the object is picked")
+    result[STEP_SLIDER] = Button(STEP_SLIDER, "Step", f"values:{STEP_SLIDER}", "slider", "Press the bar and drag to set the step of the stick and of the value slider")
+    result[PREV] = Button(PREV, "Previous value", f"values:{PREV}", tip="Pick the previous value of the object")
+    result[NEXT] = Button(NEXT, "Next value", f"values:{NEXT}", tip="Pick the next value of the object")
+    result[WHICH] = Button(WHICH, "Value", f"values:{WHICH}", "display", "Which value of the object is picked")
     for fid in VARIABLE_IDS:
-        result[fid] = Face(fid, "Variable", f"values:{fid}", tip="Type this variable into the expression")
-    result[VARIABLE_GROUP] = Face(VARIABLE_GROUP, "More variables", f"values:{VARIABLE_GROUP}", tip="Show the next variables")
+        result[fid] = Button(fid, "Variable", f"values:{fid}", tip="Type this variable into the expression")
+    result[VARIABLE_GROUP] = Button(VARIABLE_GROUP, "More variables", f"values:{VARIABLE_GROUP}", tip="Show the next variables")
     for fid in ITEM_IDS:
-        result[fid] = Face(fid, "Value", f"values:{fid}", tip="Pick this value")
+        result[fid] = Button(fid, "Value", f"values:{fid}", tip="Pick this value")
     from freecad.VReeCAD.cad import colour                  # the colour data only: no FreeCAD import
     for i, fid in enumerate(COLOUR_IDS):
         name, rgb = colour.SWATCHES[i]
-        result[fid] = Face(fid, "", f"doc:colour_{i}", tip=f"Colour the selected objects {name.lower()}", swatch=rgb)
+        result[fid] = Button(fid, "", f"doc:colour_{i}", tip=f"Colour the selected objects {name.lower()}", swatch=rgb)
     return result
 
 
@@ -139,7 +139,7 @@ def shown_layout(layout):
     return Layout(list(layout.pages) + [Page(PAGE_VALUE, list(VALUE_SLOTS), pinned=True)])
 
 
-def load_layout(known_faces, path=None):
+def load_layout(known_buttons, path=None):
     """The user's saved layout of the values carousel, or the default one when there is none, it cannot be read or it is of another
     arrangement (`ARRANGEMENT`: the panels stood in a different order of sides)."""
     path = path or user_layout_path()
@@ -149,7 +149,7 @@ def load_layout(known_faces, path=None):
                 return default_layout()
     except (OSError, ValueError, AttributeError):
         return default_layout()
-    return complete(lay.load_layout(default_layout(), known_faces, path))
+    return complete(lay.load_layout(default_layout(), known_buttons, path))
 
 
 def user_layout_path():
@@ -182,7 +182,7 @@ class ValueModule:
         self.item_group = 0                 # the Values panel shows the values from page_size * item_group on
         self._seen_selected = None          # the picked value the Values panel last followed
         self._variable_age = 0.0
-        self.faces = faces()
+        self.buttons = buttons()
         self.step = 10.0                    # the step of the stick and the value slider, kept from one object to the next
         self._ranges = {}                   # value index -> (lowest, highest) of the value slider while that value is picked
         self._range_step = None
@@ -243,7 +243,7 @@ class ValueModule:
         return f"{units.format_number(low / unit.mm)} to {units.format_length(high, self.editor.system, unit)}"
 
     def slider_states(self):
-        """face id -> (position along the track 0 to 1, text, picked) of the value slider (the track runs over the values it can take
+        """button id -> (position along the track 0 to 1, text, picked) of the value slider (the track runs over the values it can take
         and its text says where it begins and ends) and of the step slider."""
         editor = self.editor
         low, high = self._ranges[editor.selected]
@@ -253,7 +253,7 @@ class ValueModule:
                 STEP_SLIDER: (step, f"Step {units.format_length(editor.step, editor.system)}", False)}
 
     def readouts(self):
-        """face id -> (small line, large line, typing) of the readout: the name of the picked value (and the expression it is bound to)
+        """button id -> (small line, large line, typing) of the readout: the name of the picked value (and the expression it is bound to)
         over its number, or while text is typed the text with a cursor, which Enter applies."""
         editor = self.editor
         picked = editor.field
@@ -266,18 +266,18 @@ class ValueModule:
             small = small if len(small) <= ROW_CHARS else small[:ROW_CHARS - 3] + "..."
         return {READOUT: (small, editor.text_of(picked), False)}
 
-    def set_focus(self, face_id):
-        """The pointer is close to the slider `face_id`: for the value slider the stick works on the picked value for a while."""
-        if face_id == VALUE_SLIDER:
+    def set_focus(self, button_id):
+        """The pointer is close to the slider `button_id`: for the value slider the stick works on the picked value for a while."""
+        if button_id == VALUE_SLIDER:
             self._focus, self._focus_age = True, 0.0
 
-    def drag(self, face_id, along):
+    def drag(self, button_id, along):
         """A slider was dragged to `along` (0 to 1) of its track: the value slider sets the picked value to the nearest step, the step
         slider takes the nearest of the steps. Returns whether it changed."""
         along = min(max(along, 0.0), 1.0)
-        if face_id == STEP_SLIDER:
+        if button_id == STEP_SLIDER:
             return self.editor.set_step(round(along * (len(VALUE_STEPS) - 1)))
-        if face_id != VALUE_SLIDER:
+        if button_id != VALUE_SLIDER:
             return False
         low, high = self._ranges[self.editor.selected]
         return self.editor.set_value(self.editor.selected, snapping.snap(low + along * (high - low), self.editor.step))
@@ -289,7 +289,7 @@ class ValueModule:
 
     # the keys and the labels
     def labels(self):
-        """Face id -> the text of the faces that show a value."""
+        """Button id -> the text of the buttons that show a value."""
         if self.editor is None:
             return {}
         count = len(self.editor.fields)
@@ -309,7 +309,7 @@ class ValueModule:
 
     @property
     def _paged(self):
-        """There are more values than the Values panel has faces: its last face then shows the next page of values."""
+        """There are more values than the Values panel has buttons: its last button then shows the next page of values."""
         return self.editor is not None and len(self.editor.fields) > ITEMS
 
     @property
@@ -317,18 +317,18 @@ class ValueModule:
         return ITEMS - 1 if self._paged else ITEMS
 
     def item_at(self, slot):
-        """Index of the value on face `slot` (0 to 11) of the Values panel, or None when the face shows none."""
+        """Index of the value on button `slot` (0 to 11) of the Values panel, or None when the button shows none."""
         if self.editor is None or slot >= self.page_size:
             return None
         index = self.item_group * self.page_size + slot
         return index if index < len(self.editor.fields) else None
 
     def picked_actions(self):
-        """Actions of the faces that are lit: the face of the Values panel that shows the picked value."""
+        """Actions of the buttons that are lit: the button of the Values panel that shows the picked value."""
         if self.editor is None:
             return frozenset()
         slot = self.editor.selected - self.item_group * self.page_size
-        return frozenset([self.faces[ITEM_IDS[slot]].action]) if 0 <= slot < self.page_size else frozenset()
+        return frozenset([self.buttons[ITEM_IDS[slot]].action]) if 0 <= slot < self.page_size else frozenset()
 
     def variable_at(self, slot):
         """(name, millimetres) of the variable on slot `slot` (0 to 7) of the Variables panel, or None when it shows none."""
@@ -341,30 +341,30 @@ class ValueModule:
         """Page name -> title bar text for the panels of the module: the Value panel names the object."""
         return {} if self.editor is None else {PAGE_VALUE: self.editor.target.title}
 
-    def activate(self, face_id):
-        """A face of the module was pressed; returns whether something changed."""
+    def activate(self, button_id):
+        """A button of the module was pressed; returns whether something changed."""
         editor = self.editor
         if editor is None:
             return False
-        if face_id in (PREV, NEXT):
-            return editor.select_next(1 if face_id == NEXT else -1)
-        if face_id == VARIABLE_GROUP:
+        if button_id in (PREV, NEXT):
+            return editor.select_next(1 if button_id == NEXT else -1)
+        if button_id == VARIABLE_GROUP:
             count = max(1, math.ceil(len(editor.variables) / VARIABLES))
             self.variable_group = (self.variable_group + 1) % count
             return True
-        if face_id in ITEM_IDS:
-            slot = ITEM_IDS.index(face_id)
+        if button_id in ITEM_IDS:
+            slot = ITEM_IDS.index(button_id)
             if self._paged and slot == ITEMS - 1:
                 self.item_group = (self.item_group + 1) % math.ceil(len(editor.fields) / self.page_size)
                 return True
             index = self.item_at(slot)
             return index is not None and editor.select(index)
-        if face_id in VARIABLE_IDS:
-            entry = self.variable_at(VARIABLE_IDS.index(face_id))
+        if button_id in VARIABLE_IDS:
+            entry = self.variable_at(VARIABLE_IDS.index(button_id))
             return entry is not None and editor.key(f"var:{entry[0]}")
-        if face_id not in KEYS:
+        if button_id not in KEYS:
             return False
-        changed = editor.key(KEYS[face_id][1])
+        changed = editor.key(KEYS[button_id][1])
         self._pending_message = editor.message or self._pending_message
         self.variable_group = min(self.variable_group, max(0, math.ceil(len(editor.variables) / VARIABLES) - 1))
         return changed

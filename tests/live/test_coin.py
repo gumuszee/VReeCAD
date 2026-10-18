@@ -333,7 +333,7 @@ class SimUiTest(unittest.TestCase):
             pointer = self.s.ui.pointer_poses[hand]
             self.assertAlmostEqual(sum(c * c for c in sim_sub(pointer.position, aim.position)) ** 0.5, self.s.ui.settings.tip_length, places=6)
 
-    def test_the_pointer_faces_show_their_values_and_the_sliders_set_them(self):
+    def test_the_pointer_buttons_show_their_values_and_the_sliders_set_them(self):
         labels = self.s.ui.labels()
         self.assertEqual(labels["pointer.mode"], "Pointer: Laser")
         self.assertEqual(labels["pointer.angle"], "Angle 15°")
@@ -392,7 +392,7 @@ class SimUiTest(unittest.TestCase):
         self.s.input.set_hand(1, position=tuple(c + n * 0.3 for c, n in zip(point, pose.n)), point_at=point)
         self.s.frame(0.02)
 
-    def test_a_face_runs_when_the_trigger_is_released_over_it_and_the_quick_radial_remembers_it(self):
+    def test_a_button_runs_when_the_trigger_is_released_over_it_and_the_quick_radial_remembers_it(self):
         self.show_carousel()
         ui = self.s.ui
         self.assertEqual(ui.radial_items()[:2], ["doc.undo", "doc.redo"])
@@ -409,9 +409,9 @@ class SimUiTest(unittest.TestCase):
         self.s.input.set_hand(1, trigger=0.0)
         self.s.frame(0.02)
         self.assertEqual((self.calls, self.s.ui_update.activated), (["redo"], "doc:redo"))
-        self.assertEqual(ui.radial_items()[:2], ["doc.redo", "doc.undo"])        # the face used last comes first
+        self.assertEqual(ui.radial_items()[:2], ["doc.redo", "doc.undo"])        # the button used last comes first
 
-    def test_holding_button1_of_the_tool_hand_opens_the_radial_and_moving_chooses_a_face(self):
+    def test_holding_button1_of_the_tool_hand_opens_the_radial_and_moving_chooses_a_button(self):
         from pivy import coin
         self.show_carousel()
         ui = self.s.ui
@@ -439,39 +439,39 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(self.s.ui.radial_view.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
         self.assertTrue(self.s.ui.navigator.level)                                # button1 is the level modifier then
 
-    def test_a_face_held_on_is_lifted_and_dropped_on_a_slot_or_on_the_hide_slot_of_a_panel(self):
+    def test_a_button_held_on_is_lifted_and_dropped_on_a_slot_or_on_the_hide_slot_of_a_panel(self):
         self.show_carousel()
         ui = self.s.ui
         tools = [p.name for p in ui.layout.pages].index("Tools")
-        face = ui.layout.face_at(tools, 0)
-        self.assertIsNotNone(face)
+        button = ui.layout.button_at(tools, 0)
+        self.assertIsNotNone(button)
         free = ui.layout.pages[tools].slots.index(None)
         self.aim_at_slot(0, tools)
         self.s.input.set_hand(1, trigger=1.0)
         self.settle(30)                                                          # longer than the hold time
-        self.assertEqual(ui.ring.lifted_face, (tools, 0))
+        self.assertEqual(ui.ring.lifted_button, (tools, 0))
         self.assertEqual(self.calls, [])
         self.aim_at_slot(free, tools)
         self.s.input.set_hand(1, trigger=0.0)
         self.s.frame(0.02)
-        self.assertEqual((ui.layout.face_at(tools, free), ui.layout.face_at(tools, 0)), (face, None))
+        self.assertEqual((ui.layout.button_at(tools, free), ui.layout.button_at(tools, 0)), (button, None))
         # lift it again and drop it on the hide slot in the title bar of the panel
         self.aim_at_slot(free, tools)
         self.s.input.set_hand(1, trigger=1.0)
         self.settle(30)
-        self.assertEqual(ui.ring.lifted_face, (tools, free))
+        self.assertEqual(ui.ring.lifted_button, (tools, free))
         from freecad.VReeCAD.ui import ring as rg
         pose = ui.ring.poses[tools]
         point = tuple(c + u * (rg.HIDE_X[0] + rg.HIDE_X[1]) / 2 + v * (rg.TITLE_Y[0] + rg.TITLE_Y[1]) / 2 for c, u, v in zip(pose.centre, pose.u, pose.v))
         self.s.input.set_hand(1, position=tuple(c + n * 0.3 for c, n in zip(point, pose.n)), point_at=point)
         self.s.frame(0.02)
-        self.assertEqual(ui.view._panels[tools].hide_state, 2)                       # the X of the panel is lit while the face is over it
+        self.assertEqual(ui.view._panels[tools].hide_state, 2)                       # the X of the panel is lit while the button is over it
         self.s.input.set_hand(1, trigger=0.0)
         self.s.frame(0.02)
-        self.assertEqual((ui.layout.face_at(tools, free), ui.layout.hidden), (None, [face]))
-        self.assertNotIn(face, ui.radial_items())
+        self.assertEqual((ui.layout.button_at(tools, free), ui.layout.hidden), (None, [button]))
+        self.assertNotIn(button, ui.radial_items())
         ui.show_hidden()
-        self.assertEqual((ui.layout.hidden, ui.layout.face_at(tools, 0)), ([], face))
+        self.assertEqual((ui.layout.hidden, ui.layout.button_at(tools, 0)), ([], button))
 
     def tap_menu_of(self, name):
         """Tap the menu mark in the title bar of the panel called `name` with the laser."""
@@ -488,12 +488,12 @@ class SimUiTest(unittest.TestCase):
         self.s.input.set_hand(1, trigger=0.0)
         self.settle(3)
 
-    def press_editor_face(self, face_id):
-        """Press a face of the panel editor with the laser."""
+    def press_editor_button(self, button_id):
+        """Press a button of the panel editor with the laser."""
         ui = self.s.ui
         pages = ui.shown_layout().pages
-        page = next(i for i, p in enumerate(pages) if face_id in p.slots)
-        self.aim_at_slot(pages[page].slots.index(face_id), page)
+        page = next(i for i, p in enumerate(pages) if button_id in p.slots)
+        self.aim_at_slot(pages[page].slots.index(button_id), page)
         self.settle(3)
         self.s.input.set_hand(1, trigger=1.0)
         self.settle(2)
@@ -511,14 +511,14 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual([p.name for p in ui.shown_layout().pages], list(pe.PAGE_NAMES))
         self.assertEqual(ui.ring.fixed_from, 0)                                        # nothing of the editor can be lifted
         self.assertEqual(len(ui.ring.display_sides()), 1)
-        self.press_editor_face(pe.CLEAR)
+        self.press_editor_button(pe.CLEAR)
         for char in "hammer":
-            self.press_editor_face(pe.key_id(char))
+            self.press_editor_button(pe.key_id(char))
         self.assertEqual(ui.panel_editor.text, "Hammer")
-        self.press_editor_face(pe.HUE_IDS[8])                                          # Blue
+        self.press_editor_button(pe.HUE_IDS[8])                                          # Blue
         self.assertEqual(ui.panel_editor.preview_hue(), 0.62)
         self.assertTrue(all(p.hue == 0.62 for p in ui.shown_layout().pages))           # the panels of the editor wear the colour
-        self.press_editor_face(pe.OK)
+        self.press_editor_button(pe.OK)
         self.assertEqual((ui.carousel, ui.panel_editor), ("tools", None))
         self.assertEqual(ui.ring.front_side(), front)
         page = next(p for p in ui.layout.pages if p.name == "Hammer")
@@ -538,8 +538,8 @@ class SimUiTest(unittest.TestCase):
         tools = ui.layout.pages[0]
         self.assertEqual((preview.cols, preview.rows, preview.slots), (tools.cols, tools.rows, tools.slots))     # the panel as it is now
         self.assertEqual(ui.ring.page_dims.get(index, (4, 3)), (4, 3))
-        self.press_editor_face(pe.SIZE_IDS[1])                                         # one column more
-        self.press_editor_face(pe.SIZE_IDS[3])                                         # and one row
+        self.press_editor_button(pe.SIZE_IDS[1])                                         # one column more
+        self.press_editor_button(pe.SIZE_IDS[3])                                         # and one row
         grown = next(p for p in ui.shown_layout().pages if p.name == "Preview")
         self.assertEqual((grown.cols, grown.rows), (5, 4))
         self.assertEqual((tools.cols, tools.rows), (4, 3))                              # the panel itself changes only with OK
@@ -554,8 +554,8 @@ class SimUiTest(unittest.TestCase):
         self.settle(2)
         self.s.input.set_hand(1, trigger=0.0)
         self.settle(3)
-        self.assertEqual(self.s.tool_manager.active_name, before)                       # a face of the preview does nothing
-        self.press_editor_face(pe.OK)
+        self.assertEqual(self.s.tool_manager.active_name, before)                       # a button of the preview does nothing
+        self.press_editor_button(pe.OK)
         self.assertEqual((tools.cols, tools.rows), (5, 4))
 
     def test_a_failing_action_says_so_and_does_not_stop_the_viewer(self):
@@ -571,13 +571,13 @@ class SimUiTest(unittest.TestCase):
         self.show_carousel()
         ui = self.s.ui
         self.tap_menu_of("Tools")
-        self.press_editor_face(pe.CLEAR)
-        self.press_editor_face(pe.OK)
+        self.press_editor_button(pe.CLEAR)
+        self.press_editor_button(pe.OK)
         self.assertEqual(ui.carousel, "editor")                                        # nothing typed: it stays
         self.assertEqual([t.text for t in ui.toasts.items][-1], "A name needs a letter")
-        self.press_editor_face(pe.key_id("z"))
-        self.press_editor_face(pe.HUE_IDS[2])
-        self.press_editor_face(pe.CANCEL)
+        self.press_editor_button(pe.key_id("z"))
+        self.press_editor_button(pe.HUE_IDS[2])
+        self.press_editor_button(pe.CANCEL)
         self.assertEqual(ui.carousel, "tools")
         page = ui.layout.pages[0]
         self.assertEqual((page.name, page.hue), ("Tools", None))
@@ -603,7 +603,7 @@ class SimUiTest(unittest.TestCase):
             self.s.input.set_hand(0, trigger=0.0)
             self.settle(2)
             self.assertEqual(ui.carousel, "editor")                                    # the trigger of the palette hand does not swap
-            self.press_editor_face(pe.CANCEL)
+            self.press_editor_button(pe.CANCEL)
             self.assertEqual(ui.carousel, "values")
             picking.clear_selection()
         finally:
@@ -674,15 +674,15 @@ class SimUiTest(unittest.TestCase):
         from pivy import coin
         return [[p for p in card.plates if p.root.whichChild.getValue() == coin.SO_SWITCH_ALL] for card in self.s.ui.feedback._cards]
 
-    def test_the_controls_face_shows_a_card_over_each_controller_and_the_tool_decides_what_the_tool_hand_card_says(self):
+    def test_the_controls_button_shows_a_card_over_each_controller_and_the_tool_decides_what_the_tool_hand_card_says(self):
         import types
         self.show_carousel()
         ui = self.s
         ui.select_tool("move")
-        face = ui.ui.faces["settings.tutorial"]
-        self.assertEqual(face.action, "help:toggle")
+        button = ui.ui.buttons["settings.tutorial"]
+        self.assertEqual(button.action, "help:toggle")
         self.assertEqual([len(c) for c in self.card_plates()], [0, 0])
-        ui.ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        ui.ui._run(button.action, types.SimpleNamespace(haptics=[]))
         self.settle(3)
         tool_card, palette_card = self.card_plates()
         self.assertEqual(self.s.ui.toasts.items[-1].text, "Controls shown")
@@ -691,7 +691,7 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(palette_card[0].label, "Palette hand")
         self.assertEqual(len({p._width for p in tool_card}), 1)                           # one width for the whole card
         self.assertGreater(len(palette_card), 4)
-        ui.ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        ui.ui._run(button.action, types.SimpleNamespace(haptics=[]))
         self.settle(3)
         self.assertEqual([len(c) for c in self.card_plates()], [0, 0])
 
@@ -741,9 +741,9 @@ class SimUiTest(unittest.TestCase):
         import types
         ui = self.s.ui
         self.assertEqual((ui.tool_hand, ui.palette_hand), (1, 0))
-        face = ui.faces["pointer.hands"]
-        self.assertEqual(face.action, "hands:swap")
-        ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        button = ui.buttons["pointer.hands"]
+        self.assertEqual(button.action, "hands:swap")
+        ui._run(button.action, types.SimpleNamespace(haptics=[]))
         self.assertEqual(ui.toasts.items[-1].text, "Tool hand: left")
         self.assertEqual((ui.tool_hand, ui.palette_hand), (0, 1))
         self.assertEqual((ui.ring.tool_hand, ui.ring.palette_hand, ui.navigator.modifier_hand), (0, 1, 0))
@@ -759,7 +759,7 @@ class SimUiTest(unittest.TestCase):
         self.s.input.set_hand(1, aux1=False)
         self.s.frame(0.02)
         self.assertEqual(self.calls, ["undo", "undo"])
-        ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        ui._run(button.action, types.SimpleNamespace(haptics=[]))
         self.assertEqual((ui.toasts.items[-1].text, ui.tool_hand, self.s.tool_manager.ctx.dominant), ("Tool hand: right", 1, 1))
 
     def test_the_tool_hand_is_saved_and_the_next_start_has_the_hands_the_way_they_were(self):
@@ -787,7 +787,7 @@ class SimUiTest(unittest.TestCase):
             finally:
                 second.close()
 
-    def test_the_small_lengths_face_changes_between_decimal_millimetres_and_micrometres_and_is_saved(self):
+    def test_the_small_lengths_button_changes_between_decimal_millimetres_and_micrometres_and_is_saved(self):
         import os
         import tempfile
         import types
@@ -796,17 +796,17 @@ class SimUiTest(unittest.TestCase):
         from freecad.VReeCAD.ui import settings as cfg
         from freecad.VReeCAD.ui.controller import UiController
         ui = self.s.ui
-        face = ui.faces["pointer.submm"]
-        self.assertEqual(face.action, "units:submm")
-        self.assertIn(face.id, [f for page in ui.layout.pages for f in page.slots])         # on a panel of the default layout
+        button = ui.buttons["pointer.submm"]
+        self.assertEqual(button.action, "units:submm")
+        self.assertIn(button.id, [f for page in ui.layout.pages for f in page.slots])         # on a panel of the default layout
         self.assertEqual(units.format_length(0.25, ui.system), "0.25 mm")
         self.assertEqual(ui.labels()["pointer.submm"], "Small: 0.1 mm")
-        ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        ui._run(button.action, types.SimpleNamespace(haptics=[]))
         self.assertEqual(units.format_length(0.25, ui.system), "250 µm")
         self.assertEqual(ui.labels()["pointer.submm"], "Small: 100 µm")
         ui.set_unit_system("Standard (mm, kg, s, degree)")                                  # a document with the same system keeps the choice
         self.assertEqual(units.format_length(0.25, ui.system), "250 µm")
-        ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        ui._run(button.action, types.SimpleNamespace(haptics=[]))
         self.assertEqual(units.format_length(0.25, ui.system), "0.25 mm")
         with tempfile.TemporaryDirectory() as folder:
             paths = dict(layout_path=os.path.join(folder, "layout.json"), settings_path=os.path.join(folder, "settings.json"))
@@ -826,9 +826,9 @@ class SimUiTest(unittest.TestCase):
         self.show_carousel()
         self.s.ui._run("layout:reset", self.s.ui_update)
         self.s.ui._run("layout:show_hidden", self.s.ui_update)
-        self.assertEqual([t.text for t in self.s.ui.toasts.items], ["Layout reset", "No hidden faces"])
+        self.assertEqual([t.text for t in self.s.ui.toasts.items], ["Layout reset", "No hidden buttons"])
 
-    def test_hovering_a_face_shows_its_tooltip_after_a_moment(self):
+    def test_hovering_a_button_shows_its_tooltip_after_a_moment(self):
         from pivy import coin
         self.show_carousel()
         ui = self.s.ui
@@ -838,13 +838,13 @@ class SimUiTest(unittest.TestCase):
         self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
         self.settle(int(0.6 / 0.02))
         self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_ALL)
-        self.assertEqual(ui.feedback._tooltip.label.replace("\n", " "), ui.faces[ui.layout.face_at(tools, 0)].tip)
+        self.assertEqual(ui.feedback._tooltip.label.replace("\n", " "), ui.buttons[ui.layout.button_at(tools, 0)].tip)
         self.assertNotEqual(ui.feedback._tooltip.label, "")
         self.s.input.set_hand(1, position=(0.3, 1.0, -0.2), point_at=(0.3, 1.0, -2.0))      # point away
         self.settle(3)
         self.assertEqual(ui.feedback._tooltip.root.whichChild.getValue(), coin.SO_SWITCH_NONE)
 
-    def test_a_hovered_face_stands_half_a_centimetre_in_front_of_its_panel_and_goes_back(self):
+    def test_a_hovered_button_stands_half_a_centimetre_in_front_of_its_panel_and_goes_back(self):
         from freecad.VReeCAD.ui import ring_view as rv
         self.show_carousel()
         ui = self.s.ui
@@ -865,10 +865,10 @@ class SimUiTest(unittest.TestCase):
     def test_the_keys_of_the_number_pad_have_no_tooltip(self):
         from freecad.VReeCAD.ui import value_module as vm
         ui = self.s.ui
-        for face_id in ("key.0", "key.9", "key.point", "key.plus", "key.open"):
-            self.assertIn(face_id, vm.NO_TOOLTIP)
-        for face_id in ("key.enter", "key.unit", "key.makevar", "key.delete"):
-            self.assertNotIn(face_id, vm.NO_TOOLTIP)
+        for button_id in ("key.0", "key.9", "key.point", "key.plus", "key.open"):
+            self.assertIn(button_id, vm.NO_TOOLTIP)
+        for button_id in ("key.enter", "key.unit", "key.makevar", "key.delete"):
+            self.assertNotIn(button_id, vm.NO_TOOLTIP)
 
     def test_a_label_plate_is_as_wide_as_its_text_and_a_long_tooltip_is_broken_into_lines(self):
         from freecad.VReeCAD.ui import feedback_view as fv
@@ -952,17 +952,17 @@ class SimUiTest(unittest.TestCase):
 
         names = [page.name for page in self.s.ui.layout.pages]
         palettes = [style.panel_palette(name) for name in names]
-        self.assertEqual(len({p.face for p in palettes}), len(names))
+        self.assertEqual(len({p.button for p in palettes}), len(names))
         self.assertEqual(style.panel_palette("Something else"), style.panel_palette("Something else"))
         for name in value_module.PAGE_NAMES:
             self.assertEqual(style.panel_palette(name, plain=True), style.DEFAULT_PALETTE)
         for palette in palettes + [style.DEFAULT_PALETTE]:
-            self.assertGreaterEqual(contrast(style.TEXT, palette.face), 7.0)
+            self.assertGreaterEqual(contrast(style.TEXT, palette.button), 7.0)
             self.assertGreaterEqual(contrast(style.TEXT, palette.plate), 7.0)
             self.assertGreaterEqual(contrast(style.TEXT_DIM, palette.title), 4.5)
-            self.assertGreaterEqual(contrast(palette.face, palette.empty), 1.1)
-            self.assertGreaterEqual(contrast(style.HOVER, palette.face), 2.0)
-            self.assertGreaterEqual(contrast(style.ACTIVE, palette.face), 4.0)
+            self.assertGreaterEqual(contrast(palette.button, palette.empty), 1.1)
+            self.assertGreaterEqual(contrast(style.HOVER, palette.button), 2.0)
+            self.assertGreaterEqual(contrast(style.ACTIVE, palette.button), 4.0)
         views = {view.palette for view in self.s.ui.view._panels} if self.s.ui.view._panels else set()
         self.assertTrue(views <= set(palettes) | {style.DEFAULT_PALETTE})
 
@@ -983,7 +983,7 @@ class SimUiTest(unittest.TestCase):
         self.s.ui.settings.tip_angle = 0.0
         self.s.input.set_hand(1, position=(0.25, 1.5, -0.25), point_at=self.s.ui.ring.slot_centre(0, 1)[0])
         for _ in range(3):
-            self.s.frame(0.02)                     # a hover lights a face: now something is written
+            self.s.frame(0.02)                     # a hover lights a button: now something is written
         self.assertGreater(len(changes), 0)
         sensor.detach()
 
@@ -1527,15 +1527,15 @@ class MoveLiveTest(unittest.TestCase):
         self.hand(1, (50.0, 50.0, 96.0), trigger=0.0, button1=False)
         self.assertEqual(s.ui.settings.placement, "grid")                    # it stays for the next gesture
 
-    def test_the_snapping_face_toggles_the_guides_and_the_inference(self):
+    def test_the_snapping_button_toggles_the_guides_and_the_inference(self):
         import types
         s = self.session()
-        face = s.ui.faces["settings.snapping"]
-        self.assertEqual(face.action, "settings:snapping")
+        button = s.ui.buttons["settings.snapping"]
+        self.assertEqual(button.action, "settings:snapping")
         self.assertEqual(s.ui.labels()["settings.snapping"], "Snapping: Guides")
-        s.ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        s.ui._run(button.action, types.SimpleNamespace(haptics=[]))
         self.assertEqual((s.ui.settings.snap_source, s.ui.labels()["settings.snapping"]), ("inference", "Snapping: Inference"))
-        s.ui._run(face.action, types.SimpleNamespace(haptics=[]))
+        s.ui._run(button.action, types.SimpleNamespace(haptics=[]))
         self.assertEqual(s.ui.settings.snap_source, "guides")
 
     def test_a_drag_moves_the_object_freely_and_in_grid_steps_while_a_is_held_in_one_undo_step(self):
@@ -3151,17 +3151,17 @@ class MoveLiveTest(unittest.TestCase):
         s.input.set_hand(1, stick=(0.0, 0.0))
         s.frame(0.02)
 
-    def face_point(self, face_id, along=None, dy=0.0, front=0.01):
-        """The point `front` in front of a face of the carousel (a slider: at `along` of its track, `dy` above the middle of its row)."""
+    def button_point(self, button_id, along=None, dy=0.0, front=0.01):
+        """The point `front` in front of a button of the carousel (a slider: at `along` of its track, `dy` above the middle of its row)."""
         from freecad.VReeCAD.ui import ring as rg
         ui = self.s.ui
         pages = ui.shown_layout().pages
-        candidates = [i for i, p in enumerate(pages) if face_id in p.slots]
+        candidates = [i for i, p in enumerate(pages) if button_id in p.slots]
         page = next((i for i in candidates if pages[i].pinned or pages[i].side == ui.ring.front_side()), candidates[0])     # the Value panel is pinned
         if not pages[page].pinned and pages[page].side != ui.ring.front_side():
-            ui.ring.focus_side(pages[page].side)                          # turn the carousel to the face
+            ui.ring.focus_side(pages[page].side)                          # turn the carousel to the button
             self.s.frame(0.02)
-        centre, u, v = ui.ring.slot_centre(page, pages[page].slots.index(face_id))
+        centre, u, v = ui.ring.slot_centre(page, pages[page].slots.index(button_id))
         x = 0.0 if along is None else (-rg.GRID_W / 2 + rg.SLIDER_PAD) + along * (rg.GRID_W - 2 * rg.SLIDER_PAD)
         n = ui.ring.poses[page].n
         return self.mu.add(self.mu.add(self.mu.add(centre, self.mu.mul(u, x)), self.mu.mul(v, dy)), self.mu.mul(n, front))
@@ -3171,9 +3171,9 @@ class MoveLiveTest(unittest.TestCase):
         s.input.set_hand(1, position=(point[0], point[1], point[2] + self.tip), orientation=(0.0, 0.0, 0.0, 1.0), **inputs)
         s.frame(0.02)
 
-    def press_face(self, face_id):
-        """Touch a face of the carousel with the tip of the tool hand, press the trigger and let it go."""
-        point = self.face_point(face_id)
+    def press_button(self, button_id):
+        """Touch a button of the carousel with the tip of the tool hand, press the trigger and let it go."""
+        point = self.button_point(button_id)
         self.tip_to(point, trigger=0.0)
         self.tip_to(point)
         self.tip_to(point, trigger=1.0)
@@ -3182,19 +3182,19 @@ class MoveLiveTest(unittest.TestCase):
 
     BAR = -0.013      # the bar of a slider lies this far below the middle of its row
 
-    def drag_slider(self, face_id, *alongs):
+    def drag_slider(self, button_id, *alongs):
         """Press the trigger on the bar of a slider and drag the tip along the track through the positions `alongs`."""
-        self.tip_to(self.face_point(face_id, alongs[0], self.BAR), trigger=0.0)
-        self.tip_to(self.face_point(face_id, alongs[0], self.BAR))
+        self.tip_to(self.button_point(button_id, alongs[0], self.BAR), trigger=0.0)
+        self.tip_to(self.button_point(button_id, alongs[0], self.BAR))
         for along in alongs:
-            self.tip_to(self.face_point(face_id, along, self.BAR), trigger=1.0)
-        self.tip_to(self.face_point(face_id, alongs[-1], self.BAR), trigger=0.0)
+            self.tip_to(self.button_point(button_id, along, self.BAR), trigger=1.0)
+        self.tip_to(self.button_point(button_id, alongs[-1], self.BAR), trigger=0.0)
         self.s.frame(0.02)
 
-    def focus(self, face_id):
+    def focus(self, button_id):
         """Bring the tip close to a slider without touching it."""
-        self.tip_to(self.face_point(face_id, 0.5, 0.0, front=0.08), trigger=0.0)
-        self.tip_to(self.face_point(face_id, 0.5, 0.0, front=0.08))
+        self.tip_to(self.button_point(button_id, 0.5, 0.0, front=0.08), trigger=0.0)
+        self.tip_to(self.button_point(button_id, 0.5, 0.0, front=0.08))
 
     def test_selecting_an_object_swaps_the_palette_carousel_for_the_values_carousel_and_clearing_it_swaps_back(self):
         from pivy import coin
@@ -3290,10 +3290,10 @@ class MoveLiveTest(unittest.TestCase):
         self.select(self.box.Name, "Face6")                                            # a selected face selects its object for the panels
         self.assertEqual(module.key[1], self.box.Name)
 
-    def test_a_press_on_the_values_panel_picks_the_value_and_lights_its_face(self):
+    def test_a_press_on_the_values_panel_picks_the_value_and_lights_its_button(self):
         s = self.session()
         module = self.select()
-        self.press_face("val.item.2")
+        self.press_button("val.item.2")
         self.assertEqual(module.editor.selected, 2)
         self.assertEqual(module.readouts()["val.readout"], ("Height", "100 mm", False))
         self.assertEqual(s.ui.module.picked_actions(), {"values:val.item.2"})
@@ -3317,7 +3317,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual([(p.name, p.side) for p in ui.values_layout.pages][:2], [("Variables", 0), ("Values", 0)])
         self.assertEqual(ui.ring.fixed_from, 5)
         self.assertEqual(ui.shown_layout().pages[-1].name, "Value")
-        # the faces of the values carousel cannot be lifted or moved
+        # the buttons of the values carousel cannot be lifted or moved
         self.assertFalse(ui.ring.can_lift(0, 0))
         self.assertFalse(ui.ring.can_drop((0, 0), (1, 0)))
         with tempfile.TemporaryDirectory() as folder:
@@ -3348,7 +3348,7 @@ class MoveLiveTest(unittest.TestCase):
         s = self.session()
         module = self.select()
         steps = self.doc.UndoCount
-        self.press_face("val.next")
+        self.press_button("val.next")
         self.assertEqual(module.editor.selected, 1)                                    # Width is picked with the selector
         self.focus("val.slider")
         self.assertTrue(module.engaged)
@@ -3371,7 +3371,7 @@ class MoveLiveTest(unittest.TestCase):
         s = self.session()
         tool = s.tool_manager.active
         module = self.select()
-        self.tip_to(self.face_point("val.slider", 0.5, 0.0, front=0.4), trigger=0.0)   # far from the panels
+        self.tip_to(self.button_point("val.slider", 0.5, 0.0, front=0.4), trigger=0.0)   # far from the panels
         self.assertFalse(module.engaged)
         self.push(math.sin(math.radians(45)), math.cos(math.radians(45)))
         self.assertEqual(self.box.Width.Value, 100.0)
@@ -3382,7 +3382,7 @@ class MoveLiveTest(unittest.TestCase):
         s = self.session()
         module = self.select()
         steps = self.doc.UndoCount
-        point = self.face_point("val.slider", 0.8, 0.015)                              # the label part of the row
+        point = self.button_point("val.slider", 0.8, 0.015)                              # the label part of the row
         self.tip_to(point, trigger=0.0)
         self.tip_to(point, trigger=1.0)
         self.tip_to(point, trigger=0.0)
@@ -3393,7 +3393,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(self.box.Shape.BoundBox.XLength, 150.0)
         self.assertEqual(module.readouts()["val.readout"], ("Length", "150 mm", False))
         self.assertEqual(self.doc.UndoCount, steps + 1)                                # the whole drag is one undo step
-        self.press_face("val.next")
+        self.press_button("val.next")
         self.drag_slider("val.slider", 0.5, 0.1)
         self.assertEqual(self.box.Width.Value, 20.0)
         self.assertEqual(module.editor.selected, 1)
@@ -3405,15 +3405,15 @@ class MoveLiveTest(unittest.TestCase):
         module = self.select()
         self.assertEqual(module.labels()["val.which"], "Value 1 of 6")
         for _ in range(3):
-            self.press_face("val.next")
+            self.press_button("val.next")
         self.assertEqual(module.labels()["val.which"], "Value 4 of 6")
         self.assertEqual(module.readouts()["val.readout"], ("X", "0 mm", False))
         self.assertEqual(module.slider_states()["val.slider"][1], "-100 to 100 mm")
-        self.press_face("val.next")
+        self.press_button("val.next")
         self.drag_slider("val.slider", 0.75)                                           # Y: a track from -100 to 100 mm
         self.assertEqual(self.box.Placement.Base.y, 50.0)
         self.assertEqual(module.editor.selected, 4)
-        self.press_face("val.prev")
+        self.press_button("val.prev")
         self.assertEqual(module.editor.selected, 3)
 
     def test_the_step_slider_goes_down_to_a_hundredth_of_a_millimetre(self):
@@ -3429,14 +3429,14 @@ class MoveLiveTest(unittest.TestCase):
         module = self.select()
         steps = self.doc.UndoCount
         for key in ("key.2", "key.times", "key.open", "key.3", "key.close", "key.unit", "key.unit", "key.enter"):    # 2 * (3) cm
-            self.press_face(key)
+            self.press_button(key)
         self.assertAlmostEqual(self.box.Length.Value, 60.0)
         self.assertIsNone(module.editor.entry)
         self.assertEqual(self.doc.UndoCount, steps + 1)
         for _ in range(3):
-            self.press_face("val.next")                                                # X is picked
+            self.press_button("val.next")                                                # X is picked
         for key in ("key.minus", "key.5", "key.enter"):
-            self.press_face(key)
+            self.press_button(key)
         self.assertEqual(self.box.Placement.Base.x, -5.0)
         self.assertEqual(self.doc.UndoCount, steps + 2)
         self.doc.undo()
@@ -3446,9 +3446,9 @@ class MoveLiveTest(unittest.TestCase):
         s = self.session()
         module = self.select()
         self.assertEqual(module.titles(), {"Value": self.box.Label})
-        self.press_face("key.7")
+        self.press_button("key.7")
         self.assertEqual(module.readouts()["val.readout"], ("Length, Enter applies", "7|", True))
-        self.press_face("key.delete")
+        self.press_button("key.delete")
         self.assertEqual(module.readouts()["val.readout"], ("Length", "100 mm", False))
         self.drag_slider("val.step", 10 / 12)
         self.assertEqual(module.slider_states()["val.step"][1], "Step 20 mm")
@@ -3470,12 +3470,12 @@ class MoveLiveTest(unittest.TestCase):
     def test_the_panels_cannot_be_lifted_or_rearranged(self):
         s = self.session()
         self.select()
-        point = self.face_point("key.7")
+        point = self.button_point("key.7")
         self.tip_to(point, trigger=0.0)
         self.tip_to(point, trigger=1.0)
-        for _ in range(30):                                                            # held for longer than a face needs to be lifted
+        for _ in range(30):                                                            # held for longer than a button needs to be lifted
             self.tip_to(point, trigger=1.0)
-        self.assertIsNone(s.ui.ring.lifted_face)
+        self.assertIsNone(s.ui.ring.lifted_button)
         self.tip_to(point, trigger=0.0)
         self.assertEqual(s.ui.layout.hidden, [])
 
@@ -3486,9 +3486,9 @@ class MoveLiveTest(unittest.TestCase):
         module = self.select(torus.Name)
         self.assertEqual([f.label for f in module.editor.fields][:2], ["Radius 1", "Radius 2"])
         radius1, radius2 = torus.Radius1.Value, torus.Radius2.Value
-        self.press_face("val.next")                                                    # pick Radius 2
+        self.press_button("val.next")                                                    # pick Radius 2
         for key in ("key.9", "key.9", "key.enter"):
-            self.press_face(key)
+            self.press_button(key)
         self.assertEqual((torus.Radius1.Value, torus.Radius2.Value), (radius1, radius2))
         self.assertTrue(torus.isValid())
         self.assertEqual([t.text for t in s.ui.toasts.items][-1], "The shape cannot take that value")

@@ -14,11 +14,11 @@
 # *                                                                         *
 # ***************************************************************************
 """Coin3D drawing of the palette carousel (docs/ux-design.md, Visual style). Flat, unlit, high contrast: panels never depend on
-the scene lighting. Sizes are physical: the face edge is `ring.CELL`, label glyphs are about 7 mm tall (`style.PANEL_TEXT`).
+the scene lighting. Sizes are physical: the button edge is `ring.CELL`, label glyphs are about 7 mm tall (`style.PANEL_TEXT`).
 
 The scene graph is built to cost the renderer as little as possible, because the carousel is drawn twice a frame for the headset:
 the carousel hangs under one transform that follows the controller, so a moving hand writes one node; the panels stand in the frame
-of the carousel and are placed only when the carousel turns or fades; all the flat rectangles of a panel (plate, title bar, faces,
+of the carousel and are placed only when the carousel turns or fades; all the flat rectangles of a panel (plate, title bar, buttons,
 tracks) are one face set with a colour per rectangle, so a panel is a handful of draw calls plus its texts; panels that show their
 back, and panels whose input has not changed since the last frame, cost nothing. Every colour is written only when it changes, so a
 still carousel costs the scene graph nothing."""
@@ -35,7 +35,7 @@ DEPTH = 0.004
 TITLE_H = rg.TITLE_Y[1] - rg.TITLE_Y[0]
 TEXT_LIFT = DEPTH * 0.5 + 0.0005      # text lies this far in front of the plane of the plates
 MARKER_LIFT = 0.003
-RAISE = 0.005                         # a hovered, active or dragged face stands this far (0.5 cm) in front of its panel
+RAISE = 0.005                         # a hovered, active or dragged button stands this far (0.5 cm) in front of its panel
 
 
 def _at(x, y, z):
@@ -97,9 +97,9 @@ class _Plates:
         colours = coin.SoBaseColor()
         colours.rgb.setValues(0, count, self.rgb)
         sep.addChild(colours)
-        faces = coin.SoFaceSet()
-        faces.numVertices.setValues(0, count, [4] * count)
-        sep.addChild(faces)
+        rectangles = coin.SoFaceSet()
+        rectangles.numVertices.setValues(0, count, [4] * count)
+        sep.addChild(rectangles)
         self._points, self._colours = coords.point, colours.rgb
         return sep
 
@@ -157,17 +157,17 @@ class _Place:
 
 
 class _Cell:
-    """A face of a panel: its rectangle is in the plates of the panel, its text is a node of its own."""
+    """A button of a panel: its rectangle is in the plates of the panel, its text is a node of its own."""
 
-    def __init__(self, parent, x, y, face_label, palette, plates, base=None):
+    def __init__(self, parent, x, y, button_label, palette, plates, base=None):
         self.palette = palette
-        self.base = base if base is not None else palette.face          # the colour of the face at rest: a face may wear a colour of its own
+        self.base = base if base is not None else palette.button          # the colour of the button at rest: a button may wear a colour of its own
         self.x, self.y = x, y
-        self.plate = plates.add(rg.CELL, rg.CELL, self.base if face_label is not None else palette.empty, x, y, DEPTH * 0.5)
+        self.plate = plates.add(rg.CELL, rg.CELL, self.base if button_label is not None else palette.empty, x, y, DEPTH * 0.5)
         self.raised = False
         self.text_color = None
-        self.label = face_label
-        if face_label is not None:
+        self.label = button_label
+        if button_label is not None:
             text_sep = style.cached(coin.SoSeparator())
             self._text_move = _at(x, y, TEXT_LIFT)
             self._text_at = self._text_move.translation
@@ -180,7 +180,7 @@ class _Cell:
             self._string = self._text.string
             text_sep.addChild(self._text)
             parent.addChild(text_sep)
-            self._write(face_label)
+            self._write(button_label)
 
     def _write(self, label):
         lines = lay.wrap_label(label)
@@ -190,18 +190,18 @@ class _Cell:
         self._string.setValues(0, len(lines), lines)
 
     def set_label(self, label):
-        """Change the text of the face (faces that show a value)."""
+        """Change the text of the button (buttons that show a value)."""
         if self.text_color is not None and label != self.label:
             self.label = label
             self._write(label)
 
-    def set_state(self, hover, active, has_face, lifted=False, target=False, inert=False):
-        """`lifted`: the face is held in the hand (its place is dimmed); `target`: a lifted face would land here; `inert`: the face
+    def set_state(self, hover, active, has_button, lifted=False, target=False, inert=False):
+        """`lifted`: the button is held in the hand (its place is dimmed); `target`: a lifted button would land here; `inert`: the button
         only shows something, it is never lit by the pointer."""
-        color = (self.palette.empty if not has_face or lifted else style.GRAB if target else self.palette.picked if inert
+        color = (self.palette.empty if not has_button or lifted else style.GRAB if target else self.palette.picked if inert
                  else style.ACTIVE if active else style.HOVER if hover else self.base)
         self.plate.set(color)
-        raised = has_face and not lifted and not inert and (hover or active or target)
+        raised = has_button and not lifted and not inert and (hover or active or target)
         if raised != self.raised:
             self.raised = raised
             lift = RAISE if raised else 0.0
@@ -224,7 +224,7 @@ class _SliderRow:
         self.palette = palette
         self.y = y
         self.grid_w = grid_w
-        self.plate_color = plates.add(grid_w, rg.CELL, palette.face, 0.0, y, DEPTH * 0.5)
+        self.plate_color = plates.add(grid_w, rg.CELL, palette.button, 0.0, y, DEPTH * 0.5)
         self.track_color = plates.add(self.high - self.low, self.TRACK_H, palette.plate, 0.0, y + self.TRACK_Y, DEPTH)
         self.handle_color = plates.add(self.HANDLE[0], self.HANDLE[1], style.TEXT, self.low, y + self.TRACK_Y, DEPTH * 1.5)
         self._handle_x = self.low
@@ -250,7 +250,7 @@ class _SliderRow:
         if label != self.label:
             self.label = label
             self._string.setValue(label)
-        self.plate_color.set(style.HOVER if hovered else self.palette.picked if picked else self.palette.face)
+        self.plate_color.set(style.HOVER if hovered else self.palette.picked if picked else self.palette.button)
         self.handle_color.set(style.ACTIVE if dragged else style.TEXT)
         self.track_color.set(style.TEXT if bar_hot else self.palette.plate)
         raised = hovered or dragged or bar_hot
@@ -315,7 +315,7 @@ class _ReadoutRow:
 class _Panel:
     """One panel (page) in its own coordinates: x right, y up, z out of the panel."""
 
-    def __init__(self, page, faces):
+    def __init__(self, page, buttons):
         self.switch = coin.SoSwitch()
         self.shown = style.Show(self.switch)
         self.palette = style.panel_palette(page.name, page.name in value_module.PAGE_NAMES, page.hue)
@@ -347,35 +347,35 @@ class _Panel:
                            coin.SoText3.LEFT, style.PANEL_TEXT)
         self._title_string = self.title.string
         self.title_text = page.name
-        self.hide_state = 0                      # the hide slot in the title bar: 0 none, 1 offered while a face is lifted, 2 the face is over it
+        self.hide_state = 0                      # the hide slot in the title bar: 0 none, 1 offered while a button is lifted, 2 the button is over it
         hide_x = (dim.hide_x[0] + dim.hide_x[1]) / 2
         self.hide_color = self.plates.add(dim.hide_x[1] - dim.hide_x[0], TITLE_H - 0.004, palette.title, hide_x, centre, DEPTH)
         self._hide_text = _text(sep, [""], hide_x, centre, TEXT_LIFT, style.TEXT, coin.SoText3.CENTER, style.PANEL_TEXT)
         self._hide_string = self._hide_text.string
         self.cells = []
-        self.sliders = {}          # row of the grid -> (slider view, face id)
-        self.readouts = {}         # row of the grid -> (readout view, face id)
+        self.sliders = {}          # row of the grid -> (slider view, button id)
+        self.readouts = {}         # row of the grid -> (readout view, button id)
         for row in range(page.rows):
-            face = faces.get(page.slots[row * page.cols]) if page.slots[row * page.cols] else None
+            button = buttons.get(page.slots[row * page.cols]) if page.slots[row * page.cols] else None
             y = ((page.rows - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
-            if face is not None and face.kind == "slider":
-                self.sliders[row] = (_SliderRow(sep, y, palette, self.plates, dim.grid_w), face.id)
-            elif face is not None and face.kind == "readout":
-                self.readouts[row] = (_ReadoutRow(sep, y, palette, self.plates, dim.grid_w), face.id)
-        for slot, face_id in enumerate(page.slots):
+            if button is not None and button.kind == "slider":
+                self.sliders[row] = (_SliderRow(sep, y, palette, self.plates, dim.grid_w), button.id)
+            elif button is not None and button.kind == "readout":
+                self.readouts[row] = (_ReadoutRow(sep, y, palette, self.plates, dim.grid_w), button.id)
+        for slot, button_id in enumerate(page.slots):
             col, row = slot % page.cols, slot // page.cols
             x = (col - (page.cols - 1) / 2) * (rg.CELL + rg.GAP)
             y = ((page.rows - 1) / 2 - row) * (rg.CELL + rg.GAP) + rg.GRID_Y
-            face = faces.get(face_id) if face_id else None
+            button = buttons.get(button_id) if button_id else None
             if row in self.sliders or row in self.readouts:    # the row belongs to its slider or readout
                 self.cells.append((None, None))
                 continue
             base = None
-            if face is not None and face.swatch is not None:
-                base = face.swatch
-            elif face is not None and face.tint is not None:
-                base = style.tinted(face.tint).face
-            self.cells.append((_Cell(sep, x, y, face.label if face else None, palette, self.plates, base), face))
+            if button is not None and button.swatch is not None:
+                base = button.swatch
+            elif button is not None and button.tint is not None:
+                base = style.tinted(button.tint).button
+            self.cells.append((_Cell(sep, x, y, button.label if button else None, palette, self.plates, base), button))
         sep.replaceChild(plates_at, self.plates.build())
         self.switch.addChild(outer)
         self.key = None            # what the contents were last made for (`RingView.update`)
@@ -394,7 +394,7 @@ class _Panel:
                 groove.set(style.HOVER if hovered else self.palette.groove)
 
     def set_hide_slot(self, state):
-        """Show the hide slot (an X in the title bar) while a face is lifted, lit while the face is over it."""
+        """Show the hide slot (an X in the title bar) while a button is lifted, lit while the button is over it."""
         if state != self.hide_state:
             self.hide_state = state
             self.hide_color.set(self.palette.title if state == 0 else style.HOVER if state == 2 else style.DROP)
@@ -411,7 +411,7 @@ class _Panel:
 
 
 class _Ghost:
-    """The empty side at the end of the carousel while something is lifted: a panel dropped on it gets a side of its own, a face
+    """The empty side at the end of the carousel while something is lifted: a panel dropped on it gets a side of its own, a button
     dropped on it is hidden."""
     PANEL_LABEL = "Drop here"
 
@@ -540,12 +540,12 @@ class RingView:
     def _signature(layout):
         return id(layout), tuple((p.name, tuple(p.slots), p.hue, p.cols) for p in layout.pages)
 
-    def build(self, layout, faces):
-        """(Re)build the panel nodes for a layout; `faces` maps face id to `layout.Face`."""
+    def build(self, layout, buttons):
+        """(Re)build the panel nodes for a layout; `buttons` maps button id to `layout.Button`."""
         self._panels_sep.removeAllChildren()
         self._panels = []
         for page in layout.pages:
-            view = _Panel(page, faces)
+            view = _Panel(page, buttons)
             self._panels.append(view)
             self._panels_sep.addChild(view.switch)
         self._built_for = self._signature(layout)
@@ -555,31 +555,31 @@ class RingView:
         return self._built_for != self._signature(layout)
 
     def _refresh(self, view, index, name, ring, result, active_actions, labels, sliders, titles, readouts):
-        """The contents of one panel: titles, sliders, readouts and the state of each face."""
+        """The contents of one panel: titles, sliders, readouts and the state of each button."""
         view.set_title((titles or {}).get(name, name))
-        for row, (slider_view, face_id) in view.sliders.items():
-            fraction, text, *picked = (sliders or {}).get(face_id, (0.0, "-"))
+        for row, (slider_view, button_id) in view.sliders.items():
+            fraction, text, *picked = (sliders or {}).get(button_id, (0.0, "-"))
             hovered = result.hover == (index, row * view.cols)
             slider_view.set(fraction, text, hovered, hovered and ring.slider_drag is not None, bool(picked and picked[0]),
                             result.bar_hover == (index, row * view.cols))
-        for row, (readout_view, face_id) in view.readouts.items():
-            readout_view.set(*(readouts or {}).get(face_id, ("-", "-", False)))
-        for slot, (cell, face) in enumerate(view.cells):
+        for row, (readout_view, button_id) in view.readouts.items():
+            readout_view.set(*(readouts or {}).get(button_id, ("-", "-", False)))
+        for slot, (cell, button) in enumerate(view.cells):
             if cell is None:
                 continue
             hovered = result.hover == (index, slot)
-            active = face is not None and face.action in active_actions
-            if face is not None and labels and face.id in labels:
-                cell.set_label(labels[face.id])
-            cell.set_state(hovered, active, face is not None, result.lifted_face == (index, slot),
-                           result.face_target == (index, slot), face is not None and face.kind == "display")
+            active = button is not None and button.action in active_actions
+            if button is not None and labels and button.id in labels:
+                cell.set_label(labels[button.id])
+            cell.set_state(hovered, active, button is not None, result.lifted_button == (index, slot),
+                           result.button_target == (index, slot), button is not None and button.kind == "display")
 
-    def update(self, ring, result, layout, faces, head, active_actions=(), labels=None, sliders=None, titles=None, readouts=None):
+    def update(self, ring, result, layout, buttons, head, active_actions=(), labels=None, sliders=None, titles=None, readouts=None):
         if ring.fade <= 0.02:
             self._show.set(False)
             return
         if self.needs_build(layout):
-            self.build(layout, faces)
+            self.build(layout, buttons)
         self._show.set(True)
         frame = ring.frame
         key = (frame.origin, frame.orientation)
@@ -594,7 +594,7 @@ class RingView:
         data = (frozenset(active_actions), dict(labels or {}), dict(sliders or {}), dict(titles or {}), dict(readouts or {}))
         same = data == self._data
         self._data = data
-        hover, hover_title, lifted_face, face_target = result.hover, result.hover_title, result.lifted_face, result.face_target
+        hover, hover_title, lifted_button, button_target = result.hover, result.hover_title, result.lifted_button, result.button_target
         drag = ring.slider_drag is not None
         for index, view in enumerate(self._panels):
             pose = ring.poses.get(index)
@@ -610,10 +610,10 @@ class RingView:
             view.set_facing(facing)
             if facing:                                     # seen from behind: only the plate shows
                 state = (hover[1] if hover is not None and hover[0] == index else None, hover_title == index,
-                         lifted_face[1] if lifted_face is not None and lifted_face[0] == index else None,
-                         face_target[1] if face_target is not None and face_target[0] == index else None,
+                         lifted_button[1] if lifted_button is not None and lifted_button[0] == index else None,
+                         button_target[1] if button_target is not None and button_target[0] == index else None,
                          result.bar_hover[1] if result.bar_hover is not None and result.bar_hover[0] == index else None,
-                         drag, result.menu_hover == index, 2 if result.hide_page == index else 1 if lifted_face is not None else 0)
+                         drag, result.menu_hover == index, 2 if result.hide_page == index else 1 if lifted_button is not None else 0)
                 if not same or state != view.key:
                     view.key = state
                     view.set_menu_hover(state[-2])
@@ -645,9 +645,9 @@ class RingView:
         card = None
         if result.lifted is not None:
             card = layout.pages[result.lifted].name
-        elif result.lifted_face is not None:
-            face = faces.get(layout.face_at(*result.lifted_face))
-            card = (labels or {}).get(face.id, face.label) if face is not None else None
+        elif result.lifted_button is not None:
+            button = buttons.get(layout.button_at(*result.lifted_button))
+            card = (labels or {}).get(button.id, button.label) if button is not None else None
         if card is not None and result.lift_point is not None:
             up = (0.0, 1.0, 0.0)
             point = mu.add(result.lift_point, mu.mul(up, 0.04))

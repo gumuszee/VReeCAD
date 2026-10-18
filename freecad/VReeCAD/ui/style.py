@@ -26,7 +26,7 @@ from freecad.VReeCAD.ui import layout as lay
 
 PLATE = (0.10, 0.11, 0.14)
 PLATE_LIT = (0.15, 0.17, 0.23)
-FACE = (0.20, 0.22, 0.28)
+BUTTON = (0.20, 0.22, 0.28)
 EMPTY = (0.13, 0.14, 0.17)
 PICKED = (0.27, 0.31, 0.44)       # the slider of the value that is picked
 HOVER = (0.30, 0.45, 0.80)
@@ -46,11 +46,11 @@ PANEL_TEXT = 0.8              # the text of the panels of the carousel is this f
 
 @dataclass(frozen=True)
 class Palette:
-    """The colours of one panel of the carousel: the plate behind it, its title bar, its faces, the slot of a missing face."""
+    """The colours of one panel of the carousel: the plate behind it, its title bar, its buttons, the slot of a missing button."""
     plate: tuple = PLATE
     plate_lit: tuple = PLATE_LIT
     title: tuple = PLATE
-    face: tuple = FACE
+    button: tuple = BUTTON
     empty: tuple = EMPTY
     picked: tuple = PICKED
     title_text: tuple = TEXT_DIM
@@ -83,7 +83,7 @@ def tinted(hue):
         return _with_luminance(hue, saturation, luminance(grey))
     middle = tuple((a + b) / 2 for a, b in zip(PLATE, PLATE_LIT))
     return Palette(plate=tint(PLATE, 0.55), plate_lit=tint(PLATE_LIT, 0.52), title=tint(middle, 0.55),
-                   face=tint(FACE, 0.50), empty=tint(EMPTY, 0.50), picked=tint(PICKED, 0.45), title_text=tint(TEXT_DIM, 0.18),
+                   button=tint(BUTTON, 0.50), empty=tint(EMPTY, 0.50), picked=tint(PICKED, 0.45), title_text=tint(TEXT_DIM, 0.18),
                    groove=tint(GROOVE, 0.18))
 
 

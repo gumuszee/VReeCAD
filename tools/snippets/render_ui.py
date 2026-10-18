@@ -1,6 +1,6 @@
 # Render the user interface (palette carousel on the controller, panel rearranging, scale ruler) from a simulated head, without a headset.
 # The Sim session runs the same UiController as the headset path: a scripted head looks at the left controller, the right
-# controller points at a face, the trigger activates it; with both grips the ruler is drawn over a test cube.
+# controller points at a button, the trigger activates it; with both grips the ruler is drawn over a test cube.
 # Run:  python tools/fc_rpc.py exec -f tools/snippets/render_ui.py
 # Output: <RENDER_DIR>/ui_*.png (default %TEMP%\vreecad_renders). Globals: UI_DISTANCE (metres from the head to the controller),
 # UNIT_SYSTEM (name of a FreeCAD document unit system for the ruler, default "Standard (mm, kg, s, degree)").
@@ -81,7 +81,7 @@ try:
         _s.frame(0.02)
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_ring.png"))
 
-    # hover the third face of the front panel
+    # hover the third button of the front panel
     _pose = _s.ui.ring.poses[0]
     _x = (2 - 1.5) * (_ring.CELL + _ring.GAP)
     _y = (1 - 0) * (_ring.CELL + _ring.GAP) + _ring.GRID_Y
@@ -116,7 +116,7 @@ try:
     print("radial hub activated:", _s.ui_update.activated)
     _s.input.set_head(position=_head, look_at_point=_ctrl)
 
-    # lifting a single face: hold the trigger on it, carry it to a free slot, then over the hide slot of a panel
+    # lifting a single button: hold the trigger on it, carry it to a free slot, then over the hide slot of a panel
     _s.ui.settings.tip_angle = 0.0
     _tools_page = [page.name for page in _s.ui.layout.pages].index("Tools")
 
@@ -134,8 +134,8 @@ try:
     for _ in range(30):
         _s.frame(0.02)
     _aim_slot(10, 1.0)
-    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_face_lift.png"))
-    print("lifted face:", _s.ui.ring.lifted_face, "target:", _s.ui.ring._face_target)
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_button_lift.png"))
+    print("lifted button:", _s.ui.ring.lifted_button, "target:", _s.ui.ring._button_target)
     _aim_slot(10, 0.0)
     print("moved to slot 10:", _s.ui.layout.pages[_tools_page].slots)
     _aim_slot(10, 1.0)
@@ -147,7 +147,7 @@ try:
     _hide = _mu.add(_pose.centre, _mu.add(_mu.mul(_pose.u, _x), _mu.mul(_pose.v, _y)))
     _s.input.set_hand(1, position=_mu.add(_hide, _mu.mul(_pose.n, 0.3)), point_at=_hide, trigger=1.0)
     _s.frame(0.02)
-    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_face_hide.png"))
+    _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_button_hide.png"))
     _s.input.set_hand(1, trigger=0.0)
     _s.frame(0.02)
     print("hidden:", _s.ui.layout.hidden)
@@ -158,7 +158,7 @@ try:
     for _ in range(40):
         _s.frame(0.02)
 
-    # toasts in front of the head, the tooltip of a hovered face and the readout of a tool option
+    # toasts in front of the head, the tooltip of a hovered button and the readout of a tool option
     _s.ui.settings.tip_angle = 0.0
     _s.ui.ring.focus_side(_s.ui.layout.pages[_tools_page].side)
     _s.ui.toast("Undo")
@@ -523,7 +523,7 @@ try:
     _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_rolled.png"))
     _s.input.set_hand(0, orientation=_o)
 
-    # tip mode: the tip of the tool hand touches the third face, the Pointer panel shows the pointer faces
+    # tip mode: the tip of the tool hand touches the third button, the Pointer panel shows the pointer buttons
     _s.ui.settings.pointer_mode = "tip"
     for _ in range(8):
         _s.frame(0.02)

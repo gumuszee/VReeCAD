@@ -16,7 +16,7 @@
 """The logic of the small messages the interface shows (docs/ux-design.md, Toasts, tooltips and readouts). No Coin imports.
 
 A toast is a line of text that stays for a couple of seconds; up to `MAX_SHOWN` stand at the same time, newest at the bottom.
-Showing the text of a toast that is still there renews it instead of stacking a copy. A tooltip appears when the same face has
+Showing the text of a toast that is still there renews it instead of stacking a copy. A tooltip appears when the same button has
 been hovered for `TOOLTIP_DELAY` seconds."""
 
 from dataclasses import dataclass
@@ -26,7 +26,7 @@ DURATION = 2.2         # seconds a toast stays
 MAX_SHOWN = 3
 POP_IN = 0.12          # seconds a toast takes to grow to full size
 POP_OUT = 0.2          # and to shrink away at the end
-TOOLTIP_DELAY = 0.5    # seconds of hovering one face before its tooltip shows
+TOOLTIP_DELAY = 0.5    # seconds of hovering one button before its tooltip shows
 
 
 @dataclass

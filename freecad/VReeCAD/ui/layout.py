@@ -13,13 +13,13 @@
 # *   GNU Library General Public License for more details.                  *
 # *                                                                         *
 # ***************************************************************************
-"""Faces, pages and the palette layout (docs/ux-design.md, Layout and customization). Pure data, JSON serializable.
+"""Buttons, pages and the palette layout (docs/ux-design.md, Layout and customization). Pure data, JSON serializable.
 
-A `Face` is a button: id, label and an action id such as "tool:teleport" or "view:reset". A `Page` is a panel: a grid of slots
-(COLS x ROWS), each holding a face id or None. The panels stand on the sides of the carousel around the palette controller. A side
+A `Button` is one button of a panel: id, label and an action id such as "tool:teleport" or "view:reset". A `Page` is a panel: a grid of slots
+(COLS x ROWS), each holding a button id or None. The panels stand on the sides of the carousel around the palette controller. A side
 holds rows of panels: `Page.side` is the side, `Page.row` the row on it (0 is the bottom row, nearest the user, higher rows are
 further forward), and the order of the pages in the layout is the order inside a row, left to right. The `Layout` is the ordered
-list of pages plus the ids of the faces the user has hidden; panels and faces are the parts the user can rearrange."""
+list of pages plus the ids of the buttons the user has hidden; panels and buttons are the parts the user can rearrange."""
 
 import json
 import os
@@ -30,7 +30,7 @@ from typing import List, Optional
 COLS, ROWS = 4, 3          # the grid of a panel to begin with; a panel may have more columns and rows (`Page.cols`, `Page.rows`)
 SLOTS = COLS * ROWS
 MAX_COLS, MAX_ROWS = 12, 8
-RENAMED_FACES = {"tool.grab": "tool.move", "view.controls": "settings.tutorial"}    # ids that saved layouts and settings may hold, and the faces they stand for
+RENAMED_BUTTONS = {"tool.grab": "tool.move", "view.controls": "settings.tutorial"}    # ids that saved layouts and settings may hold, and the buttons they stand for
 RENAMED_PAGES = {"Session": "Settings"}       # names of panels that saved layouts may hold, and the panels they stand for
 
 
@@ -45,20 +45,20 @@ def default_hue(name):
     return hue if hue is not None else SPARE_HUES[zlib.crc32(name.encode("utf-8")) % len(SPARE_HUES)]
 
 
-def current_face(face_id):
-    """The id of the face that a saved id stands for."""
-    return RENAMED_FACES.get(face_id, face_id)
+def current_button(button_id):
+    """The id of the button that a saved id stands for."""
+    return RENAMED_BUTTONS.get(button_id, button_id)
 
 
 @dataclass(frozen=True)
-class Face:
+class Button:
     id: str
     label: str
     action: str
     kind: str = "button"   # "button", "slider" or "readout" (these two take a whole row of their panel) or "display" (a cell that only shows a text)
-    tip: str = ""          # one line shown as a tooltip while the face is hovered
-    swatch: Optional[tuple] = None  # an rgb triple: the face is drawn in exactly this colour (the colour swatches of the values carousel)
-    tint: Optional[float] = None   # a hue (0 to 1): the face is drawn in the colour that a panel of this hue gives its faces (the colours of the panel editor)
+    tip: str = ""          # one line shown as a tooltip while the button is hovered
+    swatch: Optional[tuple] = None  # an rgb triple: the button is drawn in exactly this colour (the colour swatches of the values carousel)
+    tint: Optional[float] = None   # a hue (0 to 1): the button is drawn in the colour that a panel of this hue gives its buttons (the colours of the panel editor)
 
 
 @dataclass
@@ -68,7 +68,7 @@ class Page:
     side: Optional[int] = None   # carousel side; None puts the page on a side of its own
     row: Optional[int] = None    # row on the side; None puts the page in the bottom row
     hue: Optional[float] = None  # the tint the user gave the panel (0 to 1); None leaves it to the name (`default_hue`)
-    cols: int = COLS             # the faces stand in a grid of `cols` columns and `rows` rows, row by row; the panel grows with it
+    cols: int = COLS             # the buttons stand in a grid of `cols` columns and `rows` rows, row by row; the panel grows with it
     rows: int = ROWS
     pinned: bool = False         # a panel that does not stand on a side: the ring puts it at a fixed place that does not turn with the carousel (not saved)
 
@@ -79,8 +79,8 @@ class Page:
         self.slots = (list(self.slots) + [None] * count)[:count]
 
     def resize(self, cols, rows):
-        """Give the panel a grid of `cols` columns and `rows` rows: every face keeps its row and column. Returns whether it was done;
-        nothing changes when the size is out of range or would cut off a face (a slider keeps its row only while its row is there)."""
+        """Give the panel a grid of `cols` columns and `rows` rows: every button keeps its row and column. Returns whether it was done;
+        nothing changes when the size is out of range or would cut off a button (a slider keeps its row only while its row is there)."""
         if not (1 <= cols <= MAX_COLS and 1 <= rows <= MAX_ROWS):
             return False
         cells = {(i // self.cols, i % self.cols): f for i, f in enumerate(self.slots) if f}
@@ -106,7 +106,7 @@ def without_page(sides, page):
 @dataclass
 class Layout:
     pages: List[Page] = field(default_factory=list)
-    hidden: List[str] = field(default_factory=list)   # faces taken off the panels by the user; they stay out of `add_missing`
+    hidden: List[str] = field(default_factory=list)   # buttons taken off the panels by the user; they stay out of `add_missing`
     version: int = VERSION                            # the version of the file the layout was read from (`from_json`); layouts made in code are current
 
     def __post_init__(self):
@@ -171,32 +171,32 @@ class Layout:
         return order.index(page)
 
     def add_missing(self, default, wide=()):
-        """Place the faces of the `default` layout that this layout lacks (faces added since it was saved) in the first free slot of
-        the page of the same name, else of the first page with room. Faces in `wide` (sliders) need a whole free row and go in its
+        """Place the buttons of the `default` layout that this layout lacks (buttons added since it was saved) in the first free slot of
+        the page of the same name, else of the first page with room. Buttons in `wide` (sliders) need a whole free row and go in its
         first slot. Returns whether anything was added."""
         present = {f for p in self.pages for f in p.slots if f} | set(self.hidden)
         changed = False
-        wanted = [(default_page, face) for default_page in default.pages for face in default_page.slots if face]
+        wanted = [(default_page, button) for default_page in default.pages for button in default_page.slots if button]
         wanted.sort(key=lambda pair: pair[1] not in wide)             # the sliders first: they need a whole free row
-        for default_page, face in wanted:
-            if face in present:
+        for default_page, button in wanted:
+            if button in present:
                 continue
             home = [p for p in self.pages if p.name == default_page.name]
             for page in home + self.pages:
-                if face in wide:
+                if button in wide:
                     rows = [r for r in range(page.rows) if all(s is None for s in page.slots[r * page.cols:(r + 1) * page.cols])]
                     slot = rows[0] * page.cols if rows else None
                 else:
                     free = [i for i, f in enumerate(page.slots) if f is None and not _slider_row(page, i, wide)]
                     slot = free[0] if free else None
                 if slot is not None:
-                    page.slots[slot] = face
-                    present.add(face)
+                    page.slots[slot] = button
+                    present.add(button)
                     changed = True
                     break
         return changed
 
-    def face_at(self, page, slot):
+    def button_at(self, page, slot):
         return self.pages[page].slots[slot]
 
     def swap(self, page_a, slot_a, page_b, slot_b):
@@ -206,33 +206,33 @@ class Layout:
     def remove(self, page, slot):
         self.pages[page].slots[slot] = None
 
-    def can_move_face(self, src_page, src_slot, dst_page, dst_slot, wide=()):
-        """Whether the face in a slot can go to another slot: it needs a face of its own (not a slider, which is dragged, not lifted),
+    def can_move_button(self, src_page, src_slot, dst_page, dst_slot, wide=()):
+        """Whether the button in a slot can go to another slot: it needs a button of its own (not a slider, which is dragged, not lifted),
         and the target must not lie in a row that belongs to a slider (`wide` holds the ids of the sliders)."""
-        face = self.pages[src_page].slots[src_slot]
-        if face is None or face in wide or (src_page, src_slot) == (dst_page, dst_slot):
+        button = self.pages[src_page].slots[src_slot]
+        if button is None or button in wide or (src_page, src_slot) == (dst_page, dst_slot):
             return False
         return not _slider_row(self.pages[dst_page], dst_slot, wide)
 
-    def move_face(self, src_page, src_slot, dst_page, dst_slot, wide=()):
-        """Move a face to another slot; a face already there changes places with it. Returns whether anything moved."""
-        if not self.can_move_face(src_page, src_slot, dst_page, dst_slot, wide):
+    def move_button(self, src_page, src_slot, dst_page, dst_slot, wide=()):
+        """Move a button to another slot; a button already there changes places with it. Returns whether anything moved."""
+        if not self.can_move_button(src_page, src_slot, dst_page, dst_slot, wide):
             return False
         self.swap(src_page, src_slot, dst_page, dst_slot)
         return True
 
-    def hide_face(self, page, slot, wide=()):
-        """Take a face off its panel; it stays hidden until `show_hidden` (sliders cannot be hidden). Returns whether it was hidden."""
-        face = self.pages[page].slots[slot]
-        if face is None or face in wide:
+    def hide_button(self, page, slot, wide=()):
+        """Take a button off its panel; it stays hidden until `show_hidden` (sliders cannot be hidden). Returns whether it was hidden."""
+        button = self.pages[page].slots[slot]
+        if button is None or button in wide:
             return False
         self.remove(page, slot)
-        if face not in self.hidden:
-            self.hidden.append(face)
+        if button not in self.hidden:
+            self.hidden.append(button)
         return True
 
     def show_hidden(self, default, wide=()):
-        """Put every hidden face back into a free slot (the page it belongs to in `default` when that has room). Returns whether
+        """Put every hidden button back into a free slot (the page it belongs to in `default` when that has room). Returns whether
         anything came back."""
         hidden, self.hidden = self.hidden, []
         self.add_missing(default, wide)
@@ -247,14 +247,14 @@ class Layout:
                                      for p in self.pages]}, indent=1)
 
     @classmethod
-    def from_json(cls, text, known_faces=None):
-        """Parse a layout; ids that are not in `known_faces` (when given) become empty slots, so a layout saved with a
-        newer or different set of faces still loads. Older files without sides, rows or hidden faces load with a side per page, one
-        row and no hidden faces."""
+    def from_json(cls, text, known_buttons=None):
+        """Parse a layout; ids that are not in `known_buttons` (when given) become empty slots, so a layout saved with a
+        newer or different set of buttons still loads. Older files without sides, rows or hidden buttons load with a side per page, one
+        row and no hidden buttons."""
         data = json.loads(text)
         pages = []
         for page in data["pages"]:
-            slots = [current_face(s) if (isinstance(s, str) and (known_faces is None or current_face(s) in known_faces)) else None
+            slots = [current_button(s) if (isinstance(s, str) and (known_buttons is None or current_button(s) in known_buttons)) else None
                      for s in page.get("slots", [])]
             side, row = page.get("side"), page.get("row")
             hue, cols, rows = page.get("hue"), page.get("cols", COLS), page.get("rows", ROWS)
@@ -265,7 +265,7 @@ class Layout:
                               rows if isinstance(rows, int) and not isinstance(rows, bool) else ROWS))
         if not pages:
             raise ValueError("layout without pages")
-        hidden = [current_face(f) for f in data.get("hidden", []) if isinstance(f, str) and (known_faces is None or current_face(f) in known_faces)]
+        hidden = [current_button(f) for f in data.get("hidden", []) if isinstance(f, str) and (known_buttons is None or current_button(f) in known_buttons)]
         version = data.get("version")
         return cls(pages, hidden, version if isinstance(version, int) else 0)
 
@@ -276,12 +276,12 @@ def user_layout_path(name="layout"):
     return os.path.join(base, "VReeCAD", name + ".json")
 
 
-def load_layout(default, known_faces, path=None):
+def load_layout(default, known_buttons, path=None):
     """The user's saved layout, or `default` when there is none or it cannot be read."""
     path = path or user_layout_path()
     try:
         with open(path, encoding="utf-8") as f:
-            return Layout.from_json(f.read(), known_faces)
+            return Layout.from_json(f.read(), known_buttons)
     except (OSError, ValueError, KeyError, TypeError):
         return default
 

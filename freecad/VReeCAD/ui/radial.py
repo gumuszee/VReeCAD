@@ -15,10 +15,10 @@
 # ***************************************************************************
 """The quick radial (docs/ux-design.md, Quick radial). No Coin, OpenXR or FreeCAD imports.
 
-Holding `button1` of the tool hand (outside navigation) opens a disc around the hand, cut into one segment per favourite face. The item is chosen by the
+Holding `button1` of the tool hand (outside navigation) opens a disc around the hand, cut into one segment per favourite button. The item is chosen by the
 direction the hand moves from the spot where the button went down, seen from the head: the first item is straight up, the others
 follow clockwise. Releasing the button activates the chosen item; releasing it before the hand has left the dead zone activates the
-hub item (the face in the middle, `CENTRE`), and starting a grip cancels. The plane of the radial and its axes are fixed when it opens, so turning the head does not move the choice."""
+hub item (the button in the middle, `CENTRE`), and starting a grip cancels. The plane of the radial and its axes are fixed when it opens, so turning the head does not move the choice."""
 
 import math
 from dataclasses import dataclass, field
@@ -32,19 +32,19 @@ INNER = DEAD_ZONE      # radius of the hub: the area in which nothing is chosen
 OUTER = 0.115          # outer radius of the segments
 GAP = 0.003            # metres of dark between neighbouring segments, measured at the outer radius
 TOWARDS_HEAD = 0.05    # the radial stands this far in front of the hand, so the controller does not hide it
-RECENT = 8             # number of favourites: the faces used last, padded from `DEFAULT_FAVOURITES`; the option discs of the tools have as many sections
+RECENT = 8             # number of favourites: the buttons used last, padded from `DEFAULT_FAVOURITES`; the option discs of the tools have as many sections
 DEFAULT_FAVOURITES = ("doc.undo", "doc.redo", "view.reset", "doc.delete", "tool.move", "pointer.mode", "doc.copy", "doc.colour")
-NEVER_FAVOURITE = ("view.layout", "app.close")   # faces that must not sit one flick from the hand
-CENTRE = "tool.select"   # the face in the hub: a release without moving the hand activates it; it is never one of the segments
+NEVER_FAVOURITE = ("view.layout", "app.close")   # buttons that must not sit one flick from the hand
+CENTRE = "tool.select"   # the button in the hub: a release without moving the hand activates it; it is never one of the segments
 
 
 @dataclass
 class RadialState:
     open: bool = False
-    items: List[str] = field(default_factory=list)              # face ids, first item straight up, then clockwise
+    items: List[str] = field(default_factory=list)              # button ids, first item straight up, then clockwise
     selected: Optional[int] = None
     activated: Optional[int] = None                             # item index chosen by releasing the button this frame
-    hub: Optional[str] = None                                   # face id of the hub item, or None for a hub without one
+    hub: Optional[str] = None                                   # button id of the hub item, or None for a hub without one
     activated_hub: bool = False                                 # the button was released inside the dead zone: the hub item is chosen
     centre: Tuple[float, float, float] = (0.0, 0.0, 0.0)        # of the drawn radial
     right: Tuple[float, float, float] = (1.0, 0.0, 0.0)
@@ -73,20 +73,20 @@ def segment_strip(index, count, r_in=INNER, r_out=OUTER, gap=GAP, steps=10):
 
 
 def choose_items(recent, known, hidden=(), count=RECENT):
-    """The favourites: the faces used last (newest first), then the defaults, without faces that are unknown, hidden, never a
-    favourite or the hub item, and without repeats. `recent` and the result hold face ids."""
+    """The favourites: the buttons used last (newest first), then the defaults, without buttons that are unknown, hidden, never a
+    favourite or the hub item, and without repeats. `recent` and the result hold button ids."""
     items = []
-    for face_id in list(recent) + list(DEFAULT_FAVOURITES):
-        if face_id in known and face_id not in hidden and face_id not in NEVER_FAVOURITE and face_id != CENTRE and face_id not in items:
-            items.append(face_id)
+    for button_id in list(recent) + list(DEFAULT_FAVOURITES):
+        if button_id in known and button_id not in hidden and button_id not in NEVER_FAVOURITE and button_id != CENTRE and button_id not in items:
+            items.append(button_id)
         if len(items) == count:
             break
     return items
 
 
-def remember(recent, face_id, limit=RECENT):
-    """`recent` with `face_id` moved to the front, at most `limit` long."""
-    return ([face_id] + [f for f in recent if f != face_id])[:limit]
+def remember(recent, button_id, limit=RECENT):
+    """`recent` with `button_id` moved to the front, at most `limit` long."""
+    return ([button_id] + [f for f in recent if f != button_id])[:limit]
 
 
 class QuickRadial:
@@ -105,8 +105,8 @@ class QuickRadial:
         self._selected = None
 
     def update(self, frame, items, blocked=False, hub=None) -> RadialState:
-        """One frame. `items` are the face ids to offer when the radial opens; `blocked` stops it from opening and cancels an open
-        radial (the tool hand is busy: navigating, dragging a slider, lifting a panel); `hub` is the face id of the item in the middle,
+        """One frame. `items` are the button ids to offer when the radial opens; `blocked` stops it from opening and cancels an open
+        radial (the tool hand is busy: navigating, dragging a slider, lifting a panel); `hub` is the button id of the item in the middle,
         which a release inside the dead zone activates (without one such a release cancels)."""
         state = RadialState()
         hand = frame.hands[self.hand]

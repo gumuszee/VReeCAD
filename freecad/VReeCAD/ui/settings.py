@@ -16,7 +16,7 @@
 """User settings of the interface, stored as JSON (`%APPDATA%\\VReeCAD\\settings.json`). No Coin, OpenXR or FreeCAD imports.
 
 The pointer settings: the mode ("laser" or "tip"), the tilt of the tip below the controller axis in degrees and the distance of the
-tip from the controller in metres (docs/ux-design.md, Pointer), and the ids of the faces used last, which fill the quick radial
+tip from the controller in metres (docs/ux-design.md, Pointer), and the ids of the buttons used last, which fill the quick radial
 (docs/ux-design.md, Quick radial)."""
 
 import json
@@ -25,7 +25,7 @@ from dataclasses import asdict, dataclass, field
 from typing import List
 
 from freecad.VReeCAD.core import snapping
-from freecad.VReeCAD.ui.layout import current_face
+from freecad.VReeCAD.ui.layout import current_button
 
 MODES = ("laser", "tip")
 SUB_MM = ("mm", "um")         # lengths under a millimetre as decimals of mm (0.25 mm) or as micrometres (250 um)
@@ -52,7 +52,7 @@ class Settings:
     pointer_mode: str = "laser"
     tip_angle: float = 15.0       # degrees; positive tilts the pointer down from the controller axis
     tip_length: float = 0.04      # metres from the controller to the tip
-    recent: List[str] = field(default_factory=list)   # ids of the faces used last, newest first
+    recent: List[str] = field(default_factory=list)   # ids of the buttons used last, newest first
     onboarded: bool = False       # the controls card has been shown (and gone) once
     tool_hand: str = "right"      # the hand that holds the tool; the palette is on the other
     sub_mm: str = "mm"            # how lengths under a millimetre are written, one of `SUB_MM`
@@ -66,7 +66,7 @@ class Settings:
             self.pointer_mode = "laser"
         self.tip_angle = _clamp(float(self.tip_angle), *ANGLE_RANGE)
         self.tip_length = _clamp(float(self.tip_length), *LENGTH_RANGE)
-        self.recent = [current_face(f) for f in self.recent if isinstance(f, str)] if isinstance(self.recent, list) else []
+        self.recent = [current_button(f) for f in self.recent if isinstance(f, str)] if isinstance(self.recent, list) else []
         self.onboarded = bool(self.onboarded)
         if self.tool_hand not in SIDES:
             self.tool_hand = "right"

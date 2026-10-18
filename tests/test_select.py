@@ -268,14 +268,14 @@ class RadialHubTest(unittest.TestCase):
         self.assertEqual(items[0], "tool.move")
 
 
-class RenamedFaceTest(unittest.TestCase):
-    def test_a_saved_layout_keeps_the_place_of_a_renamed_face(self):
+class RenamedButtonTest(unittest.TestCase):
+    def test_a_saved_layout_keeps_the_place_of_a_renamed_button(self):
         text = '{"pages": [{"name": "Tools", "slots": ["tool.primitive", "tool.grab", null]}], "hidden": ["tool.grab"]}'
         layout = lay.Layout.from_json(text, {"tool.primitive", "tool.move"})
         self.assertEqual(layout.pages[0].slots[:3], ["tool.primitive", "tool.move", None])
         self.assertEqual(layout.hidden, ["tool.move"])
 
-    def test_saved_settings_keep_a_renamed_face_in_the_recent_faces(self):
+    def test_saved_settings_keep_a_renamed_button_in_the_recent_buttons(self):
         self.assertEqual(cfg.Settings.from_json('{"recent": ["tool.grab", "doc.undo"]}').recent, ["tool.move", "doc.undo"])
 
 

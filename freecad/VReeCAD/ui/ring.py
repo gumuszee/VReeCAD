@@ -17,11 +17,11 @@
 
 The carousel is a prism around the long axis of the palette hand's controller: the sides turn with the controller and all of them
 are visible, the side at the front stands on the thumb side of the controller facing up. Each side carries rows of panels (pages of
-faces): the first row is the bottom row nearest the user, further rows are further forward. The stick of the palette hand turns the
+buttons): the first row is the bottom row nearest the user, further rows are further forward. The stick of the palette hand turns the
 carousel one side per flick, the carousel fades in while the head looks at the controller (or when pinned) and out otherwise, the
-tool hand's pointer hovers faces and its trigger activates them: a press on a face activates it when the trigger is released over
-the same face within `HOLD_LIFT` seconds, while a longer hold lifts the face. A lifted face goes to the slot it is released over (a
-face there changes places with it) or, released over the hide slot (an X) that every panel shows in its title bar while a face is
+tool hand's pointer hovers buttons and its trigger activates them: a press on a button activates it when the trigger is released over
+the same button within `HOLD_LIFT` seconds, while a longer hold lifts the button. A lifted button goes to the slot it is released over (a
+button there changes places with it) or, released over the hide slot (an X) that every panel shows in its title bar while a button is
 lifted, is hidden. Holding the trigger on
 the title bar of a panel lifts the panel; a tap on the menu mark at its right end (the hamburger) asks for the panel editor
 (`RingResult.menu`); releasing it over the left or right half of another panel puts the panel next to it in its row, over the upper or lower part makes a
@@ -37,15 +37,15 @@ from freecad.VReeCAD.ui import layout as lay
 from freecad.VReeCAD.ui import pointing
 from freecad.VReeCAD.ui.layout import COLS, ROWS
 
-CELL = 0.036           # metres, face edge
+CELL = 0.036           # metres, button edge
 GAP = 0.005
-GRID_Y = -0.010        # centre of the grid of faces in panel coordinates (origin at the centre of the panel plate)
+GRID_Y = -0.010        # centre of the grid of buttons in panel coordinates (origin at the centre of the panel plate)
 
 
 class Dims:
-    """The geometry of a panel with `cols` columns and `rows` rows of faces (metres, in panel coordinates: x right, y up from the centre
+    """The geometry of a panel with `cols` columns and `rows` rows of buttons (metres, in panel coordinates: x right, y up from the centre
     of the plate): the grid, the plate, the title bar (the handle for lifting a panel), the menu mark at its right end (a tap on it opens
-    the editor of the panel) and the hide slot in it (where a face dropped while lifting is hidden)."""
+    the editor of the panel) and the hide slot in it (where a button dropped while lifting is hidden)."""
     __slots__ = ("cols", "rows", "grid_w", "grid_h", "panel_w", "panel_h", "title_y", "menu_x", "hide_x")
 
     def __init__(self, cols, rows):
@@ -94,7 +94,7 @@ TIP_FRONT = 0.03       # a tip within this distance in front of a panel touches 
 TIP_BEHIND = 0.015     # and this far behind its plate (pushing through)
 FOCUS_FRONT = 0.10     # a tip within this distance in front of a slider focuses it, without touching it
 BAR_BAND = (-0.018, 0.002)   # the bar of a slider, the only part of its row where a press starts a drag (metres from its centre, y up)
-HOLD_LIFT = 0.4        # seconds the trigger is held on a face before the face is lifted
+HOLD_LIFT = 0.4        # seconds the trigger is held on a button before the button is lifted
 
 DropTarget = Tuple[int, int, Optional[int], bool]    # (side, row, page to insert before or None, new row at `row`)
 
@@ -162,7 +162,7 @@ class PanelPose:
 
 @dataclass
 class Hit:
-    kind: str                          # "face", "slider", "title", "menu" (the mark at the end of the title bar), "hide" (the hide slot), "body" or "ghost"
+    kind: str                          # "button", "slider", "title", "menu" (the mark at the end of the title bar), "hide" (the hide slot), "body" or "ghost"
     side: int
     row: int
     page: Optional[int]                # None on a ghost
@@ -177,7 +177,7 @@ class Hit:
 @dataclass
 class RingResult:
     visible: bool = False
-    hover: Optional[Tuple[int, int]] = None      # (page index, slot) of the face under the ray
+    hover: Optional[Tuple[int, int]] = None      # (page index, slot) of the button under the ray
     hover_title: Optional[int] = None            # page whose title bar is under the ray
     menu_hover: Optional[int] = None             # page whose menu mark is under the ray
     menu: Optional[int] = None                   # page whose menu mark was tapped this frame
@@ -191,11 +191,11 @@ class RingResult:
     focus: Optional[Tuple[int, int]] = None      # (page, slot) of the slider that has the pointer close (tip) or over it (laser)
     bar_hover: Optional[Tuple[int, int]] = None  # (page, slot) of a slider whose bar the pointer touches
     dropped: Optional[tuple] = None              # (page, side, row, before, new_row): released onto a target this frame
-    lifted_face: Optional[Tuple[int, int]] = None     # (page, slot) of the face held by the trigger (being moved)
-    face_target: Optional[Tuple[int, int]] = None     # (page, slot) the lifted face would go to if released now
-    face_hide: bool = False                      # the lifted face is over a hide slot
-    hide_page: Optional[int] = None              # the page whose hide slot the lifted face is over
-    face_dropped: Optional[tuple] = None         # (page, slot, target page, target slot): released onto a slot, or onto the hiding side
+    lifted_button: Optional[Tuple[int, int]] = None     # (page, slot) of the button held by the trigger (being moved)
+    button_target: Optional[Tuple[int, int]] = None     # (page, slot) the lifted button would go to if released now
+    button_hide: bool = False                      # the lifted button is over a hide slot
+    hide_page: Optional[int] = None              # the page whose hide slot the lifted button is over
+    button_dropped: Optional[tuple] = None         # (page, slot, target page, target slot): released onto a slot, or onto the hiding side
                                                  # (target page and slot None) this frame
     ray_end: Optional[Tuple[float, float, float]] = None
     haptics: List[tuple] = field(default_factory=list)   # (hand, amplitude, duration_s)
@@ -241,17 +241,17 @@ class PaletteRing:
         self.hover = None
         self.hover_title = None
         self.lifted: Optional[int] = None
-        self.lifted_face: Optional[Tuple[int, int]] = None
-        self.can_lift = lambda page, slot: True          # set by the host: whether the slot holds a face that can be lifted
-        self.can_drop = lambda src, dst: True            # set by the host: whether a lifted face can go to a slot
+        self.lifted_button: Optional[Tuple[int, int]] = None
+        self.can_lift = lambda page, slot: True          # set by the host: whether the slot holds a button that can be lifted
+        self.can_drop = lambda src, dst: True            # set by the host: whether a lifted button can go to a slot
         self.fixed_from = None                           # set by the host: pages from this index on are never lifted nor dropped on
         self.hold_visible = False                        # set by the host: something on the carousel is being worked, so it stays
-        self.press: Optional[Tuple[int, int]] = None     # (page, slot) of the face the trigger went down on
+        self.press: Optional[Tuple[int, int]] = None     # (page, slot) of the button the trigger went down on
         self._menu_press: Optional[int] = None           # the page whose menu mark the trigger went down on
         self._press_age = 0.0
-        self._press_dead = False                         # the pointer left the face: the press does nothing
-        self.slider_rows: Dict[int, Dict[int, str]] = {}   # page -> row of the grid -> face id, for the rows that hold a slider
-        self.readout_rows: Dict[int, Dict[int, str]] = {}  # the same for the rows that hold a readout: one face over the whole row
+        self._press_dead = False                         # the pointer left the button: the press does nothing
+        self.slider_rows: Dict[int, Dict[int, str]] = {}   # page -> row of the grid -> button id, for the rows that hold a slider
+        self.readout_rows: Dict[int, Dict[int, str]] = {}  # the same for the rows that hold a readout: one button over the whole row
         self.slider_drag: Optional[Tuple[int, int]] = None  # (page, slot) of the slider being dragged
         self.poses: Dict[int, PanelPose] = {}
         self.ghosts: Dict[int, PanelPose] = {}       # empty sides while lifting
@@ -270,7 +270,7 @@ class PaletteRing:
         self._count = max(1, len(self.sides))
         self._known_count = None
         self._target: Optional[DropTarget] = None
-        self._face_target: Optional[Tuple[Optional[int], Optional[int]]] = None   # (page, slot), or (None, None) to hide
+        self._button_target: Optional[Tuple[Optional[int], Optional[int]]] = None   # (page, slot), or (None, None) to hide
         self._lift_distance = 0.5
 
     # structure
@@ -281,7 +281,7 @@ class PaletteRing:
             self._sides_version += 1
 
     def set_dims(self, grids):
-        """The grid (columns, rows) of each page that has more or fewer faces than the default (page index -> (cols, rows))."""
+        """The grid (columns, rows) of each page that has more or fewer buttons than the default (page index -> (cols, rows))."""
         if grids != self.page_dims:
             self.page_dims = dict(grids)
             self._sides_version += 1
@@ -329,7 +329,7 @@ class PaletteRing:
     def _prepare(self):
         """Work out what depends only on the structure of the sides (the layout of each side, the radius) and on the angle (the local
         poses of the panels); each is kept until its input changes."""
-        version = (self._sides_version, self.lifted, self.lifted_face is not None, tuple(self.pinned_pages))
+        version = (self._sides_version, self.lifted, self.lifted_button is not None, tuple(self.pinned_pages))
         if version != self._structure_version:
             self._structure_version = version
             self._shown = self.display_sides()
@@ -423,9 +423,9 @@ class PaletteRing:
         if page is None:
             return Hit("ghost", pose.side, 0, None, None, point, distance, zone)
         if dim.title_y[0] <= y <= dim.title_y[1]:
-            if self.lifted_face is not None and dim.hide_x[0] <= x <= dim.hide_x[1]:
+            if self.lifted_button is not None and dim.hide_x[0] <= x <= dim.hide_x[1]:
                 return Hit("hide", pose.side, pose.row, page, None, point, distance, zone)
-            if self.lifted_face is None and self.lifted is None and x >= dim.menu_x:
+            if self.lifted_button is None and self.lifted is None and x >= dim.menu_x:
                 return Hit("menu", pose.side, pose.row, page, None, point, distance, zone)
             return Hit("title", pose.side, pose.row, page, None, point, distance, zone)
         slot = self.locate_slot(x, y - GRID_Y, dim)
@@ -435,8 +435,8 @@ class PaletteRing:
             return Hit("slider", pose.side, pose.row, page, row * dim.cols, point, distance, zone, slider_along(x, dim.grid_w),
                        BAR_BAND[0] <= dy <= BAR_BAND[1])
         if slot is not None and slot // dim.cols in self.readout_rows.get(page, ()):
-            slot = slot // dim.cols * dim.cols           # a readout is one face over its whole row
-        return Hit("face" if slot is not None else "body", pose.side, pose.row, page, slot, point, distance, zone)
+            slot = slot // dim.cols * dim.cols           # a readout is one button over its whole row
+        return Hit("button" if slot is not None else "body", pose.side, pose.row, page, slot, point, distance, zone)
 
     def hit_test(self, origin, direction):
         """Ray against the panels that face it. Returns the nearest `Hit` or None. Needs `layout_poses` first."""
@@ -543,7 +543,7 @@ class PaletteRing:
 
     def _hide(self):
         self.hover = self.hover_title = self.lifted = self._target = self.slider_drag = None
-        self.lifted_face = self._face_target = self.press = self._menu_press = None
+        self.lifted_button = self._button_target = self.press = self._menu_press = None
         self.poses, self.ghosts = {}, {}
         self._laid = None
 
@@ -566,7 +566,7 @@ class PaletteRing:
         # the carousel stays more stubbornly while the pointer works on it (a hover, a press, a drag)
         busy = (self.hold_visible or self.hover is not None or self.hover_title is not None or self.press is not None
                 or self.slider_drag is not None)
-        want = (self.pinned or self.lifted is not None or self.lifted_face is not None
+        want = (self.pinned or self.lifted is not None or self.lifted_button is not None
                 or self.wants_visible(self.origin, head, frame.head.orientation, self.fade > 0.0, busy)) and not navigating
         self.fade = min(1.0, self.fade + FADE_RATE * dt) if want else max(0.0, self.fade - FADE_RATE * dt)
         if self.fade <= 0.0:
@@ -600,25 +600,25 @@ class PaletteRing:
         hit = None
         if pointer.tracked and self.fade > 0.8:
             hit = self.hit_tip(pointer.position) if pointer.tip else self.hit_test(pointer.position, pointer.direction)
-        if hit is not None and (self.lifted is not None or self.lifted_face is not None) and self._fixed(hit.page):
+        if hit is not None and (self.lifted is not None or self.lifted_button is not None) and self._fixed(hit.page):
             hit = None                                   # something is lifted: the fixed panels are not a place to drop it
         focus = hit if hit is not None and hit.kind == "slider" else None
         if focus is None and pointer.tracked and pointer.tip and self.fade > 0.8:
             near = self.hit_tip(pointer.position, FOCUS_FRONT)
             focus = near if near is not None and near.kind == "slider" else None
-        if focus is not None and self.lifted is None and self.lifted_face is None:
+        if focus is not None and self.lifted is None and self.lifted_button is None:
             result.focus = (focus.page, focus.slot)
         if hit is not None and hit.kind == "slider" and hit.bar:
             result.bar_hover = (hit.page, hit.slot)
         previous = (self.hover, self.hover_title, self._target)
-        self.hover = (hit.page, hit.slot) if hit is not None and hit.kind in ("face", "slider") else None
+        self.hover = (hit.page, hit.slot) if hit is not None and hit.kind in ("button", "slider") else None
         self.hover_title = hit.page if hit is not None and hit.kind == "title" else None
         result.hover, result.hover_title = self.hover, self.hover_title
         result.menu_hover = hit.page if hit is not None and hit.kind == "menu" else None
         self._target = None
 
-        if self.lifted_face is not None:
-            self._move_face(result, hit, tool, pointer)
+        if self.lifted_button is not None:
+            self._move_button(result, hit, tool, pointer)
         elif self._menu_press is not None:
             result.consume_trigger = True
             if hit is not None:
@@ -629,7 +629,7 @@ class PaletteRing:
                     result.haptics.append((self.tool_hand, 0.5, 0.04))
                 self._menu_press = None
         elif self.press is not None:
-            self._hold_face(result, hit, tool, dt)
+            self._hold_button(result, hit, tool, dt)
             if hit is not None:
                 result.ray_end = hit.point
         elif self.lifted is None:
@@ -638,7 +638,7 @@ class PaletteRing:
                 if (self.hover, self.hover_title) != previous[:2]:
                     result.haptics.append((self.tool_hand, 0.15, 0.015))
                 if "trigger" in tool.pressed:
-                    if hit.kind == "face":
+                    if hit.kind == "button":
                         self.press, self._press_age, self._press_dead = self.hover, 0.0, False
                     elif hit.kind == "slider":
                         if hit.bar:
@@ -674,56 +674,56 @@ class PaletteRing:
                     reach = self._lift_distance if hit is None else hit.distance
                     result.lift_point = mu.add(pointer.position, mu.mul(pointer.direction, reach))
         result.lifted = self.lifted
-        result.lifted_face = self.lifted_face
+        result.lifted_button = self.lifted_button
         result.drop_target = self._target
         return result
 
-    def _hold_face(self, result, hit, tool, dt):
-        """The trigger went down on a face: released over the same face soon it activates it, held long enough it lifts it, and a
-        pointer that wanders off the face makes the press do nothing."""
+    def _hold_button(self, result, hit, tool, dt):
+        """The trigger went down on a button: released over the same button soon it activates it, held long enough it lifts it, and a
+        pointer that wanders off the button makes the press do nothing."""
         result.consume_trigger = True
-        on_face = self.hover == self.press
+        on_button = self.hover == self.press
         self._press_age += dt
         if not tool.down("trigger"):
-            if on_face and not self._press_dead and self._press_age < HOLD_LIFT:
+            if on_button and not self._press_dead and self._press_age < HOLD_LIFT:
                 result.activated = self.press
                 result.haptics.append((self.tool_hand, 0.5, 0.04))
             self.press = None
-        elif not on_face:
+        elif not on_button:
             self._press_dead = True
         elif not self._press_dead and self._press_age >= HOLD_LIFT and self.can_lift(*self.press):
-            self.lifted_face, self.press = self.press, None
+            self.lifted_button, self.press = self.press, None
             self._lift_distance = hit.distance if hit is not None else self._lift_distance
-            self._face_target = None
+            self._button_target = None
             result.haptics.append((self.tool_hand, 0.4, 0.04))
 
-    def _move_face(self, result, hit, tool, pointer):
-        """A face is lifted: the pointer chooses a slot (or the hide slot of a panel), releasing the trigger drops it."""
+    def _move_button(self, result, hit, tool, pointer):
+        """A button is lifted: the pointer chooses a slot (or the hide slot of a panel), releasing the trigger drops it."""
         result.consume_trigger = True
-        previous = self._face_target
-        self._face_target = None
+        previous = self._button_target
+        self._button_target = None
         self.hover = None
         result.hover = None
         if hit is not None:
             result.ray_end = hit.point
             if hit.kind == "hide":
-                self._face_target = (None, None)
+                self._button_target = (None, None)
                 result.hide_page = hit.page
-            elif hit.kind in ("face", "slider") and (hit.page, hit.slot) != self.lifted_face:
-                if self.can_drop(self.lifted_face, (hit.page, hit.slot)):
-                    self._face_target = (hit.page, hit.slot)
-        if self._face_target != previous:
+            elif hit.kind in ("button", "slider") and (hit.page, hit.slot) != self.lifted_button:
+                if self.can_drop(self.lifted_button, (hit.page, hit.slot)):
+                    self._button_target = (hit.page, hit.slot)
+        if self._button_target != previous:
             result.haptics.append((self.tool_hand, 0.15, 0.015))
         if not tool.down("trigger"):
-            if self._face_target is not None:
-                result.face_dropped = self.lifted_face + self._face_target
+            if self._button_target is not None:
+                result.button_dropped = self.lifted_button + self._button_target
                 result.haptics.append((self.tool_hand, 0.5, 0.04))
-            self.lifted_face = self._face_target = None
+            self.lifted_button = self._button_target = None
         elif pointer.tracked:
             if pointer.tip:
                 result.lift_point = pointer.position if hit is None else hit.point
             else:
                 reach = self._lift_distance if hit is None else hit.distance
                 result.lift_point = mu.add(pointer.position, mu.mul(pointer.direction, reach))
-        result.face_target = self._face_target if self._face_target and self._face_target[0] is not None else None
-        result.face_hide = self._face_target == (None, None)
+        result.button_target = self._button_target if self._button_target and self._button_target[0] is not None else None
+        result.button_hide = self._button_target == (None, None)

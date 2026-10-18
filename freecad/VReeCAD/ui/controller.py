@@ -74,15 +74,15 @@ class UiController:
     def __init__(self, tool_names, tool_label, actions: Dict[str, Callable], palette_hand=0, tool_hand=1,
                  layout_path=None, use_user_layout=True, mm_to_stage=0.001, settings_path=None, tool_hint=None, values_layout_path=None, start_home=True):
         self.actions = actions
-        self.faces = defaults.build_faces(tool_names, tool_label, tool_hint)
+        self.buttons = defaults.build_buttons(tool_names, tool_label, tool_hint)
         self._tool_names = list(tool_names)
         default = defaults.default_layout(self._tool_names)
         self.use_user_layout, self.layout_path = use_user_layout, layout_path
-        self.layout = lay.load_layout(default, set(self.faces), layout_path) if use_user_layout else default
+        self.layout = lay.load_layout(default, set(self.buttons), layout_path) if use_user_layout else default
         self.settings = cfg.load_settings(settings_path) if use_user_layout else cfg.Settings()
         self.settings_path = settings_path
         self.values_layout_path = values_layout_path
-        self.wide = {fid for fid, face in self.faces.items() if face.kind == "slider"}
+        self.wide = {fid for fid, button in self.buttons.items() if button.kind == "slider"}
         if use_user_layout and self.layout is not default:
             migrated = defaults.migrate(self.layout, default)
             if self.layout.add_missing(default, self.wide) or migrated:
@@ -91,8 +91,8 @@ class UiController:
         self.navigator = Navigator(modifier_hand=tool_hand, start_home=start_home)
         self._grip_claimed = [False, False]     # a grip pressed while the tool is in a gesture: it cancels it and does not hold the world
         self.ring = PaletteRing(self.layout.sides(), palette_hand, tool_hand)
-        self.ring.can_lift = lambda page, slot: self.carousel == "tools" and self.layout.face_at(page, slot) is not None
-        self.ring.can_drop = lambda src, dst: self.carousel == "tools" and self.layout.can_move_face(*src, *dst, self.wide)
+        self.ring.can_lift = lambda page, slot: self.carousel == "tools" and self.layout.button_at(page, slot) is not None
+        self.ring.can_drop = lambda src, dst: self.carousel == "tools" and self.layout.can_move_button(*src, *dst, self.wide)
         self.radial = radial.QuickRadial(tool_hand)
         self.radial_view = RadialView()
         self.options_view = RadialView(OPTION_DISC_OUTER, OPTION_DISC_INNER, 0.8)        # the disc of the options of the active tool
@@ -100,11 +100,11 @@ class UiController:
         self.undo_button = UndoButton(tool_hand)
         self.module = ValueModule(tool_hand)       # the panels for the values of the selected object, on a carousel side of their own
         self.panel_editor = None           # the `panel_editor.PanelEditor` while a panel is renamed or coloured
-        self._editor_faces = panel_editor.faces()
+        self._editor_buttons = panel_editor.buttons()
         self._editor_layout = None         # (what it depends on, layout) of the editor carousel
         self._return_to = "tools"          # the carousel that comes back when the editor closes
-        self.view_faces = {**self.faces, **self.module.faces, **self._editor_faces}      # every face that can be drawn: the user's, the module's and the editor's
-        self.values_layout = (value_module.load_layout(set(self.module.faces), values_layout_path) if use_user_layout
+        self.view_buttons = {**self.buttons, **self.module.buttons, **self._editor_buttons}      # every button that can be drawn: the user's, the module's and the editor's
+        self.values_layout = (value_module.load_layout(set(self.module.buttons), values_layout_path) if use_user_layout
                               else value_module.default_layout())     # the panels of the values carousel that the user can rearrange
         self.carousel = "tools"            # which carousel the palette hand shows: "tools" (the user layout), "values" (while the module is open) or "editor"
         self._front = {"tools": 0, "values": 0, "editor": 0}     # the side at the front of each carousel while the other one is shown
@@ -165,9 +165,9 @@ class UiController:
         self.system = units.without_micrometres(system) if self.settings.sub_mm == "mm" else system
 
     def action_at(self, page, slot):
-        face_id = self.shown_layout().face_at(page, slot)
-        face = self.view_faces.get(face_id) if face_id else None
-        return face.action if face else None
+        button_id = self.shown_layout().button_at(page, slot)
+        button = self.view_buttons.get(button_id) if button_id else None
+        return button.action if button else None
 
     def add_occluder(self, node):
         """Draw a scene node (the model of a controller) a second time over the laser and the tips, wherever it is visible in the
@@ -293,40 +293,40 @@ class UiController:
         return self.values_layout if self.carousel == "values" and self.module.is_open else self.layout
 
     def radial_items(self):
-        """Face ids offered by the quick radial: the faces used last, then the defaults."""
-        return radial.choose_items(self.settings.recent, self.faces, self.layout.hidden)
+        """Button ids offered by the quick radial: the buttons used last, then the defaults."""
+        return radial.choose_items(self.settings.recent, self.buttons, self.layout.hidden)
 
     def radial_hub(self):
-        """The face id of the item in the middle of the quick radial, or None."""
-        return radial.CENTRE if radial.CENTRE in self.faces else None
+        """The button id of the item in the middle of the quick radial, or None."""
+        return radial.CENTRE if radial.CENTRE in self.buttons else None
 
-    def _activate(self, face_id, out):
-        """Run the action of a face and remember the face for the quick radial (the face of its hub is not a favourite)."""
-        face = self.faces.get(face_id) if face_id else None
-        if face is None:
+    def _activate(self, button_id, out):
+        """Run the action of a button and remember the button for the quick radial (the button of its hub is not a favourite)."""
+        button = self.buttons.get(button_id) if button_id else None
+        if button is None:
             return
-        self._run(face.action, out)
-        if face.kind == "button" and face_id != radial.CENTRE and (not self.settings.recent or self.settings.recent[0] != face_id):
-            self.settings.recent = radial.remember(self.settings.recent, face_id)
+        self._run(button.action, out)
+        if button.kind == "button" and button_id != radial.CENTRE and (not self.settings.recent or self.settings.recent[0] != button_id):
+            self.settings.recent = radial.remember(self.settings.recent, button_id)
             self._save_settings()
 
     def show_hidden(self):
-        """Put the hidden faces back on the panels."""
+        """Put the hidden buttons back on the panels."""
         shown = len(self.layout.hidden)
         if self.layout.show_hidden(defaults.default_layout(self._tool_names), self.wide):
             self._save_layout()
         left = len(self.layout.hidden)
         if not shown:
-            self.toast("No hidden faces")
+            self.toast("No hidden buttons")
         elif not left:
-            self.toast("Faces shown")
+            self.toast("Buttons shown")
         elif left < shown:
-            self.toast(f"{shown - left} faces shown, no room for {left}")
+            self.toast(f"{shown - left} buttons shown, no room for {left}")
         else:
-            self.toast("No room for the hidden faces")
+            self.toast("No room for the hidden buttons")
 
     def reset_layout(self):
-        """Back to the default layout (no hidden faces); a saved layout file is removed."""
+        """Back to the default layout (no hidden buttons); a saved layout file is removed."""
         self.layout = defaults.default_layout(self._tool_names)
         self.values_layout = value_module.default_layout()
         self._front = {"tools": 0, "values": 0}
@@ -351,7 +351,7 @@ class UiController:
                 pass   # the layout is a convenience; a failed write must not stop the session
 
     def labels(self):
-        """Labels of the faces whose text shows a value, by face id."""
+        """Labels of the buttons whose text shows a value, by button id."""
         s = self.settings
         return {
             "pointer.mode": "Pointer: " + ("Tip" if s.pointer_mode == "tip" else "Laser"),
@@ -364,19 +364,19 @@ class UiController:
         }
 
     def slider_states(self):
-        """Position along the track and label of each slider, by face id."""
+        """Position along the track and label of each slider, by button id."""
         labels = self.labels()
         return {fid: (spec.fraction(getattr(self.settings, spec.attr)), labels[fid]) for fid, spec in defaults.SLIDERS.items()}
 
     def slider_rows(self, kind="slider"):
-        """Pages and grid rows that hold a face of `kind` that takes the whole row, a "slider" or a "readout": page -> row -> face id."""
+        """Pages and grid rows that hold a button of `kind` that takes the whole row, a "slider" or a "readout": page -> row -> button id."""
         rows = {}
         for p, page in enumerate(self.shown_layout().pages):
             for r in range(page.rows):
-                face_id = page.slots[r * page.cols]
-                face = self.view_faces.get(face_id) if face_id else None
-                if face is not None and face.kind == kind:
-                    rows.setdefault(p, {})[r] = face_id
+                button_id = page.slots[r * page.cols]
+                button = self.view_buttons.get(button_id) if button_id else None
+                if button is not None and button.kind == kind:
+                    rows.setdefault(p, {})[r] = button_id
         return rows
 
     def _save_settings(self):
@@ -430,12 +430,12 @@ class UiController:
         return "Lengths under 1 mm: " + ("decimals of mm" if self.settings.sub_mm == "mm" else "micrometres")
 
     def show_first_help(self):
-        """Show the controls cards once when the addon has not been used yet (the setting `onboarded`); they stay until the Controls face
+        """Show the controls cards once when the addon has not been used yet (the setting `onboarded`); they stay until the Controls button
         or the time takes them away, and then the setting is saved."""
         if not self.settings.onboarded:
             self._first_help = True
             self.help.show()
-            self.toast("Controls help: the Tutorial face on the Settings panel shows it again")
+            self.toast("Controls help: the Tutorial button on the Settings panel shows it again")
 
     def _help_ended(self):
         if self._first_help:
@@ -521,7 +521,7 @@ class UiController:
                 out.haptics.append((self.tool_hand, 0.3, 0.03))
 
         # the quick radial takes the tool hand while it is open: the carousel does not see its pointer
-        busy = (self.navigator.navigating or self.ring.lifted is not None or self.ring.lifted_face is not None
+        busy = (self.navigator.navigating or self.ring.lifted is not None or self.ring.lifted_button is not None
                 or self.ring.slider_drag is not None or self.ring.press is not None or getattr(self.active_tool, "busy", False))
         hub = self.radial_hub()
         quick = self.radial.update(frame, self.radial_items(), blocked=busy, hub=hub)
@@ -549,26 +549,26 @@ class UiController:
         out.ray_end = result.ray_end
         out.consume_trigger = result.consume_trigger or self.radial.is_open or quick.activated is not None or quick.activated_hub
         if result.focus is not None:
-            focused = carousel.face_at(*result.focus)
+            focused = carousel.button_at(*result.focus)
             if focused in value_module.SLIDER_IDS:
                 self.module.set_focus(focused)
         if self.module.engaged:
             out.owns_stick = True                            # a value slider is focused: the stick of the tool hand steps its value
-        preview = self._preview_page(carousel)               # the faces of the preview are for show: nothing on it is pressed or dragged
+        preview = self._preview_page(carousel)               # the buttons of the preview are for show: nothing on it is pressed or dragged
         if result.slider is not None and result.slider[0] != preview:
             page, slot, along = result.slider
-            face_id = carousel.face_at(page, slot)
-            if face_id in value_module.SLIDER_IDS:
-                if self.module.drag(face_id, along):
+            button_id = carousel.button_at(page, slot)
+            if button_id in value_module.SLIDER_IDS:
+                if self.module.drag(button_id, along):
                     out.haptics.append((self.tool_hand, 0.15, 0.01))
-            spec = defaults.SLIDERS.get(face_id)
+            spec = defaults.SLIDERS.get(button_id)
             if spec is not None:
                 value = spec.value(along)
                 if value != getattr(self.settings, spec.attr):
                     setattr(self.settings, spec.attr, value)
                     out.haptics.append((self.tool_hand, 0.15, 0.01))
         if result.slider_done is not None and result.slider_done[0] != preview:
-            if carousel.face_at(*result.slider_done) in value_module.SLIDER_IDS:
+            if carousel.button_at(*result.slider_done) in value_module.SLIDER_IDS:
                 self.module.end_drag()
             self._save_settings()
         if result.dropped is not None:
@@ -578,17 +578,17 @@ class UiController:
             self.ring.set_sides(self.shown_layout().sides())
             self.ring.focus_side(moved.pages[index].side)
             self._save_layout()
-        if result.face_dropped is not None:
-            page, slot, target_page, target_slot = result.face_dropped
+        if result.button_dropped is not None:
+            page, slot, target_page, target_slot = result.button_dropped
             if target_page is None:
-                moved = self.layout.hide_face(page, slot, self.wide)
+                moved = self.layout.hide_button(page, slot, self.wide)
             else:
-                moved = self.layout.move_face(page, slot, target_page, target_slot, self.wide)
+                moved = self.layout.move_button(page, slot, target_page, target_slot, self.wide)
             if moved:
                 self._save_layout()
                 if target_page is None:
-                    face = self.faces.get(self.layout.hidden[-1]) if self.layout.hidden else None
-                    self.toast(f"Hidden: {face.label}" if face else "Face hidden")
+                    button = self.buttons.get(self.layout.hidden[-1]) if self.layout.hidden else None
+                    self.toast(f"Hidden: {button.label}" if button else "Button hidden")
         prof.lap("ui_misc")
         edit = self.module.update(frame, dragging=self.ring.slider_drag is not None, blocked=bool(getattr(self.active_tool, "busy", False)))
         out.haptics += edit.haptics
@@ -601,11 +601,11 @@ class UiController:
         readouts = {**(self.module.readouts() if self.module.is_open else {}), **(editing.readouts() if editing is not None else {})}
         lit = self.active_actions | self.module.picked_actions() | (editing.lit_actions() if editing is not None else frozenset())
         titles = {**self.module.titles(), **(editing.titles() if editing is not None else {})}
-        self.view.update(self.ring, result, carousel, self.view_faces, frame.head.position, lit, labels, sliders,
+        self.view.update(self.ring, result, carousel, self.view_buttons, frame.head.position, lit, labels, sliders,
                          titles, readouts or None)
         prof.lap("ui_view")
-        self.radial_view.update(quick, [labels.get(f, self.faces[f].label) for f in quick.items],
-                                centre=labels.get(quick.hub, self.faces[quick.hub].label) if quick.hub else None)
+        self.radial_view.update(quick, [labels.get(f, self.buttons[f].label) for f in quick.items],
+                                centre=labels.get(quick.hub, self.buttons[quick.hub].label) if quick.hub else None)
         tooltip = self._tooltip(result, frame.dt, labels)
         text = readout or self.gesture_text
         if self.help.update(frame.dt):
@@ -615,21 +615,21 @@ class UiController:
         prof.lap("ui_feedback")
 
         if result.activated is not None and result.activated[0] != preview:
-            face_id = carousel.face_at(*result.activated)
-            if face_id in self._editor_faces and self.panel_editor is not None:
-                step = self.panel_editor.activate(face_id)
+            button_id = carousel.button_at(*result.activated)
+            if button_id in self._editor_buttons and self.panel_editor is not None:
+                step = self.panel_editor.activate(button_id)
                 if step.message:
                     self.toast(step.message)
                 if step.done:
                     self.close_panel_editor(step.applied)
-                out.activated = self._editor_faces[face_id].action
-            elif face_id in self.module.faces:
-                self.module.activate(face_id)
-                out.activated = self.module.faces[face_id].action
-                if face_id in value_module.COLOUR_IDS:          # a swatch colours the selected objects
+                out.activated = self._editor_buttons[button_id].action
+            elif button_id in self.module.buttons:
+                self.module.activate(button_id)
+                out.activated = self.module.buttons[button_id].action
+                if button_id in value_module.COLOUR_IDS:          # a swatch colours the selected objects
                     self._run(out.activated, out)
             else:
-                self._activate(face_id, out)
+                self._activate(button_id, out)
         if quick.activated is not None:
             self._activate(quick.items[quick.activated], out)
         elif quick.activated_hub:
@@ -742,17 +742,17 @@ class UiController:
         return cards
 
     def _tooltip(self, result, dt, labels):
-        """(text, centre, u, v) of the tooltip of the hovered face once it has been hovered for a moment, else None."""
-        idle = (self.ring.lifted is None and self.ring.lifted_face is None and self.ring.press is None and self.ring.slider_drag is None
+        """(text, centre, u, v) of the tooltip of the hovered button once it has been hovered for a moment, else None."""
+        idle = (self.ring.lifted is None and self.ring.lifted_button is None and self.ring.press is None and self.ring.slider_drag is None
                 and not self.radial.is_open)
         target = self.dwell.update(result.hover if idle and self.ring.fade > 0.8 else None, dt)
         if target is None:
             return None
-        face = self.view_faces.get(self.shown_layout().face_at(*target) or "")
+        button = self.view_buttons.get(self.shown_layout().button_at(*target) or "")
         place = self.ring.slot_centre(*target)
-        if face is None or place is None or face.id in value_module.NO_TOOLTIP or face.id.startswith("ed.key."):
+        if button is None or place is None or button.id in value_module.NO_TOOLTIP or button.id.startswith("ed.key."):
             return None
-        return (face.tip or labels.get(face.id, face.label), *place)
+        return (button.tip or labels.get(button.id, button.label), *place)
 
     def close(self):
         self.root.unref()

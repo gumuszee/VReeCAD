@@ -15,7 +15,7 @@
 # ***************************************************************************
 """The colour of the selected objects (docs/ux-design.md, Modify panel).
 
-Each press of the Colour face gives the selected objects the next colour of a fixed palette, in one undo step. The colour lives in the
+Each press of the Colour button gives the selected objects the next colour of a fixed palette, in one undo step. The colour lives in the
 property `VReeCADColour` of each object, which the undo history of the document keeps, and the view of the object (`ShapeColor`)
 follows it: `cycle` sets both, and `sync` brings every view to its property after an undo or a redo. `next_colour` is pure Python."""
 

@@ -59,8 +59,8 @@ class PagesTest(unittest.TestCase):
         self.assertEqual(shown.pages[-1].name, "Value")
         self.assertEqual(len(shown.sides()), len(layout.sides()))
 
-    def test_every_face_of_the_panels_is_known_and_each_is_on_a_panel_once(self):
-        known = vm.faces()
+    def test_every_button_of_the_panels_is_known_and_each_is_on_a_panel_once(self):
+        known = vm.buttons()
         shown = vm.shown_layout(vm.default_layout())
         placed = [f for page in shown.pages for f in page.slots if f]
         self.assertEqual(sorted(placed), sorted(known))
@@ -81,7 +81,7 @@ class PagesTest(unittest.TestCase):
         self.assertEqual(slots[:4], ["key.0", "key.point", "key.minus", "key.plus"])
         self.assertEqual(slots[8:], [vm.PREV, vm.WHICH, vm.NEXT, "key.clear"])
 
-    def test_every_key_of_the_editor_can_be_pressed_from_a_face(self):
+    def test_every_key_of_the_editor_can_be_pressed_from_a_button(self):
         keys = {vm.KEYS[f][1] for p in vm.default_layout().pages for f in p.slots if f in vm.KEYS}
         self.assertEqual(keys, set("0123456789.+-*/()") | {"back", "unit", "enter", "clear", "makevar", "unbind"})
 
@@ -90,7 +90,7 @@ class PagesTest(unittest.TestCase):
         self.assertEqual(slots[:8], list(vm.VARIABLE_IDS))
         self.assertEqual(slots[8:], ["key.makevar", "key.unbind", vm.VARIABLE_GROUP, None])
 
-    def test_the_values_panel_has_twelve_faces_for_the_values(self):
+    def test_the_values_panel_has_twelve_buttons_for_the_values(self):
         self.assertEqual(page("Values").slots, list(vm.ITEM_IDS))
 
     def test_a_saved_layout_loses_the_value_panel_and_gets_back_a_panel_that_is_missing(self):
@@ -108,15 +108,15 @@ class PagesTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "values.json")
             lay.save_layout(layout, path, arrangement=vm.ARRANGEMENT)
-            loaded = vm.load_layout(set(vm.faces()), path)
+            loaded = vm.load_layout(set(vm.buttons()), path)
             self.assertEqual([(p.name, p.side, p.row) for p in loaded.pages], [(p.name, p.side, p.row) for p in layout.pages])
             default = [(p.name, p.side, p.row) for p in vm.default_layout().pages]
-            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.faces()), os.path.join(folder, "none.json")).pages], default)
+            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.buttons()), os.path.join(folder, "none.json")).pages], default)
             lay.save_layout(layout, path)                                              # a file of an older arrangement is not read
-            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.faces()), path).pages], default)
+            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.buttons()), path).pages], default)
             with open(path, "w") as f:
                 f.write("not json")
-            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.faces()), path).pages], default)
+            self.assertEqual([(p.name, p.side, p.row) for p in vm.load_layout(set(vm.buttons()), path).pages], default)
 
     def test_nice_ceiling(self):
         for value, expected in ((1, 1), (1.1, 2), (2, 2), (3, 5), (5, 5), (5.1, 10), (100, 100), (101, 200), (0.04, 0.05), (999, 1000)):
@@ -401,19 +401,19 @@ class ValuesPanelTest(unittest.TestCase):
         self.module.open(v.ValueEditor(Wide(), step=10.0))
         self.module.update(self.sim.frame(0.02))
 
-    def test_the_faces_list_the_values_with_their_numbers_and_a_dash_where_there_is_none(self):
+    def test_the_buttons_list_the_values_with_their_numbers_and_a_dash_where_there_is_none(self):
         labels = self.module.labels()
         self.assertEqual(labels["val.item.0"], "S0 100 mm")
         self.assertEqual(labels["val.item.6"], "POS.Z 0 mm")
         self.assertEqual(labels["val.item.7"], "-")
 
-    def test_a_press_picks_the_value_and_the_picked_face_is_lit(self):
+    def test_a_press_picks_the_value_and_the_picked_button_is_lit(self):
         self.assertEqual(self.module.picked_actions(), {"values:val.item.0"})
         self.assertTrue(self.module.activate("val.item.4"))
         self.assertEqual(self.module.editor.selected, 4)
         self.assertEqual(self.module.picked_actions(), {"values:val.item.4"})
         self.assertFalse(self.module.activate("val.item.4"))                         # it is picked already
-        self.assertFalse(self.module.activate("val.item.9"))                         # a face with no value
+        self.assertFalse(self.module.activate("val.item.9"))                         # a button with no value
 
     def test_the_list_follows_the_selector_and_the_numbers_follow_the_object(self):
         self.module.activate(vm.NEXT)
@@ -427,7 +427,7 @@ class ValuesPanelTest(unittest.TestCase):
         self.assertEqual((self.module.picked_actions(), self.module.labels()), (frozenset(), {}))
         self.assertFalse(self.module.activate("val.item.0"))
 
-    def test_more_values_than_faces_make_the_last_face_the_next_page(self):
+    def test_more_values_than_buttons_make_the_last_button_the_next_page(self):
         class Many(Target):
             title = "Sketch"
 
@@ -463,19 +463,19 @@ class VariablePanelTest(unittest.TestCase):
         self.module = vm.ValueModule(tool_hand=1)
         self.module.open(v.ValueEditor(self.target, step=10.0), key="box")
 
-    def test_the_faces_show_the_variables_and_a_dash_where_there_is_none(self):
+    def test_the_buttons_show_the_variables_and_a_dash_where_there_is_none(self):
         labels = self.module.labels()
         self.assertEqual(labels["var.0"], "width 80 mm")
         self.assertEqual(labels["var.1"], "-")
         self.assertEqual(labels["var.7"], "-")
 
-    def test_pressing_a_variable_types_its_name_and_an_empty_face_does_nothing(self):
+    def test_pressing_a_variable_types_its_name_and_an_empty_button_does_nothing(self):
         self.assertTrue(self.module.activate("var.0"))
         self.assertEqual(self.module.editor.entry, "width")
         self.assertFalse(self.module.activate("var.1"))
         self.assertEqual(self.module.editor.entry, "width")
 
-    def test_make_variable_and_unbind_are_faces_of_the_panel(self):
+    def test_make_variable_and_unbind_are_buttons_of_the_panel(self):
         self.module.activate("key.makevar")
         self.assertEqual(self.target.bound["a"], "Variables.position_a")      # the fake labels are one letter, like X, Y and Z
         self.assertIn("Variable position_a", self.module._pending_message)
@@ -508,10 +508,10 @@ if __name__ == "__main__":
 
 
 class ColourPanelTest(unittest.TestCase):
-    def test_the_colour_panel_has_a_face_in_the_actual_colour_of_every_swatch_that_colours_the_selection(self):
+    def test_the_colour_panel_has_a_button_in_the_actual_colour_of_every_swatch_that_colours_the_selection(self):
         from freecad.VReeCAD.cad import colour
-        faces = vm.faces()
+        buttons = vm.buttons()
         self.assertEqual(len(colour.SWATCHES), vm.COLOURS)
         for i, fid in enumerate(vm.COLOUR_IDS):
-            self.assertEqual((faces[fid].swatch, faces[fid].action, faces[fid].label), (colour.SWATCHES[i][1], f"doc:colour_{i}", ""))
+            self.assertEqual((buttons[fid].swatch, buttons[fid].action, buttons[fid].label), (colour.SWATCHES[i][1], f"doc:colour_{i}", ""))
         self.assertEqual(vm.default_layout().pages[-1].slots, list(vm.COLOUR_IDS))
