@@ -408,6 +408,31 @@ try:
         _s.input.set_hand(1, grip=0.0, trigger=0.0)
         _s.frame(0.02)
         _pk.clear_selection()
+        # the Bend mode of the Points tool: an edge of a block is dragged into a curve, then the handles of the curved edge show
+        _s.doc_scene.removeChild(_bn)
+        _nodes.remove(_bn)
+        _temp.removeObject(_b.Name)
+        _b = _blk.create(_temp, (500.0, -60.0, 0.0), (100.0, 100.0, 80.0))
+        _s.select_tool("points")
+        _s.tool_manager.active.values["mode"] = "Bend"
+        _cursor((550.0, -58.0, 79.0))
+        for _ in range(12):
+            _s.frame(0.02)
+        _cursor((550.0, -58.0, 79.0), trigger=1.0)
+        _cursor((570.0, -90.0, 150.0), trigger=1.0)
+        for _ in range(3):
+            _s.frame(0.02)
+        print("bend readout:", _s.ui.gesture_text, _blk.read_handles(_b))
+        _cursor((570.0, -90.0, 150.0), trigger=0.0)
+        _bn = _node_of(_b)
+        _s.doc_scene.insertChild(_bn, 2)
+        _nodes.append(_bn)
+        _tip = _blk.to_world(_b, _blk.tips(_b)[0][3])
+        _cursor(tuple(_tip))
+        for _ in range(12):
+            _s.frame(0.02)
+        _off.save(_s.render("head", (1100, 800), fov=1.0), os.path.join(_out, "ui_points_bend.png"))
+        _pk.clear_selection()
         # the Sketch tool: the square that shows the plane of a new sketch, then a rectangle being dragged (a grip cancels)
         _s.select_tool("sketch")
         _s.tool_manager.active.values["mode"] = "Rectangle"

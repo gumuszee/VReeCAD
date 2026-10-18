@@ -28,28 +28,50 @@ to recompute them; the shape is stored with the document, so it opens and shows 
 A point that is bound to a variable carries a property of its own, `Point<i>` (a vector, made when the point is first bound): FreeCAD
 applies an expression to a property but not to one element of a vector list, so `Point6.z` can be bound to `Variables.lift` and
 the point takes the value of that property, whatever `Vertices` holds. `read` gives the points as they are built, `apply` refuses a
-move of a component that an expression holds, and `set_picked` remembers the point that the value panels show for a block."""
+move of a component that an expression holds, and `set_picked` remembers the point that the value panels show for a block.
+
+An edge can be a cubic Bezier curve instead of a line: the property `EdgeHandles` (a string list, made when the first edge is bent)
+holds the handles of the curved edges (`cad/blockcurve.py`). `read_handles` gives them, `set_handles` changes them and takes the
+change back when the block cannot be built, and a face with a curved edge is built as a patch spanned by its edge curves."""
 
 import re
 
-from freecad.VReeCAD.cad import blockgeom
+from freecad.VReeCAD.cad import blockcurve, blockgeom
 from freecad.VReeCAD.cad.picking import Display, Pick
 from freecad.VReeCAD.core import grab
+from freecad.VReeCAD.core import mathutil as mu
 
 TYPE = "VReeCAD::Block"
 _POINT = re.compile(r"Point(\d+)")
 _PICKED = {}                # (document name, object name) -> index of the point that the value panels show
 
 
-def make_shape(vertices, faces):
-    """The solid of a block; ValueError with a short text when the points and faces do not make one."""
+def _patch(poles):
+    """The face of a 4 by 4 grid of control points (`blockcurve.face_poles`)."""
     import FreeCAD as App
     import Part
-    error = blockgeom.validate(vertices, faces)
+    surface = Part.BezierSurface()
+    surface.increase(3, 3)
+    for i in range(4):
+        for j in range(4):
+            surface.setPole(i + 1, j + 1, App.Vector(*poles[i][j]))
+    return surface.toShape()
+
+
+def make_shape(vertices, faces, handles=None):
+    """The solid of a block; ValueError with a short text when the points and faces do not make one. `handles` are those of the curved
+    edges (`blockcurve`): the faces that have such an edge are patches between the curves, the others as the points say."""
+    import FreeCAD as App
+    import Part
+    handles = handles or {}
+    error = blockgeom.validate(vertices, faces) or blockcurve.unsupported(handles, faces)
     if error is not None:
         raise ValueError(error)
     parts = []
     for face in faces:
+        if handles and blockcurve.face_has_curve(handles, face):
+            parts.append(_patch(blockcurve.face_poles(vertices, handles, face)))
+            continue
         points = [App.Vector(*vertices[i]) for i in face]
         if len(face) == 3 or blockgeom.is_flat([vertices[i] for i in face]):
             try:
@@ -79,7 +101,7 @@ class Block:
 
     def execute(self, obj):
         vertices, faces = read(obj)
-        obj.Shape = make_shape(vertices, faces)
+        obj.Shape = make_shape(vertices, faces, read_handles(obj))
 
     def onDocumentRestored(self, obj):
         obj.Proxy = self
@@ -127,6 +149,83 @@ def write(obj, vertices, faces=None):
             setattr(obj, name, App.Vector(*vertices[index]))
     if faces is not None:
         obj.Faces = blockgeom.faces_to_text(faces)
+
+
+HANDLES = "EdgeHandles"
+
+
+def read_handles(obj):
+    """The handles of the curved edges of a block as `blockcurve` keeps them: (a, b) -> (offset at a, offset at b); a handle of an edge
+    that is gone is left out. A box has none."""
+    if not is_block(obj) or HANDLES not in obj.PropertiesList:
+        return {}
+    return blockcurve.usable(blockcurve.from_text(obj.EdgeHandles), blockgeom.faces_from_text(obj.Faces), len(obj.Vertices))
+
+
+def handle_text(obj):
+    """What the handles of a block are written as: changes whenever they do."""
+    return tuple(getattr(obj, HANDLES, ())) if is_block(obj) else ()
+
+
+def write_handles(obj, handles):
+    """Set the handles of the curved edges of a block (the caller owns the transaction); the property is made with the first."""
+    if HANDLES not in obj.PropertiesList:
+        if not handles:
+            return
+        obj.addProperty("App::PropertyStringList", HANDLES, "Block", "The handles of the curved edges: point, point, then the offset at each")
+    obj.EdgeHandles = blockcurve.to_text(handles)
+
+
+def set_handles(doc, obj, handles):
+    """Change the handles of the curved edges of a block and recompute. Returns None, or a short text when the block cannot be built
+    so, in which case the handles are as they were."""
+    vertices, faces = read(obj)
+    error = blockcurve.unsupported(handles, faces)
+    if error is not None:
+        return error
+    before = read_handles(obj)
+    write_handles(obj, handles)
+    doc.recompute()
+    if not obj.isValid():
+        write_handles(obj, before)
+        doc.recompute()
+        return "FreeCAD cannot build that block"
+    return None
+
+
+def split_handles(obj, a, b, index, t):
+    """Before the edge from `a` to `b` is split by the new point `index` (at parameter `t` of the curve from the lower number to the
+    higher), give the halves the handles of the curve they were cut from (the caller owns the transaction and applies the new points
+    and faces afterwards)."""
+    handles = read_handles(obj)
+    if blockcurve.key(a, b) not in handles:
+        return
+    vertices = list(read(obj)[0])
+    vertices.append(edge_point(obj, a, b, None, t)[1])
+    write_handles(obj, blockcurve.split_edge(vertices, handles, min(a, b), max(a, b), index, t))
+
+
+def renumber_handles(obj, removed):
+    """The handles of a block after point `removed` is taken out of it (before the new points and faces are applied)."""
+    handles = read_handles(obj)
+    if handles:
+        write_handles(obj, blockcurve.renumber_after_removal(handles, removed))
+
+
+def edge_point(obj, a, b, local, t=None):
+    """(t, point) on the edge between points `a` and `b` of a block: the point of the edge nearest to `local` (a point of the block,
+    kept off the ends) with its parameter along the curve from the lower to the higher number, or the point at parameter `t`."""
+    vertices, _ = read(obj)
+    a, b = min(a, b), max(a, b)
+    handles = read_handles(obj)
+    curve = blockcurve.poles(vertices, handles, a, b)
+    if t is None:
+        if blockcurve.key(a, b) in handles:
+            _, t, _ = blockcurve.nearest_on_curve(curve, local)
+        else:
+            t = blockgeom.nearest_on_segment(local, vertices[a], vertices[b])[0]
+        t = min(max(t, 0.1), 0.9)
+    return t, blockcurve.point_at(curve, t)
 
 
 def ensure_point(obj, index):
@@ -268,6 +367,8 @@ def apply(doc, obj, vertices, faces=None):
     in which case the block is as it was."""
     new_faces = faces if faces is not None else read(obj)[1]
     error = blockgeom.validate(vertices, new_faces)
+    if error is None and HANDLES in obj.PropertiesList:         # the handles as they are kept (a split or a removal has just set those of the new faces)
+        error = blockcurve.unsupported(blockcurve.usable(blockcurve.from_text(obj.EdgeHandles), new_faces, len(vertices)), new_faces)
     if error is not None:
         return error
     before = read(obj)
@@ -321,49 +422,91 @@ def blocks(doc):
     return [o for o in (doc.getObject(name) for name in _VISIBLE.get(doc)) if o is not None]
 
 
+def is_curved(obj, a, b):
+    """Whether the edge between points `a` and `b` of a block is a curve."""
+    return blockcurve.key(a, b) in read_handles(obj)
+
+
+def tips(obj):
+    """(a, b, end, point of the block) of the handle at each end of every curved edge of a block: `end` 0 is the end at `a`."""
+    vertices, _ = read(obj)
+    found = []
+    for (a, b), (ha, hb) in sorted(read_handles(obj).items()):
+        found.append((a, b, 0, mu.add(vertices[a], ha)))
+        found.append((a, b, 1, mu.add(vertices[b], hb)))
+    return found
+
+
 def pick(doc, point, mm_per_metre, kind):
     """The point (`kind` "vertex") or the edge ("edge") of a visible block that `point` (document millimetres) touches, or None: a
-    `Pick` whose `sub` is "Point<i>" or "Segment<a>-<b>". The reach is that of `core.grab` and measured on the stage."""
+    `Pick` whose `sub` is "Point<i>" or "Segment<a>-<b>". The kind "curve" finds the tip of a handle first ("Handle<a>-<b>-<end>"),
+    then an edge. The reach is that of `core.grab` and measured on the stage."""
     best = None
     for obj in blocks(doc):
         vertices, faces = read(obj)
+        handles = read_handles(obj)
         local = _local(obj, point)
-        if kind == "vertex":
+        found = None
+        if kind == "curve":
+            for a, b, end, tip in tips(obj):
+                d = mu.length(mu.sub(tip, local))
+                if grab.within_reach("vertex", d, mm_per_metre) and (found is None or d < found[0]):
+                    found = (d, f"Handle{a}-{b}-{end}")
+        if found is None and kind in ("edge", "curve"):
+            nearest = blockcurve.nearest_edge(vertices, faces, handles, local)
+            if nearest is not None:
+                found = (nearest[0], f"Segment{nearest[1][0]}-{nearest[1][1]}")
+                if not grab.within_reach("edge", found[0], mm_per_metre):
+                    found = None
+        elif found is None:
             d, index = blockgeom.nearest_vertex(vertices, local)
             found = None if index < 0 else (d, f"Point{index}")
-        else:
-            nearest = blockgeom.nearest_edge(vertices, faces, local)
-            found = None if nearest is None else (nearest[0], f"Segment{nearest[1][0]}-{nearest[1][1]}")
-        if found is not None and grab.within_reach(kind, found[0], mm_per_metre) and (best is None or found[0] < best.distance):
-            best = Pick(obj.Name, kind, found[1], found[0])
+            if found is not None and not grab.within_reach("vertex", found[0], mm_per_metre):
+                found = None
+        if found is not None and (best is None or found[0] < best.distance):
+            best = Pick(obj.Name, "vertex" if found[1].startswith(("Point", "Handle")) else "edge", found[1], found[0])
     return best
 
 
 def parse_sub(sub):
-    """("point", index) or ("segment", (a, b)) for a `sub` made by `pick`."""
+    """("point", index), ("segment", (a, b)) or ("handle", (a, b, end)) for a `sub` made by `pick`."""
     if sub.startswith("Point"):
         return "point", int(sub[5:])
+    if sub.startswith("Handle"):
+        a, b, end = sub[6:].replace("-", " ").split()
+        return "handle", (int(a), int(b), int(end))
     a, b = sub[7:].split("-")
     return "segment", (int(a), int(b))
 
 
 def display(obj, sub):
-    """The highlight of a picked point or edge of a block."""
+    """The highlight of a picked point, edge or handle of a block: a curved edge is drawn along its curve."""
     vertices, _ = read(obj)
     kind, what = parse_sub(sub)
     if kind == "point":
         return Display(markers=[_world(obj, vertices[what])])
-    return Display(polylines=[[_world(obj, vertices[what[0]]), _world(obj, vertices[what[1]])]])
+    if kind == "handle":
+        a, b, end = what
+        tip = next(t for x, y, e, t in tips(obj) if (x, y, e) == what)
+        return Display(markers=[_world(obj, tip)], polylines=[[_world(obj, vertices[b if end else a]), _world(obj, tip)]])
+    curve = blockcurve.poles(vertices, read_handles(obj), min(what), max(what))
+    return Display(polylines=[[_world(obj, p) for p in blockcurve.sample(curve, 16)]])
 
 
-def handles(doc):
-    """The points of every visible block as markers, so the user sees what can be moved."""
-    markers = []
+def handles(doc, curves=False):
+    """The points of every visible block as markers, so the user sees what can be moved; with `curves` also the handles of the curved
+    edges: a marker at the tip of each and a line from it to its point."""
+    markers, lines = [], []
     for obj in blocks(doc):
         markers += [_world(obj, v) for v in read(obj)[0]]
-    return Display(markers=markers)
+        if curves:
+            vertices, _ = read(obj)
+            for a, b, end, tip in tips(obj):
+                markers.append(_world(obj, tip))
+                lines.append([_world(obj, vertices[b if end else a]), _world(obj, tip)])
+    return Display(markers=markers, polylines=lines)
 
 
 def signature(doc):
     """Changes whenever `handles` would."""
-    return tuple((o.Name, tuple(read(o)[0]), tuple(o.Placement.Base), tuple(o.Placement.Rotation.Q)) for o in blocks(doc))
+    return tuple((o.Name, tuple(read(o)[0]), handle_text(o), tuple(o.Placement.Base), tuple(o.Placement.Rotation.Q)) for o in blocks(doc))

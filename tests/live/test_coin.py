@@ -1883,6 +1883,162 @@ class MoveLiveTest(unittest.TestCase):
         self.doc.recompute()
         self.assertAlmostEqual(again.Shape.Volume, 1.5e6)
 
+    def test_a_block_with_bent_edges_is_a_valid_solid_of_patches_that_the_booleans_take(self):
+        from freecad.VReeCAD.cad import block
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        handles = {(4, 5): ((20.0, -40.0, 40.0), (-20.0, -40.0, 40.0)), (1, 5): ((30.0, 0.0, 20.0), (30.0, 0.0, -20.0))}
+        self.assertIsNone(block.set_handles(self.doc, made, handles))
+        self.assertTrue(made.Shape.isValid())
+        self.assertEqual(len(made.Shape.Faces), 6)                                           # four planar faces and two patches
+        self.assertGreater(made.Shape.Volume, 1.0e6)
+        self.assertLess(made.Shape.BoundBox.YMin, -20.0)                                     # the bent edge leaves the box in space
+        self.assertIn("BezierCurve", {e.Curve.__class__.__name__ for e in made.Shape.Edges})
+        self.assertEqual(block.read_handles(made), handles)
+        cutter = self.doc.addObject("Part::Box", "CutterForBlock")
+        cutter.Length = cutter.Width = cutter.Height = 60.0
+        cutter.Placement.Base = self.App.Vector(20.0, 20.0, 20.0)
+        self.doc.recompute()
+        cut = made.Shape.cut(cutter.Shape)
+        self.assertTrue(cut.isValid())
+        self.assertAlmostEqual(cut.Volume, made.Shape.Volume - 216000.0, places=0)
+        self.doc.removeObject(cutter.Name)
+        self.assertIsNone(block.set_handles(self.doc, made, {}))                           # straight again: the box
+        self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
+        self.assertEqual(block.read_handles(made), {})
+
+    def test_a_triangle_with_a_bent_edge_and_a_face_that_the_patch_cannot_span(self):
+        from freecad.VReeCAD.cad import block, blockgeom
+        vertices = [(0, 0, 0), (100, 0, 0), (50, 80, 0), (0, 0, 100), (100, 0, 100), (50, 80, 100)]
+        faces = [(0, 2, 1), (3, 4, 5), (0, 1, 4, 3), (1, 2, 5, 4), (2, 0, 3, 5)]
+        made = block.make(self.doc, vertices, faces, "Prism")
+        self.doc.recompute()
+        self.assertIsNone(block.set_handles(self.doc, made, {(0, 1): ((0.0, -30.0, 30.0), (0.0, -30.0, -30.0)), (1, 4): ((25.0, 0.0, 20.0), (25.0, 0.0, -20.0))}))
+        self.assertTrue(made.Shape.isValid())
+        self.assertEqual(len(made.Shape.Faces), 5)
+        self.assertGreater(made.Shape.Volume, 0.0)
+        box = block.create(self.doc, (0.0, 300.0, 0.0), (100.0, 100.0, 100.0))
+        vertices, faces = block.read(box)
+        vertices, faces, index = blockgeom.split_edge(vertices, faces, 0, 1, (50.0, 300.0, 0.0))
+        self.assertIsNone(block.apply(self.doc, box, vertices, faces))
+        self.assertIsNone(block.set_handles(self.doc, box, {(6, 7): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}))      # the edge 6-7 is in no five-point face
+        error = block.set_handles(self.doc, box, {(0, 8): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))})
+        self.assertIn("three or four points", error)
+        self.assertEqual(sorted(block.read_handles(box)), [(6, 7)])                         # the handles are as they were
+        self.assertTrue(box.isValid())
+
+    def test_a_curved_block_comes_back_from_a_saved_document_and_a_moved_point_takes_its_curve_along(self):
+        import os
+        import tempfile
+        from freecad.VReeCAD.cad import block, blockgeom
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        handles = {(4, 5): ((20.0, -40.0, 40.0), (-20.0, -40.0, 40.0))}
+        self.assertIsNone(block.set_handles(self.doc, made, handles))
+        volume, name = made.Shape.Volume, made.Name
+        path = os.path.join(tempfile.mkdtemp(), "curved.FCStd")
+        self.doc.saveAs(path)
+        self.App.closeDocument(self.doc.Name)
+        self.doc = self.App.openDocument(path)
+        again = self.doc.getObject(name)
+        self.assertEqual(block.read_handles(again), handles)
+        again.touch()
+        self.doc.recompute()
+        self.assertAlmostEqual(again.Shape.Volume, volume, places=3)
+        vertices, _ = block.read(again)
+        self.assertIsNone(block.apply(self.doc, again, blockgeom.move_vertex(vertices, 5, (100.0, 0.0, 150.0))))
+        self.assertGreater(again.Shape.BoundBox.ZMax, 149.0)                                 # the curve and its handles went up with the point
+        self.assertTrue(again.Shape.isValid())
+
+    def test_the_curved_edges_of_a_block_are_picked_and_drawn(self):
+        from freecad.VReeCAD.cad import block, blockcurve
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        self.doc.removeObject(self.box.Name)
+        handles = {(0, 1): ((0.0, 0.0, 40.0), (0.0, 0.0, 40.0))}
+        self.assertIsNone(block.set_handles(self.doc, made, handles))
+        top = blockcurve.point_at(blockcurve.poles(block.read(made)[0], handles, 0, 1), 0.5)       # (50, 0, 30)
+        found = block.pick(self.doc, top, 1000.0, "curve")
+        self.assertEqual(found.sub, "Segment0-1")                                           # the straight line is 30 mm away
+        found = block.pick(self.doc, (0.0, 0.0, 40.0), 1000.0, "curve")
+        self.assertEqual(found.sub, "Handle0-1-0")
+        self.assertEqual(block.parse_sub(found.sub), ("handle", (0, 1, 0)))
+        self.assertEqual(len(block.display(made, "Segment0-1").polylines[0]), 17)
+        self.assertEqual(len(block.handles(self.doc, curves=True).markers), 10)
+        self.assertEqual(len(block.handles(self.doc, curves=True).polylines), 2)
+        before = block.signature(self.doc)
+        self.assertIsNone(block.set_handles(self.doc, made, {(0, 1): ((0.0, 0.0, 60.0), (0.0, 0.0, 40.0))}))
+        self.assertNotEqual(block.signature(self.doc), before)
+        self.assertAlmostEqual(block.edge_point(made, 1, 0, top)[0], 0.5, delta=0.02)          # t runs from the lower number, whatever the order asked
+
+    def test_a_curved_edge_is_split_where_the_faces_stay_four_sided_and_a_removal_takes_the_curve_with_the_point(self):
+        from freecad.VReeCAD.cad import block, blockgeom
+        vertices = [(0, 0, 0), (100, 0, 0), (50, 80, 0), (50, 30, 90)]
+        faces = [(0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3)]
+        made = block.make(self.doc, vertices, faces, "Tetra")
+        self.doc.recompute()
+        volume = made.Shape.Volume
+        self.assertIsNone(block.set_handles(self.doc, made, {(0, 1): ((0.0, -30.0, 10.0), (0.0, -30.0, 10.0))}))
+        self.doc.openTransaction("split")
+        vertices, faces = block.read(made)
+        t, point = block.edge_point(made, 0, 1, (50.0, -20.0, 10.0))
+        vertices, faces, index = blockgeom.split_edge(vertices, faces, 0, 1, point)
+        block.split_handles(made, 0, 1, index, t)
+        self.assertIsNone(block.apply(self.doc, made, vertices, faces))
+        self.doc.commitTransaction()
+        self.assertEqual(sorted(block.read_handles(made)), [(0, 4), (1, 4)])
+        self.assertTrue(made.Shape.isValid())
+        self.assertGreater(made.Shape.Volume, volume)
+        self.doc.openTransaction("remove")
+        block.renumber_handles(made, 4)
+        vertices, faces = blockgeom.remove_vertex(*block.read(made), 4)
+        self.assertIsNone(block.apply(self.doc, made, vertices, faces))
+        self.doc.commitTransaction()
+        self.assertEqual(block.read_handles(made), {})                                      # the curve went with its point
+        self.assertAlmostEqual(made.Shape.Volume, volume)
+
+    def test_splitting_a_curved_edge_of_a_box_is_refused_because_the_faces_would_have_five_points(self):
+        from freecad.VReeCAD.cad import block, blockgeom
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        handles = {(0, 1): ((0.0, 0.0, 40.0), (0.0, 0.0, 40.0))}
+        self.assertIsNone(block.set_handles(self.doc, made, handles))
+        self.doc.openTransaction("split")
+        vertices, faces = block.read(made)
+        t, point = block.edge_point(made, 0, 1, (50.0, 0.0, 30.0))
+        vertices, faces, index = blockgeom.split_edge(vertices, faces, 0, 1, point)
+        block.split_handles(made, 0, 1, index, t)
+        self.assertIn("three or four points", block.apply(self.doc, made, vertices, faces))
+        self.doc.abortTransaction()
+        self.assertEqual(block.read_handles(made), handles)                                 # the abort took the halves back
+        self.assertEqual(len(made.Vertices), 8)
+        self.assertTrue(made.isValid())
+
+    def test_the_points_tool_bends_an_edge_of_a_block_and_drags_a_handle_in_one_undo_step_each(self):
+        from freecad.VReeCAD.cad import block
+        made = block.create(self.doc, (400.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        s = self.session()
+        s.select_tool("points")
+        s.tool_manager.active.values["mode"] = "Bend"
+        self.hand(1, (450.0, 1.0, 1.0))
+        self.hand(1, (450.0, 1.0, 1.0), trigger=1.0)
+        self.hand(1, (450.0, -30.0, 40.0), trigger=1.0)
+        self.assertTrue(s.ui.gesture_text.startswith("Edge 0-1: handles"), s.ui.gesture_text)
+        self.hand(1, (450.0, -30.0, 40.0), trigger=0.0)
+        handles = block.read_handles(made)
+        self.assertEqual(list(handles), [(0, 1)])
+        self.assertLess(made.Shape.Volume, 1.0e6)                                           # the edge went up into the block
+        self.assertTrue(made.Shape.isValid())
+        tip = block.to_world(made, block.tips(made)[0][3])
+        self.hand(1, tip)
+        self.hand(1, tip, trigger=1.0)
+        self.hand(1, (tip[0], tip[1] + 30.0, tip[2] + 30.0), trigger=1.0)
+        self.hand(1, (tip[0], tip[1] + 30.0, tip[2] + 30.0), trigger=0.0)
+        moved = block.read_handles(made)[(0, 1)]
+        self.assertNotEqual(moved[0], handles[(0, 1)][0])
+        self.assertEqual(moved[1], handles[(0, 1)][1])
+        self.doc.undo()
+        self.assertEqual(block.read_handles(made), handles)
+        self.doc.undo()
+        self.assertEqual(block.read_handles(made), {})
+        self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
+
     def test_a_point_pulled_through_the_block_makes_no_solid_and_is_refused(self):
         from freecad.VReeCAD.cad import block, blockgeom
         made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))

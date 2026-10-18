@@ -3,6 +3,7 @@ import unittest
 import support  # noqa: F401
 from freecad.VReeCAD.backends.sim import SimInput
 from freecad.VReeCAD.cad import block as real_block
+from freecad.VReeCAD.cad import blockcurve as bc
 from freecad.VReeCAD.cad import blockgeom as bg
 from freecad.VReeCAD.cad import picking
 from freecad.VReeCAD.core import grab
@@ -23,6 +24,7 @@ class FakeBlock:
         self.Name, self.Label, self.Shape = name, name.upper(), FakeShape()
         self.vertices, self.faces = bg.box((0, 0, 0), (100, 100, 100))
         self.fixed = set()
+        self.handles = {}                                # the curved edges: (a, b) -> (offset at a, offset at b)
 
 
 class FakeDocument:
@@ -59,11 +61,20 @@ class FakeBlocks:
     def pick(self, doc, point, mm, kind):
         best = None
         for obj in doc.objects.values():
-            if kind == "vertex":
+            if kind == "curve":
+                tips = [(bc.mu.length(bc.mu.sub(tip, point)), f"Handle{a}-{b}-{end}") for a, b, end, tip in self.tips(obj)]
+                d, sub = min(tips) if tips else (None, None)
+                if d is not None and grab.within_reach("vertex", d, mm):
+                    best = picking.Pick(obj.Name, "vertex", sub, d)
+                    continue
+                d, pair, _, _ = bc.nearest_edge(obj.vertices, obj.faces, obj.handles, point)
+                found = (d, f"Segment{pair[0]}-{pair[1]}")
+                kind = "edge"
+            elif kind == "vertex":
                 d, i = bg.nearest_vertex(obj.vertices, point)
                 found = (d, f"Point{i}")
             else:
-                d, pair, _, _ = bg.nearest_edge(obj.vertices, obj.faces, point)
+                d, pair, _, _ = bc.nearest_edge(obj.vertices, obj.faces, obj.handles, point)
                 found = (d, f"Segment{pair[0]}-{pair[1]}")
             if grab.within_reach(kind, found[0], mm) and (best is None or found[0] < best.distance):
                 best = picking.Pick(obj.Name, kind, found[1], found[0])
@@ -71,6 +82,33 @@ class FakeBlocks:
 
     def read(self, obj):
         return list(obj.vertices), list(obj.faces)
+
+    def tips(self, obj):
+        return [(a, b, end, bc.mu.add(obj.vertices[b if end else a], h[end])) for (a, b), h in sorted(obj.handles.items()) for end in (0, 1)]
+
+    def read_handles(self, obj):
+        return dict(obj.handles)
+
+    def set_handles(self, doc, obj, handles):
+        doc.recompute()
+        obj.handles = dict(handles)
+
+    def handle_text(self, obj):
+        return tuple(bc.to_text(obj.handles))
+
+    def is_curved(self, obj, a, b):
+        return bc.key(a, b) in obj.handles
+
+    def edge_point(self, obj, a, b, local, t=None):
+        curve = bc.poles(obj.vertices, obj.handles, min(a, b), max(a, b))
+        if t is None:
+            t = bc.nearest_on_curve(curve, local)[1] if self.is_curved(obj, a, b) else bg.nearest_on_segment(local, *curve[::3])[0]
+        return t, bc.point_at(curve, t)
+
+    def split_handles(self, obj, a, b, index, t):
+        if self.is_curved(obj, a, b):
+            vertices = list(obj.vertices) + [self.edge_point(obj, a, b, None, t)[1]]
+            obj.handles = bc.split_edge(vertices, obj.handles, min(a, b), max(a, b), index, t)
 
     def apply(self, doc, obj, vertices, faces=None):
         new_faces = faces if faces is not None else obj.faces
@@ -100,8 +138,9 @@ class FakeBlocks:
     def display(self, obj, sub):
         return picking.Display(markers=[obj.vertices[0]])
 
-    def handles(self, doc):
-        return picking.Display(markers=[v for o in doc.objects.values() for v in o.vertices])
+    def handles(self, doc, curves=False):
+        tips = [t for o in doc.objects.values() for *_, t in self.tips(o)] if curves else []
+        return picking.Display(markers=[v for o in doc.objects.values() for v in o.vertices] + tips)
 
     def signature(self, doc):
         return tuple((o.Name, tuple(o.vertices)) for o in doc.objects.values())
@@ -363,6 +402,78 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(len(self.block.vertices), 7)
         self.assertEqual(self.block.fixed, {0, 4})
 
+    # bending edges
+    def bend(self, at, to, release=True):
+        self.tool.values["mode"] = "Bend"
+        self.cursor = list(at)
+        self.drag(to, release=release)
+
+    def test_the_bend_mode_drags_an_edge_through_space_and_the_curve_follows_the_hand(self):
+        self.bend((50.0, 2.0, 1.0), (50.0, 40.0, 30.0))
+        self.assertEqual(list(self.block.handles), [(0, 1)])
+        curve = bc.poles(self.block.vertices, self.block.handles, 0, 1)
+        self.assertEqual((curve[0], curve[3]), ((0, 0, 0), (100, 0, 0)))
+        for got, want in zip(bc.point_at(curve, 0.5), (50.0, 38.0, 29.0)):               # the curve moves by what the hand moved after the press
+            self.assertAlmostEqual(got, want, places=6)
+        self.assertEqual(self.doc.log[0], ("open", "Bend edge of BLOCK"))
+        self.assertEqual(self.doc.log.count(("commit",)), 1)
+        self.assertEqual(self.toasts[-1], "Bent edge 0-1 of BLOCK")
+        self.assertEqual(self.selection, [("block", "")])
+
+    def test_a_bend_that_the_hand_has_not_moved_far_changes_nothing(self):
+        self.bend((50.0, 2.0, 1.0), (50.0, 6.0, 1.0))
+        self.assertEqual(self.block.handles, {})
+        self.assertEqual(self.doc.log[-1], ("abort",))
+
+    def test_the_handles_of_a_curved_edge_are_marked_in_the_bend_mode_only(self):
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0))}
+        self.tool.values["mode"] = "Bend"
+        self.tool.update(self.sim.frame(0.1))
+        self.assertEqual(self.highlights.selected.shown, 1)
+        tool = self.tool
+        self.assertEqual(len(tool._blocks().handles(self.doc, curves=True).markers), 10)
+        self.assertEqual(len(tool._blocks().handles(self.doc).markers), 8)
+
+    def test_a_handle_is_dragged_by_its_tip_and_the_other_handle_stays(self):
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0))}
+        self.bend((0.0, 40.0, 0.0), (0.0, 40.0, 60.0))
+        self.assertEqual(self.block.handles[(0, 1)], ((0.0, 40.0, 60.0), (0.0, 40.0, 0.0)))
+        self.assertEqual(self.toasts[-1], "Bent edge 0-1 of BLOCK")
+
+    def test_b_while_an_edge_is_bent_straightens_it_and_the_hand_goes_on_from_there(self):
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0))}
+        self.tool.values["mode"] = "Bend"
+        self.cursor = [50.0, 30.0, 0.0]
+        self.sim.set_hand(1, trigger=0.0, button1=False)
+        self.frames()
+        self.sim.set_hand(1, trigger=1.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.tool.toggle_fixed(), "Straightened edge 0-1")
+        self.assertEqual(self.block.handles, {})
+        self.assertIsNone(self.tool.toggle_fixed())                                  # it is straight already
+        self.cursor = [50.0, 50.0, 0.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.cursor = [50.0, 80.0, 40.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(list(self.block.handles), [(0, 1)])                          # bent again, from the straight line
+        self.sim.set_hand(1, trigger=0.0)
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.doc.log.count(("commit",)), 1)
+
+    def test_splitting_a_curved_edge_puts_the_new_point_on_the_curve_and_the_halves_keep_it(self):
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0))}
+        whole = bc.poles(self.block.vertices, self.block.handles, 0, 1)
+        self.tool.values["mode"] = "Split"
+        self.cursor = list(bc.point_at(whole, 0.5))
+        self.drag(tuple(self.cursor))
+        self.assertEqual(len(self.block.vertices), 9)
+        self.assertEqual(sorted(self.block.handles), [(0, 8), (1, 8)])
+        for got, want in zip(self.block.vertices[8], bc.point_at(whole, 0.5)):
+            self.assertAlmostEqual(got, want, places=6)
+        first = bc.poles(self.block.vertices, self.block.handles, 0, 8)
+        for got, want in zip(bc.point_at(first, 0.5), bc.point_at(whole, 0.25)):
+            self.assertAlmostEqual(got, want, places=6)
+
     def test_nothing_is_touched_far_from_the_points(self):
         self.cursor = [50.0, 50.0, 50.0]
         self.drag((60.0, 60.0, 60.0))
@@ -373,7 +484,7 @@ class PointsToolTest(unittest.TestCase):
         self.frames()
         self.assertGreater(self.highlights.selected.shown, 0)
         labels = [slot.label for slot in self.tool.disc_slots()]
-        self.assertEqual(labels, ["Move point", "Split edge", "Remove point", "", "Free faces", "Flat faces", "", ""])
+        self.assertEqual(labels, ["Move point", "Split edge", "Remove point", "Bend edge", "Free faces", "Flat faces", "", ""])
         self.tool.values["faces"] = "Flat"
         self.assertEqual(self.tool.stick_click(), "Mode and faces reset")
         self.assertEqual(self.tool.values["faces"], "Free")

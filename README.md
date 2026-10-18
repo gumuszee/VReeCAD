@@ -14,7 +14,7 @@
 - **Create** parametric primitives (box, cylinder, cone, sphere, torus, wedge, prism) by dragging them out on a snap grid with a ghost preview.
 - **Select** objects, faces, edges and vertices (FreeCAD's own selection, shared with the desktop), **move, turn and scale** objects, free or locked to the grid and angle step.
 - **Push/Pull** flat faces along their normal; the sizes of boxes, cylinders, cones and sketch extrusions change in place, other faces get fuse or cut features.
-- **Points**: blocks (solids made of points) whose points are dragged, split and removed, optionally keeping faces flat.
+- **Points**: blocks (solids made of points) whose points are dragged, split and removed, optionally keeping faces flat, and whose edges bend into 3D Bezier curves with free handles.
 - **Sketch** lines, rectangles, circles and arcs on a plane or on a face, with the constraints the drawing implies; edit points through the solver, dimension lines and radii, extrude to solids.
 - **Modify** with booleans (fuse, cut, common), copy, mirror, linear patterns, colours, fillet and chamfer, attach to a face, and assembly joints (fixed, hinge, slider, ball).
 - **Values**: selecting an object brings up sliders, a number pad and keys for its sizes and position. Values bind to named **variables** (a `Variables` spreadsheet) and to expressions such as `width * 2 + 10 mm`.
@@ -148,7 +148,7 @@ While a tool is active, the stick of the tool hand belongs to its options. Tools
 | **Select** | select what the tip touches (Replace, Add or Remove) | Object, Face, Edge, Vertex, Remove, Add (two sections have no function) |
 | **Move** | tap selects; hold on an object grabs it and it follows the hand (free, any angle). A at the same time, or the Grid placement, locks the move to grid steps and the turn to angle steps (an orange padlock shows it). The trigger of the other hand during a grab scales a primitive | Move and rotate, Move only |
 | **Push/Pull** | press a flat face, move along its normal: out of the solid pushes, into it pulls, in grid steps; release applies | none; the grid is the Settings slider |
-| **Points** | on a point: drag it; on an edge (Split): add a point and drag it; on a point (Remove): take it out | Move point, Split edge, Remove point, (gap), Free faces, Flat faces |
+| **Points** | on a point: drag it; on an edge (Split): add a point and drag it; on a point (Remove): take it out; on an edge (Bend): bend it, or drag a handle of a curved edge | Move point, Split edge, Remove point, Bend edge, Free faces, Flat faces |
 | **Sketch** | drag a line, rectangle or circle on a plane or a face; an arc takes two ends then a third point (press again); Edit drags a point through the solver, dimensions a line, drags the radius of a circle or an arc | Rectangle, Circle, Line, Arc, Edit, XY plane, XZ plane, YZ plane |
 
 All tools line a point up with the model (guides or inference, chosen on the Settings panel). The **A** button changes the placement during a gesture: **Snap** (grid and guides), **Grid** (grid only) or **Free** (exactly where the hand is), and a toast names it. A **grip** cancels the gesture, and every gesture is one undo step. The **B** button during a gesture **fixes** what is held (a body, a point of a block, a point of a sketch) or releases it.
