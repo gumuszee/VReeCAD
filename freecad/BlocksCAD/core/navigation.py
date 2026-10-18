@@ -26,7 +26,8 @@ at 1 : 1: it animates there about the hands when the button goes down, and the h
 button is released. Gestures are computed from the pose at grab time and the hand positions at that moment, so no error accumulates;
 a change of the gripping hands or of the rotation mode starts a new gesture. When one grip of a two-grip gesture is released first, the
 other grip does nothing until both grips are released (so the model does not drift while the hands let go one after the other). The stick click of a gripping hand resets the view
-with a short animation to the home pose: the origin in front of the head.
+with a short animation to the home pose: the origin in front of the head. A navigator created with `start_home` puts the world at
+the home pose without animation on the first frame in which the head is tracked, so the model is in front of the user from the start.
 """
 
 import math
@@ -36,7 +37,7 @@ from typing import List, Tuple
 from freecad.BlocksCAD.core import mathutil as mu
 
 UP = (0.0, 1.0, 0.0)
-HOME_DISTANCE = 1.0       # metres from the head to the origin, horizontally
+HOME_DISTANCE = 0.3       # metres from the head to the origin, horizontally
 HOME_HEIGHT = 0.75        # origin height as a fraction of the head height above the floor (chest height when standing)
 
 
@@ -142,8 +143,9 @@ class Navigator:
     RESET_TIME = 0.35  # seconds
     SNAP_TIME = 0.2
 
-    def __init__(self, world=IDENTITY, min_scale=0.01, max_scale=100.0, modifier_hand=1):
+    def __init__(self, world=IDENTITY, min_scale=0.01, max_scale=100.0, modifier_hand=1, start_home=False):
         self.world = world
+        self._start_home = start_home   # place the world at the home pose on the first frame with a tracked head
         self.min_scale, self.max_scale = min_scale, max_scale
         self.modifier_hand = modifier_hand   # the hand whose button1 levels the rotation and whose button2 snaps the scale
         self.gripping = (False, False)
@@ -214,6 +216,10 @@ class Navigator:
         self._points = points
         gripping = tuple(bool(hands[i].down("grip") and hands[i].aim.tracked and not blocked[i]) for i in range(2))
         modifier = hands[self.modifier_hand]
+
+        if self._start_home and frame.head.tracked:
+            self._start_home = False
+            self.world = home_pose(frame.head)
 
         if self._reset_requested and not self.resetting:
             if self._begin_reset(frame.head):

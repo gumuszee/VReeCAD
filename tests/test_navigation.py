@@ -136,7 +136,7 @@ class NavigatorTest(unittest.TestCase):
     def test_home_pose_follows_the_head_position_and_heading(self):
         self.sim.set_head(position=(1.0, 1.7, 2.0), look_at_point=(6.0, 1.7, 2.0))   # looking along +X
         home = nav.home_pose(self.sim.head)
-        self.assertTrue(close(home.position, (2.0, 1.7 * nav.HOME_HEIGHT, 2.0), 1e-6))
+        self.assertTrue(close(home.position, (1.0 + nav.HOME_DISTANCE, 1.7 * nav.HOME_HEIGHT, 2.0), 1e-6))
         # the document front view (document +Y is stage -Z) points along the line of sight
         self.assertTrue(close(mu.rotate(home.rotation, (0, 0, -1)), (1, 0, 0), 1e-6))
         # looking down does not turn the home pose: the top of the head points forward
@@ -144,6 +144,15 @@ class NavigatorTest(unittest.TestCase):
         home = nav.home_pose(self.sim.head)
         self.assertTrue(close(home.position, (0.0, 1.7 * nav.HOME_HEIGHT, -nav.HOME_DISTANCE), 1e-3))
         self.assertEqual(nav.home_pose(Pose()), nav.IDENTITY)   # an untracked head
+
+    def test_start_home_places_the_world_at_the_home_pose_on_the_first_tracked_frame(self):
+        navigator = nav.Navigator(start_home=True)
+        self.assertEqual(navigator.update(self.sim.frame(0.0)), [])
+        self.assertEqual(navigator.world, nav.home_pose(self.sim.head))
+        navigator.world = nav.IDENTITY
+        navigator.update(self.sim.frame(0.0))
+        self.assertEqual(navigator.world, nav.IDENTITY)            # only the first frame
+        self.assertEqual(nav.Navigator().world, nav.IDENTITY)      # off by default
 
     def test_reset_can_be_requested_without_a_gesture(self):
         self.step()

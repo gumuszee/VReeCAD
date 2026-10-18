@@ -72,7 +72,7 @@ HELP_LIFT = 0.15               # metres above a controller: where the title of i
 
 class UiController:
     def __init__(self, tool_names, tool_label, actions: Dict[str, Callable], palette_hand=0, tool_hand=1,
-                 layout_path=None, use_user_layout=True, mm_to_stage=0.001, settings_path=None, tool_hint=None, values_layout_path=None):
+                 layout_path=None, use_user_layout=True, mm_to_stage=0.001, settings_path=None, tool_hint=None, values_layout_path=None, start_home=True):
         self.actions = actions
         self.faces = defaults.build_faces(tool_names, tool_label, tool_hint)
         self._tool_names = list(tool_names)
@@ -88,7 +88,7 @@ class UiController:
             if self.layout.add_missing(default, self.wide) or migrated:
                 self._save_layout()
         self.palette_hand, self.tool_hand = palette_hand, tool_hand
-        self.navigator = Navigator(modifier_hand=tool_hand)
+        self.navigator = Navigator(modifier_hand=tool_hand, start_home=start_home)
         self._grip_claimed = [False, False]     # a grip pressed while the tool is in a gesture: it cancels it and does not hold the world
         self.ring = PaletteRing(self.layout.sides(), palette_hand, tool_hand)
         self.ring.can_lift = lambda page, slot: self.carousel == "tools" and self.layout.face_at(page, slot) is not None
