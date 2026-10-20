@@ -32,7 +32,9 @@ move of a component that an expression holds, and `set_picked` remembers the poi
 
 An edge can be a cubic Bezier curve instead of a line: the property `EdgeHandles` (a string list, made when the first edge is bent)
 holds the handles of the curved edges (`cad/blockcurve.py`). `read_handles` gives them, `set_handles` changes them and takes the
-change back when the block cannot be built, and a face with a curved edge is built as a patch spanned by its edge curves."""
+change back when the block cannot be built, and a face with a curved edge is built as a patch spanned by its edge curves. The property
+`SmoothPoints` (made when the first point is made smooth) holds the smooth points: a string "p a b" says that the handles of the edges
+p-a and p-b at the point p lie on one line; `read_smooth` gives them and `set_handles` writes them along with the handles."""
 
 import re
 
@@ -64,13 +66,13 @@ def make_shape(vertices, faces, handles=None):
     import FreeCAD as App
     import Part
     handles = handles or {}
-    error = blockgeom.validate(vertices, faces) or blockcurve.unsupported(handles, faces)
+    error = blockgeom.validate(vertices, faces)
     if error is not None:
         raise ValueError(error)
     parts = []
     for face in faces:
         if handles and blockcurve.face_has_curve(handles, face):
-            parts.append(_patch(blockcurve.face_poles(vertices, handles, face)))
+            parts.extend(_patch(poles) for poles in blockcurve.face_patches(vertices, handles, face))
             continue
         points = [App.Vector(*vertices[i]) for i in face]
         if len(face) == 3 or blockgeom.is_flat([vertices[i] for i in face]):
@@ -176,18 +178,36 @@ def write_handles(obj, handles):
     obj.EdgeHandles = blockcurve.to_text(handles)
 
 
-def set_handles(doc, obj, handles):
-    """Change the handles of the curved edges of a block and recompute. Returns None, or a short text when the block cannot be built
-    so, in which case the handles are as they were."""
-    vertices, faces = read(obj)
-    error = blockcurve.unsupported(handles, faces)
-    if error is not None:
-        return error
-    before = read_handles(obj)
+SMOOTH = "SmoothPoints"
+
+
+def read_smooth(obj):
+    """The smooth points of a block as `blockcurve` keeps them (a set of (p, a, b)); those whose edges are gone are left out."""
+    if not is_block(obj) or SMOOTH not in obj.PropertiesList:
+        return set()
+    return blockcurve.usable_smooth(blockcurve.smooth_from_text(obj.SmoothPoints), blockgeom.faces_from_text(obj.Faces), len(obj.Vertices))
+
+
+def write_smooth(obj, smooth):
+    """Set the smooth points of a block (the caller owns the transaction); the property is made with the first."""
+    if SMOOTH not in obj.PropertiesList:
+        if not smooth:
+            return
+        obj.addProperty("App::PropertyStringList", SMOOTH, "Block", "The smooth points: a point, then the two neighbours whose handles lie on one line")
+    obj.SmoothPoints = blockcurve.smooth_to_text(smooth)
+
+
+def set_handles(doc, obj, handles, smooth=None):
+    """Change the handles of the curved edges of a block (and its smooth points when `smooth` is given) and recompute. Returns None, or
+    a short text when the block cannot be built so, in which case the handles are as they were."""
+    before, before_smooth = read_handles(obj), read_smooth(obj)
     write_handles(obj, handles)
+    if smooth is not None:
+        write_smooth(obj, smooth)
     doc.recompute()
     if not obj.isValid():
         write_handles(obj, before)
+        write_smooth(obj, before_smooth)
         doc.recompute()
         return "FreeCAD cannot build that block"
     return None
@@ -195,10 +215,14 @@ def set_handles(doc, obj, handles):
 
 def split_handles(obj, a, b, index, t):
     """Before the edge from `a` to `b` is split by the new point `index` (at parameter `t` of the curve from the lower number to the
-    higher), give the halves the handles of the curve they were cut from (the caller owns the transaction and applies the new points
-    and faces afterwards)."""
+    higher), give the halves the handles of the curve they were cut from, and the smooth points the half next to them (the caller owns
+    the transaction and applies the new points and faces afterwards). The new point of a curved edge is smooth."""
     handles = read_handles(obj)
-    if blockcurve.key(a, b) not in handles:
+    curved = blockcurve.key(a, b) in handles
+    smooth = read_smooth(obj)
+    if smooth or curved:
+        write_smooth(obj, blockcurve.split_smooth(smooth, a, b, index, curved))
+    if not curved:
         return
     vertices = list(read(obj)[0])
     vertices.append(edge_point(obj, a, b, None, t)[1])
@@ -206,10 +230,14 @@ def split_handles(obj, a, b, index, t):
 
 
 def renumber_handles(obj, removed):
-    """The handles of a block after point `removed` is taken out of it (before the new points and faces are applied)."""
+    """The handles and the smooth points of a block after point `removed` is taken out of it (before the new points and faces are
+    applied)."""
     handles = read_handles(obj)
     if handles:
         write_handles(obj, blockcurve.renumber_after_removal(handles, removed))
+    smooth = read_smooth(obj)
+    if smooth:
+        write_smooth(obj, blockcurve.renumber_smooth_after_removal(smooth, removed))
 
 
 def edge_point(obj, a, b, local, t=None):
@@ -362,13 +390,11 @@ def convert_box(doc, obj):
     return made
 
 
-def apply(doc, obj, vertices, faces=None):
-    """Change the points (and faces) of a block and recompute. Returns None, or a short text when the block cannot be built with them,
-    in which case the block is as it was."""
+def apply(doc, obj, vertices, faces=None, handles=None):
+    """Change the points (and faces, and the handles of the curved edges when `handles` is given) of a block and recompute. Returns
+    None, or a short text when the block cannot be built with them, in which case the block is as it was."""
     new_faces = faces if faces is not None else read(obj)[1]
     error = blockgeom.validate(vertices, new_faces)
-    if error is None and HANDLES in obj.PropertiesList:         # the handles as they are kept (a split or a removal has just set those of the new faces)
-        error = blockcurve.unsupported(blockcurve.usable(blockcurve.from_text(obj.EdgeHandles), new_faces, len(vertices)), new_faces)
     if error is not None:
         return error
     before = read(obj)
@@ -378,10 +404,15 @@ def apply(doc, obj, vertices, faces=None):
             if (index, axis) in bound and abs(new[axis] - old[axis]) > 1e-9:
                 from freecad.VReeCAD.core.values import pretty_expression
                 return f"Point {index} is bound to {pretty_expression(bound[(index, axis)])}: unbind it first"
+    handles_before = read_handles(obj)
+    if handles is not None:
+        write_handles(obj, handles)
     write(obj, vertices, faces)
     doc.recompute()
     if not obj.isValid():
         write(obj, *before)
+        if handles is not None:
+            write_handles(obj, handles_before)
         doc.recompute()
         return "FreeCAD cannot build that block"
     return None

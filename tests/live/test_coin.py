@@ -1912,7 +1912,7 @@ class MoveLiveTest(unittest.TestCase):
         self.assertAlmostEqual(made.Shape.Volume, 1.0e6)
         self.assertEqual(block.read_handles(made), {})
 
-    def test_a_triangle_with_a_bent_edge_and_a_face_that_the_patch_cannot_span(self):
+    def test_a_triangle_with_a_bent_edge_and_a_curved_edge_of_a_face_of_five_points(self):
         from freecad.VReeCAD.cad import block, blockgeom
         vertices = [(0, 0, 0), (100, 0, 0), (50, 80, 0), (0, 0, 100), (100, 0, 100), (50, 80, 100)]
         faces = [(0, 2, 1), (3, 4, 5), (0, 1, 4, 3), (1, 2, 5, 4), (2, 0, 3, 5)]
@@ -1926,11 +1926,11 @@ class MoveLiveTest(unittest.TestCase):
         vertices, faces = block.read(box)
         vertices, faces, index = blockgeom.split_edge(vertices, faces, 0, 1, (50.0, 300.0, 0.0))
         self.assertIsNone(block.apply(self.doc, box, vertices, faces))
-        self.assertIsNone(block.set_handles(self.doc, box, {(6, 7): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}))      # the edge 6-7 is in no five-point face
-        error = block.set_handles(self.doc, box, {(0, 8): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))})
-        self.assertIn("three or four points", error)
-        self.assertEqual(sorted(block.read_handles(box)), [(6, 7)])                         # the handles are as they were
+        self.assertIsNone(block.set_handles(self.doc, box, {(6, 7): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}))
+        self.assertIsNone(block.set_handles(self.doc, box, {(0, 8): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}))   # the edge 0-8 is in two five-point faces
+        self.assertEqual(sorted(block.read_handles(box)), [(0, 8)])
         self.assertTrue(box.isValid())
+        self.assertTrue(box.Shape.isValid())
 
     def test_a_curved_block_comes_back_from_a_saved_document_and_a_moved_point_takes_its_curve_along(self):
         import os
@@ -1953,6 +1953,49 @@ class MoveLiveTest(unittest.TestCase):
         self.assertIsNone(block.apply(self.doc, again, blockgeom.move_vertex(vertices, 5, (100.0, 0.0, 150.0))))
         self.assertGreater(again.Shape.BoundBox.ZMax, 149.0)                                 # the curve and its handles went up with the point
         self.assertTrue(again.Shape.isValid())
+
+    def test_the_smooth_points_of_a_block_are_saved_with_it_and_a_face_of_five_points_builds_with_them(self):
+        import os
+        import tempfile
+        from freecad.VReeCAD.cad import block, blockgeom
+        made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
+        handles = {(0, 1): ((0.0, 0.0, 40.0), (0.0, 0.0, 40.0)), (0, 4): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}
+        self.assertIsNone(block.set_handles(self.doc, made, handles, {(0, 1, 4)}))
+        self.assertEqual(block.read_smooth(made), {(0, 1, 4)})
+        self.assertEqual(block.read_smooth(block.create(self.doc, (500.0, 0.0, 0.0), (10.0, 10.0, 10.0))), set())
+        path = os.path.join(tempfile.mkdtemp(), "smooth.FCStd")
+        self.doc.saveAs(path)
+        name = made.Name
+        self.App.closeDocument(self.doc.Name)
+        self.doc = self.App.openDocument(path)
+        again = self.doc.getObject(name)
+        self.assertEqual(block.read_smooth(again), {(0, 1, 4)})
+        self.assertEqual(block.read_handles(again), handles)
+        self.doc.openTransaction("split")
+        vertices, faces = block.read(again)
+        t, point = block.edge_point(again, 0, 1, (50.0, 0.0, 30.0))
+        vertices, faces, index = blockgeom.split_edge(vertices, faces, 0, 1, point)
+        block.split_handles(again, 0, 1, index, t)
+        self.assertIsNone(block.apply(self.doc, again, vertices, faces))
+        self.doc.commitTransaction()
+        self.assertEqual(block.read_smooth(again), {(0, 4, index), (index, 0, 1)})         # the pair uses the half next to its point; the new point is smooth
+        self.assertTrue(again.Shape.isValid())
+
+    def test_the_tangents_of_the_features_of_the_model_at_a_point(self):
+        from freecad.VReeCAD.cad import tangents
+        line = self.doc.addObject("Part::Feature", "RuleLine")
+        line.Shape = __import__("Part").makeLine(self.App.Vector(0, 0, 0), self.App.Vector(100, 0, 0))
+        circle = self.doc.addObject("Part::Feature", "RuleCircle")
+        circle.Shape = __import__("Part").makeCircle(50.0, self.App.Vector(0, 200, 0))
+        self.doc.recompute()
+        found = tangents.tangents_at(self.doc, (30.0, 2.0, 0.0), 5.0, exclude=(self.box.Name,))
+        self.assertEqual(len(found), 1)
+        self.assertAlmostEqual(abs(found[0][0]), 1.0, places=6)                               # along the line
+        found = tangents.tangents_at(self.doc, (50.0, 200.0, 0.0), 1.0, exclude=(self.box.Name,))                       # on the circle at its point (50, 200)
+        self.assertEqual(len(found), 1)
+        self.assertAlmostEqual(abs(found[0][1]), 1.0, places=6)
+        self.assertEqual(tangents.tangents_at(self.doc, (30.0, 40.0, 0.0), 5.0, exclude=(self.box.Name,)), [])
+        self.assertEqual(tangents.tangents_at(self.doc, (30.0, 2.0, 0.0), 5.0, exclude=("RuleLine", self.box.Name)), [])
 
     def test_the_curved_edges_of_a_block_are_picked_and_drawn(self):
         from freecad.VReeCAD.cad import block, blockcurve
@@ -2000,21 +2043,24 @@ class MoveLiveTest(unittest.TestCase):
         self.assertEqual(block.read_handles(made), {})                                      # the curve went with its point
         self.assertAlmostEqual(made.Shape.Volume, volume)
 
-    def test_splitting_a_curved_edge_of_a_box_is_refused_because_the_faces_would_have_five_points(self):
+    def test_splitting_a_curved_edge_of_a_box_makes_faces_of_five_points_that_are_cut_into_patches(self):
         from freecad.VReeCAD.cad import block, blockgeom
         made = block.create(self.doc, (0.0, 0.0, 0.0), (100.0, 100.0, 100.0))
         handles = {(0, 1): ((0.0, 0.0, 40.0), (0.0, 0.0, 40.0))}
         self.assertIsNone(block.set_handles(self.doc, made, handles))
+        volume = made.Shape.Volume
         self.doc.openTransaction("split")
         vertices, faces = block.read(made)
         t, point = block.edge_point(made, 0, 1, (50.0, 0.0, 30.0))
         vertices, faces, index = blockgeom.split_edge(vertices, faces, 0, 1, point)
         block.split_handles(made, 0, 1, index, t)
-        self.assertIn("three or four points", block.apply(self.doc, made, vertices, faces))
-        self.doc.abortTransaction()
-        self.assertEqual(block.read_handles(made), handles)                                 # the abort took the halves back
-        self.assertEqual(len(made.Vertices), 8)
+        self.assertIsNone(block.apply(self.doc, made, vertices, faces))
+        self.doc.commitTransaction()
+        self.assertEqual(len(made.Vertices), 9)
+        self.assertEqual(sorted(block.read_handles(made)), [(0, 8), (1, 8)])
         self.assertTrue(made.isValid())
+        self.assertTrue(made.Shape.isValid())
+        self.assertAlmostEqual(made.Shape.Volume, volume, delta=volume * 0.02)             # the curve is the same, the faces only differ inside
 
     def test_the_points_tool_bends_an_edge_of_a_block_and_drags_a_handle_in_one_undo_step_each(self):
         from freecad.VReeCAD.cad import block
@@ -2588,6 +2634,7 @@ class MoveLiveTest(unittest.TestCase):
     def test_the_sketch_tool_draws_edits_and_dimensions_a_rectangle_in_the_sim(self):
         from freecad.VReeCAD.cad import sketching
         s = self.session()
+        s.ui.settings.placement = "grid"                       # the test counts in grid steps; Snap does not round
         s.select_tool("sketch")
         s.tool_manager.active.values["mode"] = "Rectangle"
         self.hand(1, (300.0, 0.0, 0.0))
@@ -2634,7 +2681,6 @@ class MoveLiveTest(unittest.TestCase):
         (sketch,) = [o for o in self.doc.Objects if sketching.is_sketch(o)]
         self.assertAlmostEqual(sketch.Geometry[0].Radius, 20.0)
         s.tool_manager.active.values["mode"] = "Edit"
-        s.ui.settings.placement = "grid"                       # the test counts in grid steps; Snap does not round
         for _ in range(12):
             s.frame(0.02)
         self.hand(1, (320.0, 0.0, 0.0))                                                       # press on the circle and drag outwards
@@ -3037,6 +3083,7 @@ class MoveLiveTest(unittest.TestCase):
         self.box.setExpression("Height", "100 mm")
         self.doc.recompute()
         s = self.session()
+        s.ui.settings.placement = "grid"                       # the test counts in grid steps; Snap does not round
         s.select_tool("pushpull")
         self.hand(1, (50.0, 50.0, 96.0))
         self.hand(1, (50.0, 50.0, 96.0), trigger=1.0)
@@ -3083,7 +3130,6 @@ class MoveLiveTest(unittest.TestCase):
         finally:
             App.closeDocument(other.Name)
 
-        s.ui.settings.placement = "grid"                       # the test counts in grid steps; Snap does not round
     def test_the_anchors_of_a_sphere_skip_its_degenerated_pole_edges(self):
         from freecad.VReeCAD.cad import anchors, primitives as prim
         sphere = prim.create(self.doc, "Sphere", (300.0, 0.0, 0.0), (50.0, 50.0, 50.0))

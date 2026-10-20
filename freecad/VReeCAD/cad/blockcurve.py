@@ -20,8 +20,14 @@ a curved edge are two vectors, one at each end: the offset from the point to the
 the handles of a path look in a vector drawing program. They are offsets, so they move with their points. The handles are stored as
 `handles[(a, b)] = (offset at a, offset at b)`; an edge without an entry is straight and an entry that equals the straight line
 is not kept. A face with a curved edge is a patch spanned by its edge curves (`face_poles`): a Coons patch of degree three in both
-directions, so the faces on both sides of an edge meet along exactly the same curve. Only faces of three or four points can be
-spanned (`unsupported`). The functions return new values and never change their arguments."""
+directions, so the faces on both sides of an edge meet along exactly the same curve. A face of three or four points is one patch; a
+face of more points is cut into triangles (`blockgeom.face_triangles`) and each triangle is a patch whose sides are the curves of the
+edges of the face and straight lines inside it (`face_patches`).
+
+A point can be **smooth**: `smooth` is a set of triples (p, a, b) with a < b, meaning that the handles of the edges p-a and p-b at the
+point p lie on one line, pointing away from each other (the point sits in the middle of a smooth path); the lengths of the handles
+stay free. `enforce_edge` and `enforce_moved` bring the partner handle back onto the line after a handle or a point has been moved.
+The functions return new values and never change their arguments."""
 
 from freecad.VReeCAD.cad import blockgeom
 from freecad.VReeCAD.core import mathutil as mu
@@ -179,14 +185,6 @@ def face_has_curve(handles, face):
     return any(key(face[k], face[(k + 1) % len(face)]) in handles for k in range(len(face)))
 
 
-def unsupported(handles, faces):
-    """None, or a short text when a face with a curved edge has other than three or four points (no patch spans it)."""
-    for face in faces:
-        if len(face) not in (3, 4) and face_has_curve(handles, face):
-            return "A curved edge needs faces of three or four points: straighten it first"
-    return None
-
-
 def coons(bottom, top, left, right):
     """The 4 by 4 control points `P[i][j]` (i along u, j along v) of the bicubic Coons patch between four cubic curves: `bottom` and `top`
     run along u at v = 0 and v = 1, `left` and `right` along v at u = 0 and u = 1; their ends must meet."""
@@ -215,3 +213,121 @@ def face_poles(vertices, handles, face):
         return coons(poles(vertices, handles, a, b), [tuple(vertices[c])] * 4,
                      poles(vertices, handles, a, c), poles(vertices, handles, b, c))
     return None
+
+
+def face_patches(vertices, handles, face):
+    """The control point grids of the patches of a face (counter-clockwise from outside): one for a face of three or four points, one
+    for every triangle of a face of more points; the edges of the face are curves where they have handles, the lines inside it are
+    straight. Empty for a face without area."""
+    if len(face) in (3, 4):
+        return [face_poles(vertices, handles, face)]
+    return [face_poles(vertices, handles, triangle) for triangle in blockgeom.face_triangles(vertices, face)]
+
+
+# smooth points
+def smooth_to_text(smooth):
+    return [" ".join(str(i) for i in triple) for triple in sorted(smooth)]
+
+
+def smooth_from_text(texts):
+    found = set()
+    for text in texts:
+        parts = text.split()
+        if len(parts) == 3 and all(part.isdigit() for part in parts):
+            p, a, b = (int(part) for part in parts)
+            found.add((p,) + tuple(sorted((a, b))))
+    return found
+
+
+def usable_smooth(smooth, faces, count):
+    """The smooth points whose three points exist and whose two edges are edges of the faces."""
+    edges = set(blockgeom.edges(faces))
+    return {t for t in smooth if max(t) < count and key(t[0], t[1]) in edges and key(t[0], t[2]) in edges}
+
+
+def smooth_pair(smooth, p, q):
+    """The point `r` such that the edges p-q and p-r are kept on one line at p, or None."""
+    for point, a, b in smooth:
+        if point == p and q in (a, b):
+            return b if q == a else a
+    return None
+
+
+def end_handle(vertices, handles, p, q):
+    """The handle (offset) at point `p` of the edge from `p` to `q`, the third of the line when the edge is straight."""
+    curve = poles(vertices, handles, p, q)
+    return mu.sub(curve[1], curve[0])
+
+
+def with_end_handle(vertices, handles, p, q, offset):
+    """`handles` with the handle at `p` of the edge p-q set to `offset`."""
+    curve = poles(vertices, handles, p, q)
+    curve[1] = mu.add(curve[0], offset)
+    return store_edge(handles, vertices, p, q, curve)
+
+
+def align_partner(vertices, handles, p, driver, partner):
+    """`handles` with the handle at `p` of the edge p-`partner` turned to point away from the handle of the edge p-`driver`, its length
+    kept; unchanged when the driver has no length."""
+    held = end_handle(vertices, handles, p, driver)
+    length = mu.length(held)
+    if length < SAME:
+        return handles
+    other = mu.length(end_handle(vertices, handles, p, partner))
+    return with_end_handle(vertices, handles, p, partner, mu.mul(held, -(other if other >= SAME else length) / length))
+
+
+def enforce_edge(vertices, handles, smooth, a, b):
+    """`handles` after the handles of the edge a-b changed: at each end that is a smooth point the other edge of the pair follows."""
+    for p, q in ((a, b), (b, a)):
+        partner = smooth_pair(smooth, p, q)
+        if partner is not None:
+            handles = align_partner(vertices, handles, p, q, partner)
+    return handles
+
+
+def enforce_moved(vertices, handles, smooth, moved):
+    """`handles` after point `moved` changed place: at every smooth point that it belongs to the pair is on one line again. When the
+    point itself moved, the edge with a handle of its own drives, else the first."""
+    for p, a, b in sorted(smooth):
+        if moved == a:
+            handles = align_partner(vertices, handles, p, b, a)
+        elif moved == b:
+            handles = align_partner(vertices, handles, p, a, b)
+        elif moved == p:
+            driver, partner = (b, a) if key(p, b) in handles and key(p, a) not in handles else (a, b)
+            handles = align_partner(vertices, handles, p, driver, partner)
+    return handles
+
+
+def split_smooth(smooth, a, b, index, curved):
+    """The smooth points after the edge a-b was cut by the new point `index`: the pairs that used the edge use the half next to their
+    point; the new point is smooth when the edge was curved (the halves of a curve meet on one line)."""
+    result = set()
+    for p, x, y in smooth:
+        if p == a and b in (x, y):
+            x, y = (index if x == b else x), (index if y == b else y)
+        elif p == b and a in (x, y):
+            x, y = (index if x == a else x), (index if y == a else y)
+        result.add((p,) + tuple(sorted((x, y))))
+    if curved:
+        result.add((index,) + tuple(sorted((a, b))))
+    return result
+
+
+def renumber_smooth_after_removal(smooth, removed):
+    result = set()
+    for triple in smooth:
+        if removed in triple:
+            continue
+        p, a, b = (i - 1 if i > removed else i for i in triple)
+        result.add((p,) + tuple(sorted((a, b))))
+    return result
+
+
+def make_smooth(vertices, handles, smooth, p, driver, partner):
+    """(handles, smooth) with the edges p-`driver` and p-`partner` smooth at p: the partner handle is turned onto the line of the driver
+    handle. A smooth pair that had either edge at p is replaced."""
+    rest = {t for t in smooth if not (t[0] == p and (driver in t[1:] or partner in t[1:]))}
+    rest.add((p,) + tuple(sorted((driver, partner))))
+    return align_partner(vertices, handles, p, driver, partner), rest

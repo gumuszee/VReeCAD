@@ -153,12 +153,67 @@ class PatchTest(unittest.TestCase):
         close(self, grid[0][0], (0, 0, 0))
         close(self, grid[3][0], (100, 0, 0))
 
-    def test_only_faces_of_three_or_four_points_can_have_a_curved_edge(self):
-        faces = [(0, 1, 2, 3, 4), (0, 1, 5), (0, 3, 6, 7)]
-        self.assertIsNone(bc.unsupported({}, faces))
-        self.assertIsNone(bc.unsupported({(1, 5): ((0, 0, 1), (0, 0, 1))}, faces))
-        self.assertIsNotNone(bc.unsupported({(0, 1): ((0, 0, 1), (0, 0, 1))}, faces))
-        self.assertIsNone(bc.face_poles([(0, 0, 0)] * 5, {}, (0, 1, 2, 3, 4)))
+    def test_a_face_of_more_points_is_cut_into_triangle_patches_that_keep_its_curved_edges(self):
+        vertices = [(0, 0, 0), (100, 0, 0), (100, 50, 0), (50, 80, 0), (0, 50, 0)]
+        face = (0, 1, 2, 3, 4)
+        handles = {(0, 1): ((0.0, -20.0, 0.0), (0.0, -20.0, 0.0))}
+        patches = bc.face_patches(vertices, handles, face)
+        self.assertEqual(len(patches), 3)
+        curve = bc.poles(vertices, handles, 0, 1)
+        along = [grid for grid in patches if grid[0][0] == (0, 0, 0) and grid[3][0] == (100, 0, 0)]
+        self.assertEqual(len(along), 1)                                                   # one patch has the curved edge as a side
+        for got, want in zip((along[0][i][0] for i in range(4)), curve):
+            close(self, got, want)
+        self.assertEqual(len(bc.face_patches(vertices, {}, (0, 1, 2, 3))), 1)
+        self.assertEqual(len(bc.face_patches(vertices, {}, (0, 1, 2))), 1)
+
+
+class SmoothTest(unittest.TestCase):
+    def setUp(self):
+        self.vertices = [(0, 0, 0), (100, 0, 0), (0, 100, 0), (0, 0, 100)]
+
+    def test_smooth_points_are_written_as_text_and_read_back_with_the_neighbours_in_order(self):
+        smooth = {(0, 1, 3), (2, 0, 1)}
+        self.assertEqual(bc.smooth_to_text(smooth), ["0 1 3", "2 0 1"])
+        self.assertEqual(bc.smooth_from_text(["0 3 1", "2 0 1", "junk", "1 2"]), smooth)
+
+    def test_a_smooth_point_whose_edges_are_gone_is_left_out(self):
+        faces = [(0, 1, 2), (0, 2, 3), (0, 3, 1), (1, 3, 2)]
+        self.assertEqual(bc.usable_smooth({(0, 1, 2), (1, 0, 9), (0, 1, 7)}, faces, 4), {(0, 1, 2)})
+
+    def test_the_partner_handle_is_turned_away_from_the_driver_with_its_own_length(self):
+        handles = {(0, 3): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}
+        result = bc.align_partner(self.vertices, handles, 0, 3, 1)                         # the edge 0-1 is straight: its handle is 100 / 3 long
+        close(self, bc.end_handle(self.vertices, result, 0, 1), (0.0, 0.0, -100.0 / 3.0))
+        self.assertEqual(result[(0, 3)], handles[(0, 3)])
+
+    def test_enforcing_an_edge_moves_the_partner_at_each_smooth_end(self):
+        handles = {(0, 3): ((0.0, 20.0, 30.0), (0.0, 0.0, 30.0))}
+        result = bc.enforce_edge(self.vertices, handles, {(0, 1, 3)}, 0, 3)
+        d = bc.end_handle(self.vertices, result, 0, 1)
+        close(self, d, tuple(c * -(100.0 / 3.0) / (20.0 ** 2 + 30.0 ** 2) ** 0.5 for c in (0.0, 20.0, 30.0)))
+        self.assertEqual(bc.enforce_edge(self.vertices, handles, set(), 0, 3), handles)
+
+    def test_moving_a_neighbour_of_a_smooth_point_brings_the_pair_back_on_one_line(self):
+        handles = {(0, 3): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}
+        moved = [(0, 0, 0), (100, 50, 0), (0, 100, 0), (0, 0, 100)]
+        result = bc.enforce_moved(moved, handles, {(0, 1, 3)}, 1)
+        close(self, bc.end_handle(moved, result, 0, 1), (0.0, 0.0, -(100.0 ** 2 + 50.0 ** 2) ** 0.5 / 3.0))
+
+    def test_a_split_hands_the_pairs_to_the_halves_and_makes_a_new_point_of_a_curve_smooth(self):
+        self.assertEqual(bc.split_smooth({(0, 1, 3)}, 0, 1, 7, False), {(0, 3, 7)})
+        self.assertEqual(bc.split_smooth({(1, 0, 3)}, 0, 1, 7, False), {(1, 3, 7)})
+        self.assertEqual(bc.split_smooth(set(), 0, 1, 7, True), {(7, 0, 1)})
+        self.assertEqual(bc.split_smooth(set(), 0, 1, 7, False), set())
+
+    def test_removing_a_point_takes_the_pairs_that_use_it_and_renumbers_the_rest(self):
+        self.assertEqual(bc.renumber_smooth_after_removal({(0, 1, 3), (2, 3, 4), (5, 3, 4)}, 1), {(1, 2, 3), (4, 2, 3)})
+
+    def test_making_a_point_smooth_replaces_the_pairs_it_had_with_these_edges(self):
+        handles = {(0, 3): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}
+        result, smooth = bc.make_smooth(self.vertices, handles, {(0, 1, 2), (3, 0, 1)}, 0, 3, 1)
+        self.assertEqual(smooth, {(0, 1, 3), (3, 0, 1)})
+        close(self, bc.end_handle(self.vertices, result, 0, 1), (0.0, 0.0, -100.0 / 3.0))
 
 
 if __name__ == "__main__":
