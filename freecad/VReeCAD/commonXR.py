@@ -295,8 +295,10 @@ class XRwidget(QOpenGLWidget):
         self.projection_layer = xr.CompositionLayerProjection(
             views=self.projection_layer_views)
         self.swapchain_create_info = xr.SwapchainCreateInfo()
-        self.swapchain = None
-        self.swapchain_images = None
+        # one swapchain per eye: SteamVR on Linux shares one eye-sized texture per view, so the
+        # right half of a side-by-side swapchain never reaches the compositor (right eye black)
+        self.swapchains = [None, None]
+        self.swapchain_images = [None, None]
         self.fbo = None
         self.fbo_msaa = None
         self.fbo_texture = None
@@ -1119,15 +1121,16 @@ class XRwidget(QOpenGLWidget):
         self.swapchain_create_info.array_size = 1
         self.swapchain_create_info.face_count = 1
         self.swapchain_create_info.mip_count = 1
-        self.swapchain_create_info.width = self.render_target_size[0]
+        self.swapchain_create_info.width = self.render_target_size[0] // 2
         self.swapchain_create_info.height = self.render_target_size[1]
-        self.swapchain = xr.create_swapchain(
-            self.session, self.swapchain_create_info)
-        self.swapchain_images = xr.enumerate_swapchain_images(
-            self.swapchain, xr.SwapchainImageOpenGLKHR)
-        for i, si in enumerate(self.swapchain_images):
-            self.logger.debug(
-                f"Swapchain image {i} type = {xr.StructureType(si.type)}")
+        for eye_index in range(2):
+            self.swapchains[eye_index] = xr.create_swapchain(
+                self.session, self.swapchain_create_info)
+            self.swapchain_images[eye_index] = xr.enumerate_swapchain_images(
+                self.swapchains[eye_index], xr.SwapchainImageOpenGLKHR)
+            for i, si in enumerate(self.swapchain_images[eye_index]):
+                self.logger.debug(
+                    f"Swapchain {eye_index} image {i} type = {xr.StructureType(si.type)}")
         self.ctx.doneCurrent()
 
     def prepare_xr_composition_layers(self):
@@ -1135,13 +1138,11 @@ class XRwidget(QOpenGLWidget):
         self.projection_layer.views = self.projection_layer_views
         for eye_index in range(2):
             layer_view = self.projection_layer_views[eye_index]
-            layer_view.sub_image.swapchain = self.swapchain
+            layer_view.sub_image.swapchain = self.swapchains[eye_index]
             layer_view.sub_image.image_rect.extent = xr.Extent2Di(
                 self.render_target_size[0] // 2,
                 self.render_target_size[1],
             )
-            if eye_index == 1:
-                layer_view.sub_image.image_rect.offset.x = layer_view.sub_image.image_rect.extent.width
 
     def prepare_xr_controls(self):
         # the tracker actions live in their own action set; it is attached together with the input action set
@@ -1540,10 +1541,12 @@ class XRwidget(QOpenGLWidget):
                 ren_timer = QElapsedTimer()
                 ren_timer.start()
                 ai = xr.SwapchainImageAcquireInfo(None)
-                swapchain_index = xr.acquire_swapchain_image(
-                    self.swapchain, ai)
                 wi = xr.SwapchainImageWaitInfo(xr.INFINITE_DURATION)
-                xr.wait_swapchain_image(self.swapchain, wi)
+                swapchain_indices = []
+                for eye_index in range(2):
+                    swapchain_indices.append(xr.acquire_swapchain_image(
+                        self.swapchains[eye_index], ai))
+                    xr.wait_swapchain_image(self.swapchains[eye_index], wi)
                 self.fbo_msaa.bind()
                 w, h = self.render_target_size
                 # "render" to the swapchain image
@@ -1585,19 +1588,21 @@ class XRwidget(QOpenGLWidget):
                     self.gl_ofc.glFinish()
                 prof.lap("render_right")
 
+                # resolve the MSAA image into the own texture of the target FBO, then copy each
+                # half into the swapchain image of its eye (a plain texel copy, no FBO state)
                 self.fbo.bind()
-                sw_image = self.swapchain_images[swapchain_index]
-                self.gl_ofc.glFramebufferTexture(
-                    GL.GL_FRAMEBUFFER,
-                    GL.GL_COLOR_ATTACHMENT0,
-                    sw_image.image,
-                    0,
-                )
                 self.fbo.blitFramebuffer(self.fbo, self.fbo_msaa)
+                for eye_index in range(2):
+                    sw_image = self.swapchain_images[eye_index][swapchain_indices[eye_index]]
+                    self.gl_ofc.glCopyImageSubData(
+                        self.fbo.texture(), GL.GL_TEXTURE_2D, 0, eye_index * (w // 2), 0, 0,
+                        sw_image.image, GL.GL_TEXTURE_2D, 0, 0, 0, 0,
+                        w // 2, h, 1)
                 self.render_duration = ren_timer.nsecsElapsed()
 
                 ri = xr.SwapchainImageReleaseInfo()
-                xr.release_swapchain_image(self.swapchain, ri)
+                for eye_index in range(2):
+                    xr.release_swapchain_image(self.swapchains[eye_index], ri)
                 self.fbo.release()
                 self.fbo_msaa.release()
                 prof.lap("resolve")
@@ -1707,9 +1712,10 @@ class XRwidget(QOpenGLWidget):
             self.input.destroy()
             xr.destroy_action_set(self.input.action_set)
             self.input = None
-        if self.swapchain is not None:
-            xr.destroy_swapchain(self.swapchain)
-            self.swapchain = None
+        for eye_index in range(2):
+            if self.swapchains[eye_index] is not None:
+                xr.destroy_swapchain(self.swapchains[eye_index])
+                self.swapchains[eye_index] = None
         if self.session is not None:
             xr.destroy_session(self.session)
             self.session = None

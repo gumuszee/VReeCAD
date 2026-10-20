@@ -20,6 +20,8 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | OpenXR session starts, reaches `FOCUSED` when the headset is worn | Verified | `tools/xr_probe.py`, `tools/snippets/xr_state.py` |
 | Document geometry visible in the headset | Verified | owner-confirmed |
 | Frame rate with a small scene | Verified | owner-reported "excellent" |
+| Both eyes in the headset on Linux (Fedora, FreeCAD 1.1.4 RPM, SteamVR 2.18.4 beta, Steam Frame over the wireless adapter, NVIDIA GPU, EGL path): one swapchain per eye, each half of the render copied with `glCopyImageSubData` | Verified | owner-confirmed; a single side-by-side swapchain showed the left eye only while the mirror window showed both eyes (`setup.md` gotcha 23) |
+| One swapchain per eye on Windows (colours, both eyes, viewer start and stop, every MSAA setting) | Unverified | the copy path replaced the single side-by-side swapchain on all platforms; not run on Windows after the change |
 | Input actions (trigger, grip, stick, stick click, two buttons, menu, haptic, aim and grip poses, `aux1`, `aux2`): suggested bindings accepted by the runtime for the Frame, Touch, Index, Vive and WMR profiles | Verified | SteamVR 2.17.10 accepts all five profiles (`backends/openxr_input.py`, `profiles.py`) |
 | Steam Frame controller input paths accepted by the runtime | Verified | `tools/xr_probe_paths.py`; `input-profiles.md` |
 | Steam Frame left D-pad up and down work as buttons | Verified | owner-confirmed |
