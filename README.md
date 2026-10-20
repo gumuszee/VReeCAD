@@ -41,6 +41,46 @@ Requirements: FreeCAD 1.1 or newer (developed on 1.1.4, Windows 11), an OpenXR r
    powershell -NoProfile -ExecutionPolicy Bypass -File tools\start-freecad.ps1
    ```
 
+### Linux
+
+Verified on Nobara (Fedora 44 base, kernel 7.2) with the distribution's FreeCAD 1.1.4 package, KDE Plasma on Wayland, SteamVR 2.18.4 beta as the OpenXR runtime and a Steam Frame over its wireless adapter. Details and diagnostics are in [docs/setup.md](docs/setup.md#linux).
+
+1. **Python packages.** The distribution's FreeCAD runs on the system Python, so the packages go into the user site of that Python (they survive FreeCAD updates, not a change of the Python minor version):
+
+   ```sh
+   python3 -m pip install --user pyopenxr PyOpenGL
+   ```
+
+2. **The addon.** Clone or link the repository to `~/.local/share/FreeCAD/v1-1/Mod/VReeCAD`:
+
+   ```sh
+   git clone https://github.com/gumuszee/VReeCAD ~/.local/share/FreeCAD/v1-1/Mod/VReeCAD
+   ```
+
+3. **The OpenXR runtime.** SteamVR has to be the active OpenXR runtime (SteamVR, Settings, OpenXR); `~/.config/openxr/1/active_runtime.json` then names `vrclient.so`.
+4. **Launching on a computer with two GPUs** (an AMD or Intel iGPU and an NVIDIA GPU, the usual laptop): SteamVR composes on the NVIDIA GPU, so FreeCAD has to render on it too. FreeCAD on the iGPU crashes when the viewer submits its first frame. Pick one of these launch options (on Wayland and on X11 alike):
+
+   - **Launcher entry** (menu and file associations): a per-user copy of the desktop file with a changed `Exec` line overrides the system one and survives package updates.
+
+     ```sh
+     mkdir -p ~/.local/share/applications
+     sed 's|^Exec=.*|Exec=env __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json __GLX_VENDOR_LIBRARY_NAME=nvidia __NV_PRIME_RENDER_OFFLOAD=1 FreeCAD - --single-instance %F|' \
+         /usr/share/applications/org.freecad.FreeCAD.desktop > ~/.local/share/applications/org.freecad.FreeCAD.desktop
+     kbuildsycoca6   # KDE; other desktops refresh the menu on their own
+     ```
+
+   - **Terminal command** for one session:
+
+     ```sh
+     env __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json __GLX_VENDOR_LIBRARY_NAME=nvidia __NV_PRIME_RENDER_OFFLOAD=1 FreeCAD
+     ```
+
+   - **Function** for a shell that should always have the command (fish: `function freecad-vr; env ... FreeCAD $argv; end; funcsave freecad-vr`).
+
+   Everything in that FreeCAD instance renders on the NVIDIA GPU, which costs battery during plain modelling. A running FreeCAD takes over the files of a second start (`--single-instance`), so close it before starting the NVIDIA one. A computer with a single GPU needs none of this.
+
+The viewer checks the renderer when it starts. On Linux, with an NVIDIA GPU present and FreeCAD rendering on an AMD, Intel or software renderer, it shows a warning with the launch command and offers to open the viewer anyway (`VREECAD_SKIP_GPU_CHECK=1` in the environment turns the check off).
+
 Start it: open or create a FreeCAD document, switch to the **VReeCAD** workbench, put the headset on and click **Open XR viewer**. Without a document the viewer does not start. The first run shows a controls card over each controller (the **Tutorial** button of the Settings panel shows it again, and the menu button of either controller toggles it).
 
 ## Controls
@@ -195,6 +235,7 @@ Details of every behaviour are in [docs/ux-design.md](docs/ux-design.md).
 |---|---|
 | Version | 0.1.0 |
 | Verified on | FreeCAD 1.1.4, Windows 11, SteamVR OpenXR 2.17, Steam Frame |
+| Also verified on | FreeCAD 1.1.4 (distribution package), Linux (Nobara, Fedora 44 base) on KDE Plasma Wayland, SteamVR OpenXR 2.18.4 beta, Steam Frame over its wireless adapter, AMD iGPU with NVIDIA GPU |
 | Verification | [docs/verification.md](docs/verification.md) lists per feature what was observed in the headset and what is only tested in the headless Sim backend |
 | Milestones | M0 platform and interface, M1 Create, M2 Select and Move, M3 value panels and variables, M4 Push/Pull and Modify, M5 Points and blocks, M6 Sketch and Extrude, M7 fillet, chamfer, attach and joints; the plan and decisions are in [docs/design.md](docs/design.md) |
 | Other headsets | bindings exist for Quest, Index, Vive, WMR and Pico; untested |

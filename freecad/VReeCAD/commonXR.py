@@ -42,6 +42,7 @@ import freecad.VReeCAD.tools.move  # noqa: F401
 import freecad.VReeCAD.tools.pushpull  # noqa: F401
 import freecad.VReeCAD.tools.points  # noqa: F401
 import freecad.VReeCAD.tools.sketch  # noqa: F401
+from freecad.VReeCAD import gpucheck
 from freecad.VReeCAD.backends.openxr_input import OpenXRInput
 from freecad.VReeCAD.backends.openxr_models import RuntimeModels
 from freecad.VReeCAD.render.gltf_coin import load_glb
@@ -67,7 +68,7 @@ import time
 import logging
 
 try:
-    from PySide6.QtWidgets import QDockWidget
+    from PySide6.QtWidgets import QDockWidget, QMessageBox
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
     from PySide6.QtOpenGL import QOpenGLDebugLogger, QOpenGLFunctions_4_5_Compatibility
     from PySide6.QtOpenGL import QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat, QOpenGLTexture
@@ -77,7 +78,7 @@ try:
     import shiboken6 as shiboken
 except ImportError:
     try:
-        from PySide2.QtWidgets import QOpenGLWidget, QDockWidget
+        from PySide2.QtWidgets import QOpenGLWidget, QDockWidget, QMessageBox
         from PySide2.QtGui import QOpenGLContext, QSurfaceFormat, QOpenGLDebugLogger, QOffscreenSurface
         from PySide2.QtGui import QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat, QOpenGLTexture
         from PySide2.QtOpenGLFunctions import QOpenGLFunctions_4_5_Compatibility
@@ -1756,6 +1757,49 @@ class XRwidget(QOpenGLWidget):
 xr_dock_w = None
 
 
+def gl_renderer():
+    """GL_RENDERER of the context FreeCAD renders with, None when it cannot be read.
+
+    The GPU is chosen once per process, so a throwaway default context reports the same renderer as the 3D view; the context that
+    was current is made current again."""
+    try:
+        previous = QOpenGLContext.currentContext()
+        previous_surface = previous.surface() if previous is not None else None
+        context = QOpenGLContext()
+        context.create()
+        surface = QOffscreenSurface()
+        surface.create()
+        if not context.makeCurrent(surface):
+            return None
+        try:
+            renderer = GL.glGetString(GL.GL_RENDERER)
+        finally:
+            context.doneCurrent()
+            if previous is not None and previous_surface is not None:
+                previous.makeCurrent(previous_surface)
+        return renderer.decode() if isinstance(renderer, bytes) else str(renderer)
+    except Exception:
+        return None
+
+
+def confirm_gpu():
+    """True when the viewer may start: FreeCAD renders on the GPU of the compositor, or the user opens it anyway (gpucheck.py)."""
+    text = gpucheck.check(gl_renderer())
+    if text is None:
+        return True
+    print(text)
+    box = QMessageBox(Gui.getMainWindow())
+    box.setIcon(QMessageBox.Warning)
+    box.setWindowTitle("VReeCAD: FreeCAD renders on another GPU")
+    box.setText(text)
+    box.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    open_anyway = box.addButton("Open anyway", QMessageBox.AcceptRole)
+    cancel = box.addButton(QMessageBox.Cancel)
+    box.setDefaultButton(cancel)
+    (box.exec if hasattr(box, "exec") else box.exec_)()
+    return box.clickedButton() is open_anyway
+
+
 def open_xr_viewer():
     if Gui.ActiveDocument is None:
         print("No active view!")
@@ -1763,7 +1807,7 @@ def open_xr_viewer():
     global xr_dock_w
     if shiboken.isValid(xr_dock_w) and xr_dock_w is not None:
         print("XR already started, please close it before reopening")
-    else:
+    elif confirm_gpu():
         xr_dock_w = DockWidget()
 
 

@@ -26,6 +26,7 @@ backends/   openxr_input.py   action set, bindings per profile, polling into Inp
             sim.py            scripted head + 2 controllers, offscreen mono/stereo render, no headset  <- test + desktop mode
 input.py    InputFrame: head pose, per hand {aim/grip pose, trigger, grip, stick xy+click, button1, button2, menu, aux1, aux2}; edge events
 profiles.py abstract input -> OpenXR path per interaction profile (data, see input-profiles.md)
+gpucheck.py  warning when FreeCAD renders on another GPU than the SteamVR compositor (hybrid graphics on Linux, see setup.md); plain Python
 gltf.py     GLB reader;  render/  gltf_coin.py (glTF -> Coin3D), controller_shape.py (generated), offscreen.py (image render)
 commonXR.py XRwidget: OpenXR session, swapchains, Coin scene, render loop, the tool manager and the services of the tools (to be split: rig*);  controllerXR.py (the scene node of a controller); profiling.py (the frame profiler of the render loop and the interface, off by default)
 core/       guides.py (alignment guides), inference.py (the points near the hand and those it dwelt on, the optional source of the guides), mathutil.py (vector/quaternion math), navigation.py (grip navigation, home pose), units.py (measurement systems, ruler ticks), stage.py (stage to document coordinates), snapping.py (grid, drag box), grab.py (rigid grab, rotation snap, what the cursor touches), selecting.py (combining a touched element with the selection), values.py (expressions of the keypad, the state of the value editor); transactions*
