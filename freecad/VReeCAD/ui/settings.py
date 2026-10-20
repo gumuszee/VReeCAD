@@ -58,7 +58,7 @@ class Settings:
     sub_mm: str = "mm"            # how lengths under a millimetre are written, one of `SUB_MM`
     grid: float = snapping.DEFAULT_GRID      # the grid step of every tool in millimetres, one of `snapping.GRID_STEPS`
     angle: float = snapping.DEFAULT_ANGLE    # the angle step of a locked turn in degrees, one of `snapping.ANGLE_STEPS`
-    placement: str = "snap"       # how a tool places a point, one of `snapping.PLACEMENTS`; the A button changes it while the trigger is held
+    placement: str = "grid"       # how a tool places a point, one of `snapping.PLACEMENTS`; the A button changes it while the trigger is held
     snap_source: str = "guides"      # which points the guides line up with, one of `SNAPPING`
 
     def __post_init__(self):
@@ -75,7 +75,7 @@ class Settings:
         self.grid = _nearest(self.grid, snapping.GRID_STEPS, snapping.DEFAULT_GRID)
         self.angle = _nearest(self.angle, snapping.ANGLE_STEPS, snapping.DEFAULT_ANGLE)
         if self.placement not in snapping.PLACEMENTS:
-            self.placement = "snap"
+            self.placement = "grid"
         if self.snap_source not in SNAPPING:
             self.snap_source = "guides"
 

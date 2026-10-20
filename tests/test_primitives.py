@@ -192,6 +192,7 @@ class ToolTest(unittest.TestCase):
         self.ghost = FakeGhost()
         self.created, self.toasts, self.readouts, self.haptics = [], [], [], []
         self.free = True
+        self.placement = "grid"                                                      # Snap lines up with the model only; the grid is the Grid placement
         self.document = object()
         world = WorldPose()
         context = base.ToolContext(dominant=1, haptic=lambda *a: self.haptics.append(a))
@@ -199,7 +200,7 @@ class ToolTest(unittest.TestCase):
             "cursor": lambda hand: self.sim.hands[hand].aim.position,
             "to_document": lambda p: stage.to_document(world, p),
             "document": lambda: self.document,
-            "trigger_free": lambda: self.free,
+            "trigger_free": lambda: self.free, "placement": lambda: self.placement,
             "ghost": self.ghost,
             "toast": self.toasts.append,
             "readout": self.readouts.append,
@@ -235,10 +236,13 @@ class ToolTest(unittest.TestCase):
 
     def test_the_cursor_lines_up_with_the_points_of_the_model_and_the_guides_are_drawn(self):
         from freecad.VReeCAD.core import guides
+        self.placement = "snap"
         self.tool.ctx.services["guides"] = lambda raw, point, exclude: guides.align(raw, point, [(7.0, 40.0, 0.0)], 5.0)
         self.hand_at((9.0, 28.0, 12.0))
         self.step()
-        self.assertEqual(self.ghost.calls[-1][:2], ("marker", (7.0, 30.0, 10.0)))        # X is that of the anchor, the rest is on the grid
+        self.assertEqual(self.ghost.calls[-1][0], "marker")
+        for got, want in zip(self.ghost.calls[-1][1], (7.0, 28.0, 12.0)):
+            self.assertAlmostEqual(got, want)        # X is that of the anchor, the rest is where the hand is (no grid)
         (guide,) = self.ghost.guide_calls[-1]
         self.assertEqual((guide.kind, guide.axis, guide.anchor), ("axis", 0, (7.0, 40.0, 0.0)))
         self.assertEqual(len([h for h in self.haptics if h[1] == 0.08]), 1)                 # a tick when the guide appears
@@ -250,6 +254,7 @@ class ToolTest(unittest.TestCase):
 
     def test_a_drag_from_a_guide_makes_a_box_that_starts_at_the_anchor(self):
         from freecad.VReeCAD.core import guides
+        self.placement = "snap"
         self.tool.ctx.services["guides"] = lambda raw, point, exclude: guides.align(raw, point, [(7.0, 0.0, 0.0)], 5.0)
         self.hand_at((8.0, 0.0, 0.0))
         self.step()
@@ -261,7 +266,9 @@ class ToolTest(unittest.TestCase):
         self.step()
         (_, shape, lo, size), = self.created
         self.assertEqual(lo, (7.0, 0.0, 0.0))
-        self.assertEqual(size, (53.0, 50.0, 30.0))                                        # the far end is on the grid, the near end on the anchor
+        for got, want in zip(size, (50.0, 50.0, 30.0)):
+            self.assertAlmostEqual(got, want)
+        #                                     # the far end is where the hand is, the near end on the anchor
 
     def test_cancelling_a_drag_hides_the_guides(self):
         self.hand_at((0.0, 0.0, 0.0), trigger=1.0)

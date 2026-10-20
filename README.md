@@ -191,7 +191,7 @@ While a tool is active, the stick of the tool hand belongs to its options. Tools
 | **Points** | on a point: drag it; on an edge (Split): add a point and drag it; on a point (Remove): take it out; on an edge (Bend): bend it, or drag a handle of a curved edge | Move point, Split edge, Remove point, Bend edge, Free faces, Flat faces |
 | **Sketch** | drag a line, rectangle or circle on a plane or a face; an arc takes two ends then a third point (press again); Edit drags a point through the solver, dimensions a line, drags the radius of a circle or an arc | Rectangle, Circle, Line, Arc, Edit, XY plane, XZ plane, YZ plane |
 
-All tools line a point up with the model (guides or inference, chosen on the Settings panel). The **A** button changes the placement during a gesture: **Snap** (grid and guides), **Grid** (grid only) or **Free** (exactly where the hand is), and a toast names it. A **grip** cancels the gesture, and every gesture is one undo step. The **B** button during a gesture **fixes** what is held (a body, a point of a block, a point of a sketch) or releases it.
+All tools line a point up with the model (guides or inference, chosen on the Settings panel). The **A** button changes the placement during a gesture: **Snap** (lined up with the features of the model, no grid), **Grid** (the absolute grid only) or **Free** (exactly where the hand is), and a toast names it. A **grip** cancels the gesture, and every gesture is one undo step. The **B** button during a gesture **fixes** what is held (a body, a point of a block, a point of a sketch) or releases it.
 
 ### Values and variables
 

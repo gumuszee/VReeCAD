@@ -1135,6 +1135,7 @@ class PrimitiveLiveTest(unittest.TestCase):
         from pivy import coin
         from freecad.VReeCAD.core import stage
         s = sim.SimSession(None)
+        s.ui.settings.placement = "grid"                       # these tests count in grid steps; Snap does not round
         try:
             s.ui.settings.pointer_mode = "tip"
             s.select_tool("primitive")
@@ -1184,6 +1185,7 @@ class PrimitiveLiveTest(unittest.TestCase):
         import time
         from freecad.VReeCAD.core import stage
         s = sim.SimSession(None)
+        s.ui.settings.placement = "grid"                       # these tests count in grid steps; Snap does not round
         try:
             s.ui.settings.pointer_mode = "tip"
             s.ui.settings.tip_angle = 0.0
@@ -1207,6 +1209,7 @@ class PrimitiveLiveTest(unittest.TestCase):
         import math
         from pivy import coin
         s = sim.SimSession(None)
+        s.ui.settings.placement = "grid"                       # these tests count in grid steps; Snap does not round
         try:
             s.ui.settings.pointer_mode = "tip"
             s.select_tool("primitive")
@@ -1231,6 +1234,7 @@ class PrimitiveLiveTest(unittest.TestCase):
         import math
         from pivy import coin
         s = sim.SimSession(None)
+        s.ui.settings.placement = "grid"                       # these tests count in grid steps; Snap does not round
         try:
             s.select_tool("primitive")
             tool = s.tool_manager.active
@@ -1277,6 +1281,7 @@ class MoveLiveTest(unittest.TestCase):
     def session(self):
         from freecad.VReeCAD.core import mathutil as mu, stage
         s = self.s = sim.SimSession(None)
+        s.ui.settings.placement = "snap"                       # the Move tool tests grab freely; the default placement is the grid
         s.ui.settings.pointer_mode = "tip"
         s.ui.settings.tip_angle = 0.0
         s.select_tool("move")
@@ -1430,6 +1435,7 @@ class MoveLiveTest(unittest.TestCase):
     def test_b_during_a_point_drag_of_a_sketch_makes_the_constraints_that_fix_it(self):
         from freecad.VReeCAD.cad import sketching
         s = self.session()
+        s.ui.settings.placement = "grid"                       # the test counts in grid steps; Snap does not round
         s.select_tool("sketch")
         s.tool_manager.active.values["mode"] = "Rectangle"
         self.hand(1, (300.0, 0.0, 0.0))
@@ -2628,6 +2634,7 @@ class MoveLiveTest(unittest.TestCase):
         (sketch,) = [o for o in self.doc.Objects if sketching.is_sketch(o)]
         self.assertAlmostEqual(sketch.Geometry[0].Radius, 20.0)
         s.tool_manager.active.values["mode"] = "Edit"
+        s.ui.settings.placement = "grid"                       # the test counts in grid steps; Snap does not round
         for _ in range(12):
             s.frame(0.02)
         self.hand(1, (320.0, 0.0, 0.0))                                                       # press on the circle and drag outwards
@@ -3076,6 +3083,7 @@ class MoveLiveTest(unittest.TestCase):
         finally:
             App.closeDocument(other.Name)
 
+        s.ui.settings.placement = "grid"                       # the test counts in grid steps; Snap does not round
     def test_the_anchors_of_a_sphere_skip_its_degenerated_pole_edges(self):
         from freecad.VReeCAD.cad import anchors, primitives as prim
         sphere = prim.create(self.doc, "Sphere", (300.0, 0.0, 0.0), (50.0, 50.0, 50.0))

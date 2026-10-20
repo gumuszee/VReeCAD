@@ -28,7 +28,7 @@ import math
 GRID_STEPS = (1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0)   # millimetres
 ANGLE_STEPS = (5.0, 15.0, 30.0, 45.0, 90.0)              # degrees
 DEFAULT_GRID, DEFAULT_ANGLE = 10.0, 15.0
-PLACEMENTS = ("snap", "grid", "free")       # where a tool puts a point: on the grid and lined up with the model, on the grid only, anywhere
+PLACEMENTS = ("snap", "grid", "free")       # where a tool puts a point: lined up with the model (no grid), on the grid only, anywhere
 PLACEMENT_LABELS = {"snap": "Snap", "grid": "Grid", "free": "Free"}
 TAP_CELLS = 4                                            # a tap makes a box of this many grid steps on every side
 ANCHOR_REACH = 1.6                                       # grid steps: the grid points this near the pointer are shown

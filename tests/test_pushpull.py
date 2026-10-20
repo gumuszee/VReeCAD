@@ -132,9 +132,10 @@ class PushPullToolTest(unittest.TestCase):
         self.selection, self.toasts, self.readouts, self.applied = [], [], [], []
         self.normal = (0.0, 0.0, 1.0)
         self.ghost = FakeGhost()
+        self.placement = "grid"                                                      # Snap lines up with the model only; the grid is the Grid placement
         ctx = base.ToolContext(dominant=1)
         ctx.services.update({
-            "cursor": lambda hand: tuple(self.cursor), "to_document": lambda p: p, "document": lambda: self.doc,
+            "placement": lambda: self.placement, "cursor": lambda hand: tuple(self.cursor), "to_document": lambda p: p, "document": lambda: self.doc,
             "toast": self.toasts.append, "readout": self.readouts.append, "highlight": FakeHighlights(), "ghost": self.ghost,
             "pick": lambda doc, point, mm, kind=None: picking.Pick("box", "face", "Face6", 0.0),
             "display": lambda obj, sub: picking.Display(), "get_selection": lambda doc: list(self.selection),
@@ -201,6 +202,7 @@ class PushPullToolTest(unittest.TestCase):
 
     def with_anchors(self, anchors, reach=5.0):
         self.asked = []
+        self.placement = "snap"
         self.tool.ctx.services["guide_anchors"] = lambda exclude, probes=None: (self.asked.append(exclude) or anchors, reach)
 
     def test_a_face_lines_up_level_with_a_point_of_the_model_and_the_guide_is_drawn(self):
@@ -219,7 +221,7 @@ class PushPullToolTest(unittest.TestCase):
     def test_a_point_in_the_plane_of_the_face_and_points_out_of_reach_are_no_anchors(self):
         self.with_anchors([(80.0, 5.0, 0.0), (0.0, 0.0, 90.0)])
         self.gesture((0.0, 0.0, 22.0), release=False)
-        self.assertEqual(self.readouts[-1], "Push: 20 mm")
+        self.assertEqual(self.readouts[-1], "Push: 22 mm")                      # Snap does not round
         self.assertEqual(self.ghost.guide_calls[-1], [])
 
     def test_a_pull_lines_up_too_and_the_normal_of_a_tilted_face_has_no_axis_colour(self):
