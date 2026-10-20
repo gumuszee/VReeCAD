@@ -169,3 +169,19 @@ class PlaneTest(unittest.TestCase):
         flat = [(0.0, 40.0, 0.0)]
         _, found = guides.align_plane((60.0, 41.0), (60.0, 40.0), flat, 5.0, self.to_world, (3, 3))
         self.assertEqual((found[0].axis, found[0].text), (guides.OFF_AXIS, "Aligned"))
+
+
+class AlignTangentTest(unittest.TestCase):
+    def test_a_tip_near_a_line_through_the_base_goes_to_the_foot_on_it(self):
+        point, direction = guides.align_tangent((0.0, 0.0, 0.0), (40.0, 3.0, 0.0), [(1.0, 0.0, 0.0)], 5.0)
+        self.assertEqual((point, direction), ((40.0, 0.0, 0.0), (1.0, 0.0, 0.0)))
+
+    def test_the_line_runs_both_ways_and_the_nearest_line_wins(self):
+        point, direction = guides.align_tangent((0.0, 0.0, 0.0), (-40.0, 2.0, 1.0), [(0.0, 1.0, 0.0), (1.0, 0.0, 0.0)], 5.0)
+        self.assertEqual((point, direction), ((-40.0, 0.0, 0.0), (1.0, 0.0, 0.0)))
+
+    def test_a_tip_that_is_far_from_every_line_or_near_the_base_is_left_alone(self):
+        self.assertEqual(guides.align_tangent((0.0, 0.0, 0.0), (40.0, 30.0, 0.0), [(1.0, 0.0, 0.0)], 5.0), ((40.0, 30.0, 0.0), None))
+        self.assertEqual(guides.align_tangent((0.0, 0.0, 0.0), (2.0, 1.0, 0.0), [(1.0, 0.0, 0.0)], 5.0), ((2.0, 1.0, 0.0), None))
+
+

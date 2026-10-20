@@ -31,7 +31,7 @@ from freecad.VReeCAD.tools import ToolManager, ToolContext
 from freecad.VReeCAD.tools import registry as tool_registry
 from freecad.VReeCAD.tools import base as tools_base
 from freecad.VReeCAD.core import guides, inference, stage, units
-from freecad.VReeCAD.cad import anchors, attach, colour, combine, duplicate, edges, edit, joints, picking, sketching, values as object_values
+from freecad.VReeCAD.cad import anchors, attach, colour, combine, duplicate, edges, edit, joints, picking, sketching, tangents as tangent_lines, values as object_values
 from freecad.VReeCAD.render.depth_order import DepthOrder
 from freecad.VReeCAD.render.ghost import Ghost
 from freecad.VReeCAD.render.highlight import Highlights
@@ -610,6 +610,7 @@ class XRwidget(QOpenGLWidget):
             "guides": self.align_point,
             "feature": self.show_feature,
             "guide_anchors": self.guide_anchors,
+            "tangents": self.tangents,
             "toast": self.ui.toast,
             "readout": self.ui.set_readout,
             "format_length": lambda mm: units.format_length(mm, self.ui.system),
@@ -633,6 +634,14 @@ class XRwidget(QOpenGLWidget):
             self.snapper.reset()
             self._snap = None
         return guides.align(raw, point, anchors, tolerance) if anchors else (point, [])
+
+    def tangents(self, point, exclude=(), reach=0.0):
+        """The unit directions of the tangents at `point` of the features of the visible objects (except those in `exclude`) that pass
+        within `reach` millimetres of it; a tool snaps a handle onto them."""
+        doc = App.ActiveDocument
+        if doc is None:
+            return []
+        return tangent_lines.tangents_at(doc, point, reach, exclude)
 
     def show_feature(self, found):
         """Highlight what drives the guides `found` (inference only): the edge that a snap or a middle lies on, else the vertex."""
@@ -1506,7 +1515,9 @@ class XRwidget(QOpenGLWidget):
                     (eye0.position.y + eye1.position.y) / 2,
                     (eye0.position.z + eye1.position.z) / 2)
         o = eye0.orientation
-        self.head_pose = Pose(head_pos, (o.x, o.y, o.z, o.w), True)
+        needed = xr.ViewStateFlags.POSITION_VALID_BIT | xr.ViewStateFlags.ORIENTATION_VALID_BIT
+        located = (vs.view_state_flags & needed) == needed     # the runtime has not found the headset yet: the poses are placeholders
+        self.head_pose = Pose(head_pos, (o.x, o.y, o.z, o.w), located)
 
     def update_gui(self):
         if self.mirror_window:

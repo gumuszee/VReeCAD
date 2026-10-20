@@ -154,6 +154,24 @@ class NavigatorTest(unittest.TestCase):
         self.assertEqual(navigator.world, nav.IDENTITY)            # only the first frame
         self.assertEqual(nav.Navigator().world, nav.IDENTITY)      # off by default
 
+    def test_start_home_waits_for_a_head_at_a_height_a_head_can_have_above_the_floor(self):
+        navigator = nav.Navigator(start_home=True)
+        self.sim.set_head(position=(0.0, 0.0, 0.0), look_at_point=(0.0, 0.0, -1.0))        # a headset that has just started: the origin of the room
+        for _ in range(5):
+            navigator.update(self.sim.frame(0.1))
+        self.assertEqual(navigator.world, nav.IDENTITY)                                      # the model is not put on the floor
+        self.sim.set_head(position=(0.1, 1.6, 0.2), look_at_point=(0.1, 1.6, -1.0))
+        navigator.update(self.sim.frame(0.1))
+        self.assertEqual(navigator.world, nav.home_pose(self.sim.head))
+        self.assertGreater(navigator.world.position[1], 1.0)
+
+    def test_start_home_takes_a_low_head_after_a_while(self):
+        navigator = nav.Navigator(start_home=True)
+        self.sim.set_head(position=(0.0, 0.3, 0.0), look_at_point=(0.0, 0.3, -1.0))         # sitting in a room without a floor level
+        for _ in range(int(nav.START_WAIT / 0.1) + 2):
+            navigator.update(self.sim.frame(0.1))
+        self.assertEqual(navigator.world, nav.home_pose(self.sim.head))
+
     def test_reset_can_be_requested_without_a_gesture(self):
         self.step()
         self.nav.world = nav.WorldPose((3, 0, 0), mu.quat_from_axis_angle((1, 0, 0), 0.5), 3.0)

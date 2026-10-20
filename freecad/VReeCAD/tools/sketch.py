@@ -205,7 +205,7 @@ class SketchTool(TouchTool):
         mode = self.placement
         if mode == "free":
             return (local[0], local[1]), []
-        snapped = self._snap2(local)
+        snapped = self._snap2(local) if mode == "grid" else (local[0], local[1])        # only the Grid placement rounds
         service = self._service("guide_anchors")
         if service is None or frame is None or mode == "grid":
             return snapped, []
@@ -228,7 +228,7 @@ class SketchTool(TouchTool):
         sk = self._sk()
         sketch = self._current(doc)
         if sketch is not None or self._hover is None:
-            frame = sk.placement(sketch) if sketch is not None else sk.plane_frame(self.plane, raw, self.grid)
+            frame = sk.placement(sketch) if sketch is not None else sk.plane_frame(self.plane, self.place(raw)[0])
             (x, y), found = self._align2(frame, sk.frame_to_local(frame, raw), sketch)
             point = sk.frame_to_world(frame, (x, y, 0.0))
             self.show_guides(found, self.grid * 0.5)
@@ -240,7 +240,7 @@ class SketchTool(TouchTool):
                 ghost.show_shape(Mesh(outline=[plane_square(self.plane, point, self.grid * PLANE_HALF_CELLS)]))
             return
         self.hide_guides()
-        ghost.show_marker(snapping.snap_point(raw, self.grid), self.grid * 0.75)
+        ghost.show_marker(self.place(raw)[0], self.grid * 0.75)
         ghost.hide_shape()
 
     def _press_draw(self, doc, pick, raw):
@@ -252,7 +252,7 @@ class SketchTool(TouchTool):
             if pick is not None:
                 sketch = sk.create_on_face(doc, doc.getObject(pick.name), pick.sub)
             else:
-                sketch = sk.create_on_plane(doc, self.plane, raw, self.grid)
+                sketch = sk.create_on_plane(doc, self.plane, self.place(raw)[0])
             doc.recompute()
         else:
             doc.openTransaction(f"Draw {self.values['mode']}")
@@ -286,7 +286,7 @@ class SketchTool(TouchTool):
         return f"Line: {self._format(math.dist((x0, y0), (x1, y1)))}"
 
     def _place(self, sketch, local, hand, apart_from=None, line_from=None):
-        """The point (x, y) of the sketch for the hand at `local`: on the grid and the guides, off both while the A button is held. With
+        """The point (x, y) of the sketch for the hand at `local` by the placement (on the grid, or lined up with the model, or free). With
         `line_from` (the start of a line being drawn) the point also moves to where the line is exactly parallel or perpendicular to a
         slanted line of the sketch when it is nearly so, and to the length of a line of the sketch when it is nearly as long (the drawn
         line then gets that constraint)."""
@@ -469,7 +469,7 @@ class SketchTool(TouchTool):
         centre = sk.centre_of(sketch, state["radius"])
         distance = ((local[0] - centre[0]) ** 2 + (local[1] - centre[1]) ** 2) ** 0.5
         wanted = state["r0"] + distance - state["d0"]       # the radius follows the distance of the hand from the centre, from where it was pressed
-        radius = max(wanted, MIN_RADIUS) if self.placement == "free" else max(snapping.snap(wanted, self.grid), self.grid)
+        radius = max(snapping.snap(wanted, self.grid), self.grid) if self.placement == "grid" else max(wanted, MIN_RADIUS)
         if abs(radius - state["now"]) > 1e-9:
             error = sk.set_dimension(sketch, state["index"], radius)
             if error is not None:

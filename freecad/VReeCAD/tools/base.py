@@ -133,19 +133,21 @@ class Tool:
 
     @property
     def placement(self):
-        """How a point is placed: "snap" (rounded to the grid and lined up with the model), "grid" (rounded to the grid) or "free". The
+        """How a point is placed: "snap" (lined up with the features of the model, no grid), "grid" (rounded to the grid) or "free". The
         setting of the Settings panel that the A button changes while the trigger is held (the service `placement`)."""
         service = self.ctx.services.get("placement")
-        return service() if service is not None else "snap"
+        return service() if service is not None else "grid"
 
     def place(self, raw, exclude=()):
-        """(point, guides) for a cursor at `raw` by the placement: `raw` itself when free, the grid point when on the grid, the grid
-        point lined up with the model when snapping."""
+        """(point, guides) for a cursor at `raw` by the placement: `raw` itself when free, the point on the absolute grid when on the grid,
+        and when snapping the point lined up with the features of the model (the grid plays no part: an axis without a feature near
+        keeps the coordinate of the hand)."""
         mode = self.placement
         if mode == "free":
             return tuple(raw), []
-        point = snapping.snap_point(raw, self.grid)
-        return (point, []) if mode == "grid" else self.align(raw, point, exclude)
+        if mode == "grid":
+            return snapping.snap_point(raw, self.grid), []
+        return self.align(raw, tuple(raw), exclude)
 
     def grid_text(self):
         """The grid step as text, in the measurement system of the document."""
@@ -153,8 +155,9 @@ class Tool:
         return "Grid " + (format_length(self.grid) if format_length is not None else f"{self.grid:g} mm")
 
     def align(self, raw, point, exclude=()):
-        """(point, guides) for a cursor at `raw` that the grid rounded to `point`: the point lined up with the points of the model (the
-        service `guides`, which skips the objects named in `exclude`); the same point and no guides when there is no such service."""
+        """(point, guides) for a cursor at `raw` whose coordinates stay as `point` gives them where no feature is near: the point lined up
+        with the points of the model (the service `guides`, which skips the objects named in `exclude`); the same point and no guides
+        when there is no such service."""
         service = self.ctx.services.get("guides")
         return (point, []) if service is None else service(raw, point, tuple(exclude))
 
@@ -175,14 +178,14 @@ class Tool:
             feature(guides)                      # the host highlights what drives them (inference)
 
     def show_grid_points(self, point, dims=3, to_document=None):
-        """Faint spheres on the grid points around `point` (the pointer, before it is snapped), smaller the farther they are; none when
-        the placement is free. `hide_guides` hides them too, so call this after it. With `dims` 2 the points are those of a
+        """Faint spheres on the grid points around `point` (the pointer, before it is snapped), smaller the farther they are; shown with the
+        Grid placement only. `hide_guides` hides them too, so call this after it. With `dims` 2 the points are those of a
         plane (the first two coordinates) and `to_document` turns a point of that plane into a document point."""
         ghost = self.ctx.services.get("ghost")
         show = getattr(ghost, "show_grid_points", None)
         if show is None:
             return
-        if self.placement == "free":
+        if self.placement != "grid":
             show([])
             return
         spheres = snapping.grid_anchors(point, self.grid, dims)

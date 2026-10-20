@@ -127,6 +127,22 @@ def align_length(start, end, references, tolerance):
     return (start[0] + dx * scale, start[1] + dy * scale), best[2]
 
 
+def align_tangent(base, tip, directions, tolerance):
+    """(point, direction) for the tip of a handle that starts at `base` and ends at `tip`: when the tip is within `tolerance` of the line
+    through `base` along one of the unit `directions` (either way), the point is the foot of the tip on that line and `direction` the
+    direction (the nearest line wins); else (`tip`, None). A tip within `tolerance` of the base is left alone."""
+    d = tuple(t - b for t, b in zip(tip, base))
+    if sum(c * c for c in d) < tolerance * tolerance:
+        return tuple(tip), None
+    best = None
+    for u in directions:
+        along = sum(c * k for c, k in zip(d, u))
+        lateral = sum((c - along * k) ** 2 for c, k in zip(d, u)) ** 0.5
+        if lateral < tolerance and (best is None or lateral < best[0]):
+            best = (lateral, tuple(b + along * k for b, k in zip(base, u)), tuple(u))
+    return (tuple(tip), None) if best is None else (best[1], best[2])
+
+
 def index_anchors(anchors):
     """The anchors sorted by each coordinate, as ((values, anchors) of x, of y, of z), for `align_translation`."""
     index = []

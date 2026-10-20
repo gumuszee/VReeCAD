@@ -87,10 +87,13 @@ def to_world(sketch, point):
     return frame_to_world(placement(sketch), point)
 
 
-def plane_frame(plane, point, grid):
-    """The frame of a new sketch on `plane` at the height of `point` (document millimetres) along the normal, rounded to the grid."""
+def plane_frame(plane, point, grid=None):
+    """The frame of a new sketch on `plane` at the height of `point` (document millimetres) along the normal, rounded to the grid when
+    one is given."""
     normal = plane_normal(plane)
-    height = round(mu.dot(point, normal) / grid) * grid
+    height = mu.dot(point, normal)
+    if grid:
+        height = round(height / grid) * grid
     return mu.mul(normal, height), PLANE_ROTATION[plane]
 
 
@@ -112,8 +115,8 @@ def own_points(sketch, apart_from=None):
 
 
 # making sketches
-def create_on_plane(doc, plane, point, grid):
-    """A sketch on `plane` at the height of `point` (document millimetres) along the normal, rounded to the grid."""
+def create_on_plane(doc, plane, point, grid=None):
+    """A sketch on `plane` at the height of `point` (document millimetres) along the normal, rounded to the grid when one is given."""
     import FreeCAD as App
     base, rotation = plane_frame(plane, point, grid)
     sketch = doc.addObject(TYPE, "Sketch")

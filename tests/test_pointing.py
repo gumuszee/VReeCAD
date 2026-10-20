@@ -70,13 +70,13 @@ class SettingsTest(unittest.TestCase):
 
     def test_the_placement_cycles_through_snap_grid_and_free_and_the_snapping_toggles(self):
         s = cfg.Settings()
-        self.assertEqual((s.placement, s.snap_source), ("snap", "guides"))
-        self.assertEqual([s.cycle_placement() for _ in range(4)], ["grid", "free", "snap", "grid"])
+        self.assertEqual((s.placement, s.snap_source), ("grid", "guides"))
+        self.assertEqual([s.cycle_placement() for _ in range(4)], ["free", "snap", "grid", "free"])
         s.toggle_snapping()
         self.assertEqual(s.snap_source, "inference")
         self.assertEqual(cfg.Settings.from_json(s.to_json()), s)
         bad = cfg.Settings.from_json(json.dumps({"placement": "x", "snap_source": 3}))
-        self.assertEqual((bad.placement, bad.snap_source), ("snap", "guides"))
+        self.assertEqual((bad.placement, bad.snap_source), ("grid", "guides"))
 
     def test_json_roundtrip_and_bad_files(self):
         s = cfg.Settings("tip", 20.0, 0.15)

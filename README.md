@@ -14,7 +14,7 @@
 - **Create** parametric primitives (box, cylinder, cone, sphere, torus, wedge, prism) by dragging them out on a snap grid with a ghost preview.
 - **Select** objects, faces, edges and vertices (FreeCAD's own selection, shared with the desktop), **move, turn and scale** objects, free or locked to the grid and angle step.
 - **Push/Pull** flat faces along their normal; the sizes of boxes, cylinders, cones and sketch extrusions change in place, other faces get fuse or cut features.
-- **Points**: blocks (solids made of points) whose points are dragged, split and removed, optionally keeping faces flat, and whose edges bend into 3D Bezier curves with free handles.
+- **Points**: blocks (solids made of points) whose points are dragged, split and removed, optionally keeping faces flat, and whose edges bend into 3D Bezier curves with free handles that can be smooth and snap to tangents.
 - **Sketch** lines, rectangles, circles and arcs on a plane or on a face, with the constraints the drawing implies; edit points through the solver, dimension lines and radii, extrude to solids.
 - **Modify** with booleans (fuse, cut, common), copy, mirror, linear patterns, colours, fillet and chamfer, attach to a face, and assembly joints (fixed, hinge, slider, ball).
 - **Values**: selecting an object brings up sliders, a number pad and keys for its sizes and position. Values bind to named **variables** (a `Variables` spreadsheet) and to expressions such as `width * 2 + 10 mm`.
@@ -116,7 +116,7 @@ The **Tool hand** button of the Settings panel swaps the roles; everything that 
 | Trigger | the primary action of the tool; on the carousel: press and release on a button to activate it, hold on a button (0.4 s) to lift it, hold on a title bar to lift the panel |
 | Grip | grab the world (see Navigation) |
 | Stick | the options of the tool (see Tool options) |
-| Stick click | the tool decides: Select goes back to Object and Replace, Points back to Move and Free faces; the other tools ignore it. While gripping: reset the view |
+| Stick click | the tool decides: Select goes back to Object and Replace, Points back to Move and Free faces (while a handle is held: marks it, or makes its point smooth or sharp); the other tools ignore it. While gripping: reset the view |
 | A | outside a gesture: hold for the quick radial. During a gesture: cycle the placement Snap, Grid, Free. While gripping: level mode |
 | B | outside a gesture: tap undoes, hold (0.4 s) redoes. During a gesture: fix or release what is held. While gripping: hold the scale at 1 : 1 |
 
@@ -191,7 +191,7 @@ While a tool is active, the stick of the tool hand belongs to its options. Tools
 | **Points** | on a point: drag it; on an edge (Split): add a point and drag it; on a point (Remove): take it out; on an edge (Bend): bend it, or drag a handle of a curved edge | Move point, Split edge, Remove point, Bend edge, Free faces, Flat faces |
 | **Sketch** | drag a line, rectangle or circle on a plane or a face; an arc takes two ends then a third point (press again); Edit drags a point through the solver, dimensions a line, drags the radius of a circle or an arc | Rectangle, Circle, Line, Arc, Edit, XY plane, XZ plane, YZ plane |
 
-All tools line a point up with the model (guides or inference, chosen on the Settings panel). The **A** button changes the placement during a gesture: **Snap** (grid and guides), **Grid** (grid only) or **Free** (exactly where the hand is), and a toast names it. A **grip** cancels the gesture, and every gesture is one undo step. The **B** button during a gesture **fixes** what is held (a body, a point of a block, a point of a sketch) or releases it.
+All tools line a point up with the model (guides or inference, chosen on the Settings panel). The **A** button changes the placement during a gesture: **Snap** (lined up with the features of the model, no grid), **Grid** (the absolute grid only) or **Free** (exactly where the hand is), and a toast names it. A **grip** cancels the gesture, and every gesture is one undo step. The **B** button during a gesture **fixes** what is held (a body, a point of a block, a point of a sketch) or releases it.
 
 ### Values and variables
 

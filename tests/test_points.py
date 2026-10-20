@@ -25,6 +25,7 @@ class FakeBlock:
         self.vertices, self.faces = bg.box((0, 0, 0), (100, 100, 100))
         self.fixed = set()
         self.handles = {}                                # the curved edges: (a, b) -> (offset at a, offset at b)
+        self.smooth = set()                              # the smooth points: (p, a, b)
 
 
 class FakeDocument:
@@ -89,9 +90,14 @@ class FakeBlocks:
     def read_handles(self, obj):
         return dict(obj.handles)
 
-    def set_handles(self, doc, obj, handles):
+    def set_handles(self, doc, obj, handles, smooth=None):
         doc.recompute()
         obj.handles = dict(handles)
+        if smooth is not None:
+            obj.smooth = set(smooth)
+
+    def read_smooth(self, obj):
+        return set(obj.smooth)
 
     def handle_text(self, obj):
         return tuple(bc.to_text(obj.handles))
@@ -106,15 +112,18 @@ class FakeBlocks:
         return t, bc.point_at(curve, t)
 
     def split_handles(self, obj, a, b, index, t):
+        obj.smooth = bc.split_smooth(obj.smooth, a, b, index, self.is_curved(obj, a, b))
         if self.is_curved(obj, a, b):
             vertices = list(obj.vertices) + [self.edge_point(obj, a, b, None, t)[1]]
             obj.handles = bc.split_edge(vertices, obj.handles, min(a, b), max(a, b), index, t)
 
-    def apply(self, doc, obj, vertices, faces=None):
+    def apply(self, doc, obj, vertices, faces=None, handles=None):
         new_faces = faces if faces is not None else obj.faces
         error = bg.validate(vertices, new_faces)
         if error is None:
             obj.vertices, obj.faces = list(vertices), list(new_faces)
+            if handles is not None:
+                obj.handles = dict(handles)
         return error
 
     def set_picked(self, obj, index):
@@ -170,7 +179,7 @@ class PointsToolTest(unittest.TestCase):
         self.block = FakeBlock("block")
         self.doc = FakeDocument(self.block)
         self.cursor = [100.0, 0.0, 0.0]
-        self.placement = "snap"                                                      # the A button changes it while the trigger is held
+        self.placement = "grid"                                                      # the A button changes it while the trigger is held
         self.selection, self.toasts, self.readouts = [], [], []
         self.highlights = FakeHighlights()
         ctx = base.ToolContext(dominant=1)
@@ -205,6 +214,17 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(self.toasts[-1], "Moved point 1 of BLOCK")
         self.assertEqual(self.selection, [("block", "")])
         self.assertEqual(self.tool.ctx.services["blocks"].picked, ("block", 1))     # the value panels show the point
+
+    def test_the_snap_placement_does_not_use_the_grid_and_lines_a_coordinate_up_with_the_model_only(self):
+        self.placement = "snap"
+        self.drag((123.0, -4.0, 17.0))
+        self.assertEqual(self.block.vertices[1], (123.0, -4.0, 17.0))                # no grid: where the hand is
+
+    def test_a_bend_in_snap_puts_the_held_point_where_the_hand_is_not_on_the_grid(self):
+        self.placement = "snap"
+        self.block.handles = {(0, 1): ((0.0, 43.0, 0.0), (0.0, 43.0, 0.0))}
+        self.bend((0.0, 43.0, 0.0), (52.0, 61.0, 13.0))                                # far from the lines of the other edges
+        self.assertEqual(self.handle_at_zero((0, 1)), (52.0, 61.0, 13.0))
 
     def test_the_free_placement_leaves_the_point_off_the_grid_and_the_grid_placement_has_no_guides(self):
         self.placement = "free"
@@ -413,12 +433,26 @@ class PointsToolTest(unittest.TestCase):
         self.assertEqual(list(self.block.handles), [(0, 1)])
         curve = bc.poles(self.block.vertices, self.block.handles, 0, 1)
         self.assertEqual((curve[0], curve[3]), ((0, 0, 0), (100, 0, 0)))
-        for got, want in zip(bc.point_at(curve, 0.5), (50.0, 38.0, 29.0)):               # the curve moves by what the hand moved after the press
+        for got, want in zip(bc.point_at(curve, 0.5), (50.0, 40.0, 30.0)):               # the held point of the edge lands on the absolute grid
             self.assertAlmostEqual(got, want, places=6)
         self.assertEqual(self.doc.log[0], ("open", "Bend edge of BLOCK"))
         self.assertEqual(self.doc.log.count(("commit",)), 1)
         self.assertEqual(self.toasts[-1], "Bent edge 0-1 of BLOCK")
         self.assertEqual(self.selection, [("block", "")])
+
+    def test_a_bend_places_the_held_point_on_the_absolute_grid_not_by_steps_from_where_it_was_grabbed(self):
+        self.block.handles = {(0, 1): ((0.0, 43.0, 0.0), (0.0, 43.0, 0.0))}              # the tip of the first handle is off the grid
+        self.bend((0.0, 43.0, 0.0), (0.0, 43.0, 27.0), release=False)
+        self.assertEqual(self.block.handles[(0, 1)][0], (0.0, 40.0, 30.0))              # 40 and 30, not 43 and 27 plus a whole step
+        self.cursor = [0.0, 58.0, 27.0]
+        self.tool.update(self.sim.frame(0.02))
+        self.assertEqual(self.block.handles[(0, 1)][0], (0.0, 60.0, 30.0))
+
+    def test_a_free_bend_moves_the_held_point_by_what_the_hand_moved(self):
+        self.placement = "free"
+        self.block.handles = {(0, 1): ((0.0, 43.0, 0.0), (0.0, 43.0, 0.0))}
+        self.bend((0.0, 43.0, 0.0), (0.0, 43.0, 27.0))
+        self.assertEqual(self.block.handles[(0, 1)][0], (0.0, 43.0, 27.0))
 
     def test_a_bend_that_the_hand_has_not_moved_far_changes_nothing(self):
         self.bend((50.0, 2.0, 1.0), (50.0, 6.0, 1.0))
@@ -472,6 +506,100 @@ class PointsToolTest(unittest.TestCase):
             self.assertAlmostEqual(got, want, places=6)
         first = bc.poles(self.block.vertices, self.block.handles, 0, 8)
         for got, want in zip(bc.point_at(first, 0.5), bc.point_at(whole, 0.25)):
+            self.assertAlmostEqual(got, want, places=6)
+
+    def test_the_new_point_of_a_curved_edge_is_smooth_and_that_of_a_straight_edge_is_not(self):
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0))}
+        whole = bc.poles(self.block.vertices, self.block.handles, 0, 1)
+        self.tool.values["mode"] = "Split"
+        self.cursor = list(bc.point_at(whole, 0.5))
+        self.drag(tuple(self.cursor))
+        self.assertEqual(self.block.smooth, {(8, 0, 1)})
+        self.cursor = [0.0, 50.0, 0.0]
+        self.drag((0.0, 50.0, 0.0))                                                  # the edge 0-3 is straight
+        self.assertEqual(self.block.smooth, {(8, 0, 1)})
+
+    # tangents and smooth points
+    def release(self):
+        self.sim.set_hand(1, trigger=0.0, button1=False)
+        self.tool.update(self.sim.frame(0.02))
+
+    def handle_at_zero(self, edge):
+        return self.block.handles[edge][0]
+
+    def test_a_handle_snaps_onto_the_line_of_the_other_handles_of_its_point_in_snap(self):
+        self.placement = "snap"
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0))}
+        self.bend((0.0, 40.0, 0.0), (5.0, 27.0, 2.0))                                  # the edge 0-3 runs along y: its line is near
+        for got, want in zip(self.handle_at_zero((0, 1)), (0.0, 27.0, 0.0)):
+            self.assertAlmostEqual(got, want, places=6)
+
+    def test_the_grid_and_the_free_placement_do_not_snap_to_tangents(self):
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0))}
+        self.placement = "grid"
+        self.bend((0.0, 40.0, 0.0), (5.0, 27.0, 2.0))
+        self.assertEqual(self.handle_at_zero((0, 1)), (10.0, 30.0, 0.0))
+        self.placement = "free"
+        self.bend((10.0, 30.0, 0.0), (45.0, 27.0, 2.0))
+        self.assertEqual(self.handle_at_zero((0, 1)), (45.0, 27.0, 2.0))
+
+    def test_a_handle_snaps_onto_the_tangent_of_a_feature_of_the_model(self):
+        self.placement = "snap"
+        self.tool.ctx.services["tangents"] = lambda point, exclude, reach: [(2 ** -0.5, 2 ** -0.5, 0.0)]
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0))}
+        self.bend((0.0, 40.0, 0.0), (30.0, 33.0, 2.0))
+        for got, want in zip(self.handle_at_zero((0, 1)), (31.5, 31.5, 0.0)):
+            self.assertAlmostEqual(got, want, places=6)
+
+    def test_the_stick_click_on_two_handles_of_a_point_makes_it_smooth_and_the_handles_follow_each_other(self):
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0)), (0, 4): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}
+        self.bend((0.0, 40.0, 0.0), (0.0, 40.0, 0.0), release=False)
+        self.assertIn("other handle", self.tool.stick_click())
+        self.release()
+        self.assertEqual(self.block.smooth, set())
+        self.bend((0.0, 0.0, 30.0), (0.0, 0.0, 30.0), release=False)
+        self.assertEqual(self.tool.stick_click(), "Point 0 is smooth")
+        self.assertEqual(self.block.smooth, {(0, 1, 4)})
+        for got, want in zip(self.handle_at_zero((0, 1)), (0.0, 0.0, -40.0)):                # the armed handle turned onto the held one, its length kept
+            self.assertAlmostEqual(got, want, places=6)
+        self.cursor = [0.0, 20.0, 30.0]
+        self.tool.update(self.sim.frame(0.02))
+        held, other = self.handle_at_zero((0, 4)), self.handle_at_zero((0, 1))
+        self.assertAlmostEqual(bc.mu.length(other), 40.0, places=6)
+        self.assertAlmostEqual(bc.mu.dot(bc.mu.cross(held, other), bc.mu.cross(held, other)), 0.0, places=6)    # on one line
+        self.assertLess(bc.mu.dot(held, other), 0.0)                                         # pointing away from each other
+        self.release()
+        self.assertEqual(self.doc.log.count(("commit",)), 1)
+
+    def test_the_stick_click_on_a_handle_of_a_smooth_point_makes_it_sharp(self):
+        self.block.handles = {(0, 1): ((0.0, 0.0, -40.0), (0.0, 40.0, 0.0)), (0, 4): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}
+        self.block.smooth = {(0, 1, 4)}
+        self.bend((0.0, 0.0, 30.0), (0.0, 0.0, 30.0), release=False)
+        self.assertEqual(self.tool.stick_click(), "Point 0 is sharp")
+        self.assertEqual(self.block.smooth, set())
+
+    def test_the_stick_click_without_a_handle_in_the_hand_resets_the_options_as_before(self):
+        self.tool.values["mode"] = "Bend"
+        self.assertEqual(self.tool.stick_click(), "Mode and faces reset")
+        self.assertEqual(self.tool.values["mode"], "Move")
+
+    def test_moving_a_point_keeps_the_pairs_of_the_smooth_points_that_it_belongs_to_on_one_line(self):
+        self.block.handles = {(0, 4): ((0.0, 0.0, 30.0), (0.0, 0.0, 30.0))}
+        self.block.smooth = {(0, 1, 4)}
+        self.cursor = [100.0, 0.0, 0.0]
+        self.drag((100.0, 0.0, 50.0))
+        edge = bc.end_handle(self.block.vertices, self.block.handles, 0, 1)                  # the edge 0-1 left its straight line
+        self.assertEqual(self.block.vertices[1], (100.0, 0.0, 50.0))
+        for got, want in zip(edge, (0.0, 0.0, -((100.0 ** 2 + 50.0 ** 2) ** 0.5) / 3.0)):
+            self.assertAlmostEqual(got, want, places=6)
+
+    def test_a_point_moved_onto_a_feature_turns_the_handles_that_are_nearly_along_it(self):
+        self.placement = "snap"
+        self.tool.ctx.services["tangents"] = lambda point, exclude, reach: [(0.0, 3.0 / 10 ** 0.5, 1.0 / 10 ** 0.5)]
+        self.block.handles = {(0, 1): ((0.0, 40.0, 0.0), (0.0, 40.0, 0.0))}
+        self.cursor = [0.0, 0.0, 0.0]
+        self.drag((0.0, 0.0, 20.0))
+        for got, want in zip(self.handle_at_zero((0, 1)), (0.0, 40.0 * 3.0 / 10 ** 0.5, 40.0 / 10 ** 0.5)):
             self.assertAlmostEqual(got, want, places=6)
 
     def test_nothing_is_touched_far_from_the_points(self):

@@ -127,14 +127,17 @@ class PushPullTool(TouchTool):
             self._commit(doc, state)
 
     def _align(self, state, obj, raw_distance):
-        """(distance, anchor): the distance rounded to the grid, or the one that puts the face level with a point of the model (the
-        service `guide_anchors`, without the object itself; a point already in the plane of the face is no anchor) and that point."""
+        """(distance, anchor): the distance rounded to the grid (Grid), or the one that puts the face level with a point of the model (Snap;
+        the service `guide_anchors`, without the object itself; a point already in the plane of the face is no anchor) and that point.
+        Free leaves the distance; Snap and Free make a tap of a distance shorter than half a grid step."""
         mode = self.placement
         if mode == "free":
             return raw_distance, None
-        grid = pushpull.snapped(raw_distance, self.grid, state["origin"])
+        if mode == "grid":
+            return pushpull.snapped(raw_distance, self.grid, state["origin"]), None
+        grid = 0.0 if abs(raw_distance) < pushpull.MIN_STEPS * self.grid / 2 - 1e-9 else raw_distance
         service = self._service("guide_anchors")
-        if service is None or mode == "grid":
+        if service is None:
             return grid, None
         anchors, tolerance = service((obj.Name,))
         if state["source"] is not anchors:

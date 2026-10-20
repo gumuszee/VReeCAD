@@ -26,13 +26,20 @@ whose coordinates are bound to variables, stays. With the faces **Flat** the dra
 is held flat: the plane of its other corners), so it moves in a plane, along a line or not at all; with **Free** faces a face that
 bends is built from triangles. Releasing keeps the change as one undo step and selects the block (so the value panels follow it); a
 grip cancels. The stick chooses from an option disc: the three modes and the two kinds of faces; its click
-puts the mode and the faces back.
+puts the mode and the faces back. In the **Bend** mode the click of the stick while a handle is held marks that handle, and the click while a
+second handle of the same point is held makes the point smooth (the two handles lie on one line from then on); the click on a handle of a
+smooth point makes it sharp. With the Snap placement a dragged handle snaps onto the tangent of the other edges of its point and of the
+features of the model (service `tangents`), and a point dragged onto a feature turns its curved handles onto the tangent.
 
 Services besides those of `TouchTool`: `blocks`, an object with the functions of `cad.block` that the tool uses (`pick`, `display`,
-`handles`, `signature`, `read`, `apply`, `to_local`, `to_world`), replaced in tests."""
+`handles`, `signature`, `read`, `apply`, `to_local`, `to_world`), replaced in tests, and `tangents`, a function (point, names to leave out,
+reach) giving the unit directions of the tangents of the features of the model there."""
+
+import math
 
 from freecad.VReeCAD.cad import blockcurve, blockgeom
 from freecad.VReeCAD.core import mathutil as mu
+from freecad.VReeCAD.core.guides import OFF_AXIS, Guide, align_tangent
 from freecad.VReeCAD.tools.base import DiscSlot, ToolOption
 from freecad.VReeCAD.tools.registry import register
 from freecad.VReeCAD.tools.touch import TouchTool
@@ -41,6 +48,8 @@ DRAG_START = 0.012          # metres on the stage: a point that was pressed star
 MODES = ("Move", "Split", "Remove", "Bend")
 KINDS = {"Move": "vertex", "Split": "edge", "Remove": "vertex", "Bend": "curve"}
 FACES = ("Free", "Flat")
+TANGENT_REACH = 0.010       # metres on the stage: a handle tip this near the tangent line of a feature snaps onto it (Snap placement)
+TANGENT_TURN = 25.0         # degrees: a handle of a point that was moved onto a feature turns to its tangent when it is this near
 
 
 @register
@@ -49,7 +58,7 @@ class PointsTool(TouchTool):
     label = "Points"
     hint = "Press on a point of a block and drag it; the stick switches to splitting an edge, removing a point or bending an edge"
     controls = (("Trigger", "move, split, remove, bend, handle"), ("A", "trigger held: snap, grid, free"),
-                ("B", "held: fix/straighten, tap: undo, hold: redo"), ("Stick click", "back to Move, Free faces"))
+                ("B", "held: fix/straighten, tap: undo, hold: redo"), ("Stick click", "reset; held handle: smooth"))
     options = (ToolOption("mode", "Mode", "choice", default=MODES[0], choices=MODES),
                ToolOption("faces", "Faces", "choice", default=FACES[0], choices=FACES))
 
@@ -57,6 +66,7 @@ class PointsTool(TouchTool):
         super().__init__(ctx)
         self._drag = None             # the point being dragged
         self._handles_key = None      # what the markers of the points show
+        self._armed = None            # (block, point, other end) of the handle that a click of the stick marked to make a point smooth
 
     @property
     def busy(self):
@@ -75,9 +85,44 @@ class PointsTool(TouchTool):
         return [self.grid_text(), f"{self.values['mode']}, {self.values['faces'].lower()}"]
 
     def stick_click(self):
+        if self._drag is not None:
+            return self._smooth_click()
+        self._armed = None
         for option in self.options:
             self.values[option.name] = option.default
         return "Mode and faces reset"
+
+    def _smooth_click(self):
+        """The click of the stick while a handle is held: the handle is marked, and the click on a second handle of the same point
+        makes the point smooth (the two handles lie on one line from then on); the click on a handle of a smooth point makes the point
+        sharp again."""
+        state = self._drag
+        bend = state.get("bend")
+        doc = self._service("document", lambda: None)()
+        blocks = self._blocks()
+        obj = doc.getObject(state["name"]) if doc is not None else None
+        if bend is None or bend["end"] is None or obj is None or not hasattr(blocks, "read_smooth"):
+            return "Smooth point: hold a handle in the Bend mode and click the stick"
+        p, q = (bend["a"], bend["b"]) if bend["end"] == 0 else (bend["b"], bend["a"])
+        smooth, handles = blocks.read_smooth(obj), blocks.read_handles(obj)
+        partner = blockcurve.smooth_pair(smooth, p, q)
+        if partner is not None:
+            wanted = {t for t in smooth if not (t[0] == p and q in t[1:])}
+            text = f"Point {p} is sharp"
+        elif self._armed is not None and self._armed[:2] == (obj.Name, p) and self._armed[2] != q:
+            vertices, _ = blocks.read(obj)
+            handles, wanted = blockcurve.make_smooth(vertices, handles, smooth, p, q, self._armed[2])
+            text = f"Point {p} is smooth"
+        else:
+            self._armed = (obj.Name, p, q)
+            return f"Point {p}: hold its other handle and click the stick to make it smooth"
+        error = blocks.set_handles(doc, obj, handles, wanted)
+        if error is not None:
+            return error
+        self._armed = None
+        state["changed"] = True
+        self._haptic(0.3, 0.02)
+        return text
 
     def _blocks(self):
         service = self._service("blocks")
@@ -126,6 +171,7 @@ class PointsTool(TouchTool):
         self.values["mode"] = MODES[0]          # the tool always starts by moving points; the grid and the faces stay as they were
 
     def deactivate(self):
+        self._armed = None
         if self._drag is not None:
             self._abort()
         self.hide_guides()
@@ -281,13 +327,16 @@ class PointsTool(TouchTool):
             anchor = curve[1] if bend["end"] == 0 else curve[2]
         state["curve0"], state["anchor0"] = curve, anchor
 
+    def _smooth(self, obj):
+        return getattr(self._blocks(), "read_smooth", lambda o: set())(obj)
+
     def _follow_bend(self, doc, obj, target):
-        """Bend the edge so that what the hand holds goes with the hand (`target` is the placed cursor); False when the block refuses."""
+        """Bend the edge so that what the hand holds goes to `target`, the held point placed by the placement (on the absolute grid when
+        it snaps, on a tangent line when one is near); False when the block refuses. The other edge of a smooth point follows."""
         blocks = self._blocks()
         state = self._drag
         bend = state["bend"]
-        delta = mu.sub(target, state["start"])
-        desired = tuple(blocks.to_local(obj, mu.add(blocks.to_world(obj, state["anchor0"]), delta)))
+        desired = tuple(blocks.to_local(obj, target))
         curve = list(state["curve0"])
         if bend["end"] is None:
             curve = blockcurve.bend_through(curve, bend["t"], desired)
@@ -297,6 +346,9 @@ class PointsTool(TouchTool):
             return True
         vertices, _ = blocks.read(obj)
         handles = blockcurve.store_edge(blocks.read_handles(obj), vertices, bend["a"], bend["b"], curve)
+        smooth = self._smooth(obj)
+        if smooth:
+            handles = blockcurve.enforce_edge(vertices, handles, smooth, bend["a"], bend["b"])
         error = blocks.set_handles(doc, obj, handles)
         if error is not None:
             self._readout(error)
@@ -308,6 +360,79 @@ class PointsTool(TouchTool):
                       f"{self._format(mu.length(mu.sub(curve[2], curve[3])))}")
         return True
 
+    def _tangent_directions(self, obj):
+        """The unit directions (in the document) that a handle of the point being bent may snap onto, with the point (in the document):
+        the handles of the other edges at the point (a smooth join) and the tangents of the features of the model that pass through it.
+        None when the drag holds no handle or the placement is not Snap."""
+        state = self._drag
+        bend = state.get("bend")
+        if bend is None or bend["end"] is None or self.placement != "snap":
+            return None
+        if "tangents" not in state:
+            blocks = self._blocks()
+            vertices, faces = blocks.read(obj)
+            handles = blocks.read_handles(obj)
+            p, q = (bend["a"], bend["b"]) if bend["end"] == 0 else (bend["b"], bend["a"])
+            base = tuple(blocks.to_world(obj, vertices[p]))
+            partner = blockcurve.smooth_pair(self._smooth(obj), p, q)
+            found = []
+            for a, b in blockgeom.edges(faces):
+                if p not in (a, b) or blockcurve.key(a, b) == blockcurve.key(p, q):
+                    continue
+                other = b if a == p else a
+                if other == partner:
+                    continue                                    # the other edge of a smooth pair follows this handle
+                found.append(blockcurve.end_handle(vertices, handles, p, other))
+            found.append(mu.sub(vertices[q], vertices[p]))                       # the straight line of the edge itself
+            directions = []
+            for offset in found:
+                tip = tuple(blocks.to_world(obj, mu.add(vertices[p], offset)))
+                direction = mu.sub(tip, base)
+                length = mu.length(direction)
+                if length > 1e-9:
+                    directions.append(mu.mul(direction, 1.0 / length))
+            service = self._service("tangents")
+            if service is not None:
+                mm = self._service("mm_per_metre", lambda: 1000.0)()
+                directions += list(service(base, (obj.Name,), TANGENT_REACH * mm))
+            state["tangents"] = (base, directions)
+        return state["tangents"]
+
+    def _moved_handles(self, obj, vertices, index, target):
+        """The handles of the curved edges after point `index` moved to `target` (in the document), or None when they stay: in Snap, a
+        handle of the point turns onto the tangent of the feature of the model that the point lies on (when it is nearly along it), and
+        the pairs of the smooth points that the move touches are on one line again."""
+        blocks = self._blocks()
+        handles = blocks.read_handles(obj)
+        before = dict(handles)
+        service = self._service("tangents") if self.placement == "snap" else None
+        curved = [k for k in handles if index in k]
+        if service is not None and curved:
+            mm = self._service("mm_per_metre", lambda: 1000.0)()
+            directions = list(service(tuple(target), (obj.Name,), TANGENT_REACH * mm))
+            base = tuple(blocks.to_world(obj, vertices[index]))
+            for a, b in curved:
+                q = b if a == index else a
+                offset = blockcurve.end_handle(vertices, handles, index, q)
+                length = mu.length(offset)
+                if length < blockcurve.SAME:
+                    continue
+                tip = tuple(blocks.to_world(obj, mu.add(vertices[index], offset)))
+                world = mu.sub(tip, base)
+                best = None
+                for u in directions:
+                    along = mu.dot(world, u)
+                    cosine = abs(along) / max(mu.length(world), 1e-12)
+                    if cosine > math.cos(math.radians(TANGENT_TURN)) and (best is None or cosine > best[0]):
+                        best = (cosine, mu.mul(u, math.copysign(1.0, along)))
+                if best is not None:
+                    snapped = tuple(blocks.to_local(obj, mu.add(base, mu.mul(best[1], mu.length(world)))))
+                    handles = blockcurve.with_end_handle(vertices, handles, index, q, mu.sub(snapped, vertices[index]))
+        smooth = self._smooth(obj)
+        if smooth:
+            handles = blockcurve.enforce_moved(vertices, handles, smooth, index)
+        return None if handles == before else handles
+
     def _straighten(self, doc, obj):
         """B while an edge is bent: the edge goes back to the straight line and the hand goes on from there."""
         blocks = self._blocks()
@@ -317,7 +442,9 @@ class PointsTool(TouchTool):
         if blockcurve.key(bend["a"], bend["b"]) not in handles:
             return None
         del handles[blockcurve.key(bend["a"], bend["b"])]
-        error = blocks.set_handles(doc, obj, handles)
+        edge = blockcurve.key(bend["a"], bend["b"])
+        smooth = {t for t in self._smooth(obj) if not any(blockcurve.key(t[0], x) == edge for x in t[1:])}      # a straight edge is no part of a smooth pair
+        error = blocks.set_handles(doc, obj, handles, smooth) if hasattr(blocks, "read_smooth") else blocks.set_handles(doc, obj, handles)
         if error is not None:
             return error
         state["changed"], state["rebase"], state["now"] = True, True, None
@@ -363,12 +490,23 @@ class PointsTool(TouchTool):
                 self._readout(f"Point {state['index']}")
                 return
             state["moving"] = True
-        target, guides = self.place(raw, (state["name"],))   # by the placement: the A button changes it while the trigger is held
-        if guides:
-            self.show_guides(guides, self.grid * 0.5)
+        held = raw
+        if state.get("bend"):                               # the hand holds the edge or the handle off its tip: the held point is what is placed
+            held = mu.add(blocks.to_world(obj, state["anchor0"]), mu.sub(raw, state["start"]))
+        found = None
+        tangents = self._tangent_directions(obj) if state.get("bend") else None
+        if tangents is not None:                            # the tangent of a feature comes before the grid and the guides (Snap only)
+            mm = self._service("mm_per_metre", lambda: 1000.0)()
+            point, direction = align_tangent(tangents[0], held, tangents[1], TANGENT_REACH * mm)
+            if direction is not None:
+                target, found = point, [Guide("axis", OFF_AXIS, tuple(tangents[0]), tuple(point), "Tangent")]
+        if found is None:
+            target, found = self.place(held, (state["name"],))   # by the placement: the A button changes it while the trigger is held
+        if found:
+            self.show_guides(found, self.grid * 0.5)
         else:
             self.hide_guides()
-        self.show_grid_points(raw)
+        self.show_grid_points(held)
         if state.get("bend"):
             self._follow_bend(doc, obj, target)
             return
@@ -380,7 +518,9 @@ class PointsTool(TouchTool):
             if blockgeom.coincident(vertices, state["index"], local) is not None:
                 self._readout("Two points cannot be at the same place")
                 return
-            error = blocks.apply(doc, obj, blockgeom.move_vertex(vertices, state["index"], local))
+            moved = blockgeom.move_vertex(vertices, state["index"], local)
+            handles = self._moved_handles(obj, moved, state["index"], target)
+            error = blocks.apply(doc, obj, moved) if handles is None else blocks.apply(doc, obj, moved, handles=handles)
             if error is None:
                 state["now"], state["changed"] = local, True
                 self._haptic(0.08, 0.008)

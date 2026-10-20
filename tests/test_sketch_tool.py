@@ -62,7 +62,7 @@ class FakeSketching:
         self.doc = doc
         self.face_under_cursor = None
 
-    def create_on_plane(self, doc, plane, point, grid):
+    def create_on_plane(self, doc, plane, point, grid=None):
         sketch = FakeSketch(f"sketch{len(doc.objects)}", plane)
         sketch.fresh = True
         doc.objects[sketch.Name] = sketch
@@ -85,7 +85,7 @@ class FakeSketching:
 
     IDENTITY = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
     placement = staticmethod(lambda sketch: FakeSketching.IDENTITY)
-    plane_frame = staticmethod(lambda plane, point, grid: FakeSketching.IDENTITY)
+    plane_frame = staticmethod(lambda plane, point, grid=None: FakeSketching.IDENTITY)
     frame_to_local = staticmethod(lambda frame, point: tuple(point))
     frame_to_world = staticmethod(lambda frame, point: tuple(point))
     world_axes = staticmethod(lambda frame: (0, 1))
@@ -228,7 +228,7 @@ class SketchToolTest(unittest.TestCase):
         self.doc = FakeDocument()
         self.sk = FakeSketching(self.doc)
         self.cursor = [0.0, 0.0, 0.0]
-        self.placement = "snap"                                                      # the A button changes it while the trigger is held
+        self.placement = "grid"                                                      # the A button changes it while the trigger is held
         self.selection, self.toasts, self.readouts = [], [], []
         self.ghost = FakeGhost()
         ctx = base.ToolContext(dominant=1)
@@ -531,6 +531,7 @@ class SketchToolTest(unittest.TestCase):
         self.sim.set_hand(0, grip=0.0)
 
     def with_anchors(self, anchors, reach=5.0):
+        self.placement = "snap"                                                  # the guides belong to Snap, which does not round to the grid
         self.tool.ctx.services["guide_anchors"] = lambda exclude, probes=None: (anchors, reach)
 
     def test_a_line_that_is_nearly_parallel_to_a_slanted_line_is_made_exactly_so_with_a_guide(self):
@@ -578,11 +579,11 @@ class SketchToolTest(unittest.TestCase):
     def test_the_start_and_the_end_of_a_rectangle_line_up_with_the_model_and_the_guides_are_drawn(self):
         self.with_anchors([(7.0, 0.0, 0.0), (0.0, 33.0, 0.0)])
         self.drag((6.0, 32.0, 0.0), (61.0, 41.0, 0.0), release=False)
-        self.assertEqual(self.tool._gesture["start"], (7.0, 33.0))                  # the grid point (0, 0) is not what the cursor lines up with
+        self.assertEqual(self.tool._gesture["start"], (7.0, 33.0))                  # both coordinates line up with an anchor
         self.assertTrue(self.ghost.guide_calls[-1] == [])                           # the end has nothing near
         self.cursor = [8.0, 41.0, 0.0]
         self.tool.update(self.sim.frame(0.02))
-        self.assertEqual(self.tool._gesture["now"], (7.0, 40.0))
+        self.assertEqual(self.tool._gesture["now"], (7.0, 41.0))                    # x lines up, y stays where the hand is
         (guide,) = self.ghost.guide_calls[-1]
         self.assertEqual((guide.kind, guide.axis, guide.anchor), ("axis", 0, (7.0, 0.0, 0.0)))
 
@@ -591,7 +592,7 @@ class SketchToolTest(unittest.TestCase):
         self.cursor = [8.0, 41.0, 0.0]
         self.sim.set_hand(1, trigger=0.0, button1=False)
         self.frames()
-        self.assertEqual(self.ghost.markers[-1], (7.0, 40.0, 0.0))
+        self.assertEqual(self.ghost.markers[-1], (7.0, 41.0, 0.0))
         self.assertEqual(len(self.ghost.guide_calls[-1]), 1)
         self.placement = "free"
         self.drag((8.0, 41.0, 0.0), (61.0, 73.0, 0.0))
@@ -604,12 +605,12 @@ class SketchToolTest(unittest.TestCase):
         self.drag((0.0, 0.0, 0.0), (50.0, 0.0, 0.0))
         self.tool.values["mode"] = "Edit"
         self.drag((50.0, 0.0, 0.0), (3.0, 52.0, 0.0), release=False)
-        self.assertEqual(self.tool._gesture["now"], (0.0, 50.0))                    # x lines up with the other end of the line
+        self.assertEqual(self.tool._gesture["now"], (0.0, 52.0))                    # x lines up with the other end of the line, y is the hand's
         (guide,) = self.ghost.guide_calls[-1]
         self.assertEqual((guide.kind, guide.axis, guide.anchor), ("axis", 0, (0.0, 0.0, 0.0)))
         self.cursor = [47.0, 2.0, 0.0]
         self.tool.update(self.sim.frame(0.02))
-        self.assertEqual(self.tool._gesture["now"], (50.0, 0.0))                    # its own old place is no anchor: only the grid and the other end
+        self.assertEqual(self.tool._gesture["now"], (47.0, 0.0))                    # its own old place is no anchor: y lines up with the other end only
 
     def test_the_disc_has_the_five_modes_and_the_three_planes_and_the_square_shows_the_plane(self):
         slots = self.tool.disc_slots()
