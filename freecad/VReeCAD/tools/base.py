@@ -174,11 +174,31 @@ class Tool:
         if feature is not None:
             feature(guides)                      # the host highlights what drives them (inference)
 
+    def show_grid_points(self, point, dims=3, to_document=None):
+        """Faint spheres on the grid points around `point` (the pointer, before it is snapped), smaller the farther they are; none when
+        the placement is free. `hide_guides` hides them too, so call this after it. With `dims` 2 the points are those of a
+        plane (the first two coordinates) and `to_document` turns a point of that plane into a document point."""
+        ghost = self.ctx.services.get("ghost")
+        show = getattr(ghost, "show_grid_points", None)
+        if show is None:
+            return
+        if self.placement == "free":
+            show([])
+            return
+        spheres = snapping.grid_anchors(point, self.grid, dims)
+        show([(to_document(p) if to_document is not None else p, r) for p, r in spheres])
+
+    def hide_grid_points(self):
+        hide = getattr(self.ctx.services.get("ghost"), "hide_grid_points", None)
+        if hide is not None:
+            hide()
+
     def hide_guides(self):
         self._guide_key = None
         ghost = self.ctx.services.get("ghost")
         if ghost is not None:
             ghost.hide_guides()
+        self.hide_grid_points()
         feature = self.ctx.services.get("feature")
         if feature is not None:
             feature(())

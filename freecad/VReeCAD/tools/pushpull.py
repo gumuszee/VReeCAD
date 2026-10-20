@@ -16,8 +16,8 @@
 """The Push/Pull tool: move a flat face of a solid along its normal (docs/ux-design.md, Push/Pull tool).
 
 The tip of the tool hand is the cursor and only faces are touched (`tools/touch.py`). The trigger pressed on a flat face starts the
-gesture: the distance the hand moves along the normal of the face, rounded to the grid, is how far the face is pushed (out of the
-solid) or pulled (into it); a ghost shows the volume the face sweeps and the readout names the distance. Releasing makes the change
+gesture: the distance the hand moves along the normal of the face, rounded so that the face ends on the absolute grid, is how far the face is pushed (out of
+the solid) or pulled (into it); a ghost shows the volume the face sweeps and the readout names the distance. Releasing makes the change
 as parametric features (`cad/pushpull.py`) in one undo step; a release within one grid step of the start is a tap that selects the
 face. A grip cancels. The stick up and down change the grid.
 
@@ -97,7 +97,8 @@ class PushPullTool(TouchTool):
         if info is None:
             self._toast("Only flat faces can be pushed or pulled")
             return
-        self._drag = {"pick": pick, "start": raw, "centre": info[0], "normal": info[1], "distance": 0.0, "source": None, "candidates": []}
+        self._drag = {"pick": pick, "start": raw, "centre": info[0], "normal": info[1], "distance": 0.0, "source": None, "candidates": [],
+                      "origin": pushpull.face_origin(info[0], info[1])}
         self._forget_hover()
         self._haptic(0.3, 0.02)
 
@@ -131,7 +132,7 @@ class PushPullTool(TouchTool):
         mode = self.placement
         if mode == "free":
             return raw_distance, None
-        grid = pushpull.snapped(raw_distance, self.grid)
+        grid = pushpull.snapped(raw_distance, self.grid, state["origin"])
         service = self._service("guide_anchors")
         if service is None or mode == "grid":
             return grid, None

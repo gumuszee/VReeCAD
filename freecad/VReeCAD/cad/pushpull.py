@@ -32,10 +32,19 @@ from freecad.VReeCAD.core import snapping
 MIN_STEPS = 1        # a distance shorter than this many grid steps is a tap, not a push
 
 
-def snapped(distance, grid):
-    """The distance rounded to the grid (a distance of less than one step is none)."""
-    value = snapping.snap(distance, grid)
-    return 0.0 if abs(value) < MIN_STEPS * grid - 1e-9 else value
+def snapped(distance, grid, origin=0.0):
+    """The distance that puts the face on the absolute grid: `origin` is the coordinate of the face along its normal, so the face ends
+    at a multiple of `grid` from the document origin. A distance of less than half a step is none."""
+    if abs(distance) < MIN_STEPS * grid / 2 - 1e-9:
+        return 0.0
+    value = snapping.snap(origin + distance, grid) - origin
+    return 0.0 if abs(value) < 1e-9 else value
+
+
+def face_origin(centre, normal):
+    """The coordinate of a face along its normal when the normal lies on a document axis (the face is then on the grid when this is a
+    multiple of the step), else 0.0 (the distance is counted from the face itself)."""
+    return next((c * n for c, n in zip(centre, normal) if abs(n) > 1 - 1e-6), 0.0)
 
 
 def describe(distance, format_length):

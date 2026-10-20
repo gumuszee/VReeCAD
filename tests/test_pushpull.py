@@ -15,6 +15,18 @@ class SnappedTest(unittest.TestCase):
         self.assertEqual(pushpull.snapped(-4.9, 10.0), 0.0)
         self.assertEqual(pushpull.snapped(5.0, 10.0), 10.0)
 
+    def test_the_face_ends_on_the_absolute_grid(self):
+        self.assertEqual(pushpull.snapped(18.0, 10.0, 3.0), 17.0)         # the face at 3 mm goes to 20 mm
+        self.assertEqual(pushpull.snapped(-37.0, 10.0, 3.0), -33.0)       # to -30 mm
+        self.assertEqual(pushpull.snapped(4.0, 10.0, 3.0), 0.0)           # less than half a step is none
+        self.assertEqual(pushpull.snapped(6.0, 10.0, 7.0), 3.0)           # the face at 7 mm goes to 10 mm
+        self.assertEqual(pushpull.snapped(6.0, 10.0, 4.0), 6.0)           # to 10 mm
+
+    def test_the_origin_of_a_face_is_its_coordinate_along_an_axis_normal(self):
+        self.assertEqual(pushpull.face_origin((5.0, 6.0, 7.0), (0.0, 0.0, 1.0)), 7.0)
+        self.assertEqual(pushpull.face_origin((5.0, 6.0, 7.0), (0.0, -1.0, 0.0)), -6.0)
+        self.assertEqual(pushpull.face_origin((5.0, 6.0, 7.0), (0.6, 0.0, 0.8)), 0.0)
+
     def test_describe_names_push_and_pull(self):
         fmt = lambda v: f"{v:g} mm"
         self.assertEqual(pushpull.describe(30.0, fmt), "Push: 30 mm")

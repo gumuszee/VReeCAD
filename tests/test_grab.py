@@ -97,6 +97,27 @@ class GrabTest(unittest.TestCase):
         base, _ = grabbed.at((3.0 + 4.0, 4.0, 5.0), mu.IDENTITY_QUAT, grid=10.0)
         self.assertTrue(close(base, (10.0, 20.0, 30.0)))                            # a small move does not move it at all
 
+    def test_a_locked_move_lands_on_the_absolute_grid_whatever_the_start(self):
+        grabbed = grab.Grab((0.0, 0.0, 0.0), mu.IDENTITY_QUAT, (3.0, -7.0, 12.0), mu.IDENTITY_QUAT)      # the object starts off the grid
+        base, _ = grabbed.at((1.0, 1.0, 3.0), mu.IDENTITY_QUAT, grid=10.0)
+        self.assertTrue(close(base, (0.0, -10.0, 20.0)))                           # (4, -6, 15) rounded to multiples of 10 from the origin
+        base, _ = grabbed.at((0.0, 0.0, 0.0), mu.IDENTITY_QUAT, grid=10.0)
+        self.assertTrue(close(base, (0.0, -10.0, 10.0)))                           # no move still puts it on the grid
+
+    def test_a_locked_turn_lands_on_absolute_angles_whatever_the_start(self):
+        grabbed = grab.Grab((0.0, 0.0, 0.0), mu.IDENTITY_QUAT, (0.0, 0.0, 0.0), about_z(40.0))           # the object starts at 40 degrees
+        rotation = grabbed.at((0.0, 0.0, 0.0), mu.IDENTITY_QUAT, step_degrees=15.0)[1]
+        self.assertAlmostEqual(abs(qdot(rotation, about_z(45.0))), 1.0, places=6)    # 40 is not a multiple of 15: it snaps to 45, not stays 40
+        rotation = grabbed.at((0.0, 0.0, 0.0), about_z(10.0), step_degrees=15.0)[1]   # 50 degrees in all
+        self.assertAlmostEqual(abs(qdot(rotation, about_z(45.0))), 1.0, places=6)
+        rotation = grabbed.at((0.0, 0.0, 0.0), about_z(20.0), step_degrees=15.0)[1]   # 60 degrees in all
+        self.assertAlmostEqual(abs(qdot(rotation, about_z(60.0))), 1.0, places=6)
+
+    def test_a_locked_grab_that_does_not_rotate_keeps_the_rotation(self):
+        grabbed = grab.Grab((0.0, 0.0, 0.0), mu.IDENTITY_QUAT, (0.0, 0.0, 0.0), about_z(40.0))
+        rotation = grabbed.at((0.0, 0.0, 0.0), about_z(90.0), rotate=False, grid=10.0, step_degrees=15.0)[1]
+        self.assertAlmostEqual(abs(qdot(rotation, about_z(40.0))), 1.0, places=6)
+
     def test_locking_both_gives_clean_numbers(self):
         grabbed = grab.Grab((0.0, 0.0, 0.0), mu.IDENTITY_QUAT, (10.0, 0.0, 0.0), mu.IDENTITY_QUAT)
         base, rotation = grabbed.at((20.0, 0.0, 0.0), about_z(88.0), grid=10.0, step_degrees=45.0)

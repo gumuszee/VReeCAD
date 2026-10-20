@@ -232,6 +232,7 @@ class SketchTool(TouchTool):
             (x, y), found = self._align2(frame, sk.frame_to_local(frame, raw), sketch)
             point = sk.frame_to_world(frame, (x, y, 0.0))
             self.show_guides(found, self.grid * 0.5)
+            self.show_grid_points(sk.frame_to_local(frame, raw), 2, lambda p: sk.frame_to_world(frame, (p[0], p[1], 0.0)))
             ghost.show_marker(point, self.grid * 0.75)
             if sketch is not None:
                 ghost.hide_shape()
@@ -307,6 +308,7 @@ class SketchTool(TouchTool):
                 found.append(guides.Guide("axis", guides.OFF_AXIS, tuple(sk.frame_to_world(frame, mid(*same))),
                                           tuple(sk.frame_to_world(frame, mid(line_from, point))), "Equal length"))
         self.show_guides(found, self.grid * 0.5)
+        self.show_grid_points(local, 2, lambda p: sk.frame_to_world(frame, (p[0], p[1], 0.0)))
         return point
 
     def _preview(self, sketch, state):

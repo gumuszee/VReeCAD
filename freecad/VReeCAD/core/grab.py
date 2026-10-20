@@ -17,8 +17,8 @@
 
 A grab attaches the object to the hand as a rigid body: when the hand moves from the pose it had at the start, the object moves
 the same way. Poses are a position (document millimetres) and an orientation quaternion in document axes. A grab is free; when it
-is locked, the translation is a whole number of grid steps and the rotation a multiple of an angle step, so the numbers in the
-document stay clean.
+is locked, the position is on the absolute grid (multiples of the grid step from the document origin) and the angles are multiples of
+an angle step, so the numbers in the document stay clean.
 
 `classify` decides what the cursor touches: the nearest vertex, edge or face within a reach, or the inside of a solid."""
 
@@ -63,15 +63,20 @@ class Grab:
     rotation: Tuple[float, float, float, float]
 
     def at(self, position, rotation, rotate=True, grid=None, step_degrees=None):
-        """(base, rotation) of the object when the hand has the pose (`position`, `rotation`). The move of the hand is rounded to
-        whole steps of `grid` and the turn to multiples of `step_degrees` when these are given (a locked grab); otherwise both are free."""
+        """(base, rotation) of the object when the hand has the pose (`position`, `rotation`). When `grid` and `step_degrees` are given (a
+        locked grab) the result is on the absolute grid: the base is a multiple of `grid` on every axis, counted from the origin of the
+        document, and the angles of the rotation about X, Y and Z are multiples of `step_degrees`, whatever the object had at the start;
+        otherwise both are free. A grab that does not rotate leaves the rotation as it was."""
         turn = mu.IDENTITY_QUAT
         if rotate:
-            turn = snap_rotation(mu.quat_multiply(rotation, mu.quat_conjugate(self.hand_rotation)), step_degrees)
+            turn = mu.quat_normalize(mu.quat_multiply(rotation, mu.quat_conjugate(self.hand_rotation)))
+            if step_degrees:
+                wanted = snap_rotation(mu.quat_multiply(turn, self.rotation), step_degrees)
+                turn = mu.quat_multiply(wanted, mu.quat_conjugate(self.rotation))
         move = mu.sub(position, self.hand_position)
-        if grid:
-            move = tuple(math.floor(c / grid + 0.5) * grid for c in move)
         base = mu.add(self.hand_position, mu.add(move, mu.rotate(turn, mu.sub(self.base, self.hand_position))))
+        if grid:
+            base = tuple(math.floor(c / grid + 0.5) * grid for c in base)
         return base, mu.quat_normalize(mu.quat_multiply(turn, self.rotation))
 
 

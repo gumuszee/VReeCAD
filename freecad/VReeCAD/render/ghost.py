@@ -37,6 +37,8 @@ ACQUIRED = (0.35, 0.85, 0.95)        # the cross on a point that inference has a
 FEATURE = (0.55, 1.0, 0.45)          # the edge or the point that drives a guide or a snap (inference)
 FEATURE_WIDTH = 5.0
 GUIDE_COLOURS = {0: (0.95, 0.35, 0.35), 1: (0.40, 0.85, 0.40), 2: (0.45, 0.60, 1.0), 3: (0.85, 0.85, 0.85), -1: MARKER}   # X, Y and Z of the document, a direction of a face, a point
+GRID_POINT = (0.85, 0.92, 1.0)        # the spheres on the grid points near the pointer
+GRID_TRANSPARENCY = 0.7
 GUIDE_WIDTH = 2.0
 GUIDE_DIM = 0.45          # the part of a guide that lies behind the model is this much darker
 
@@ -175,6 +177,29 @@ class Ghost:
         self._feature.addChild(feature)
         self.root.addChild(self._feature)
 
+        self._grid = coin.SoSwitch()                 # the grid points near the pointer: faint translucent spheres, smaller the farther they are
+        self._grid.whichChild = coin.SO_SWITCH_NONE
+        grid = coin.SoSeparator()
+        shaded = coin.SoLightModel()
+        shaded.model = coin.SoLightModel.PHONG
+        grid.addChild(shaded)
+        grid_material = coin.SoMaterial()
+        grid_material.diffuseColor.setValue(*GRID_POINT)
+        grid_material.ambientColor.setValue(*(0.6 * c for c in GRID_POINT))
+        grid_material.transparency.setValue(GRID_TRANSPARENCY)
+        grid.addChild(grid_material)
+        grid_blend = coin.SoTransparencyType()
+        grid_blend.value = coin.SoTransparencyType.BLEND
+        grid.addChild(grid_blend)
+        grid_depth = coin.SoDepthBuffer()
+        grid_depth.test.setValue(True)
+        grid_depth.getField("write").setValue(False)
+        grid.addChild(grid_depth)
+        self._grid_root = grid
+        self._grid_spheres = []                      # (switch, translation, sphere) of every sphere made so far, grown on demand
+        self._grid.addChild(grid)
+        self.root.addChild(self._grid)
+
         self._guides = coin.SoSwitch()               # one line set per kind of guide, each drawn dim behind the model and bright in front
         self._guides.whichChild = coin.SO_SWITCH_NONE
         self._guide_sets = {}
@@ -253,6 +278,31 @@ class Ghost:
     def hide_acquired(self):
         self._acquired.whichChild = coin.SO_SWITCH_NONE
 
+    def show_grid_points(self, spheres):
+        """A faint translucent sphere at every (position, radius) of `spheres` (`core.snapping.grid_anchors`); nothing for an empty list."""
+        if not spheres:
+            self.hide_grid_points()
+            return
+        while len(self._grid_spheres) < len(spheres):
+            switch, move, sphere = coin.SoSwitch(), coin.SoTranslation(), coin.SoSphere()
+            part = coin.SoSeparator()
+            part.addChild(move)
+            part.addChild(sphere)
+            switch.addChild(part)
+            self._grid_root.addChild(switch)
+            self._grid_spheres.append((switch, move, sphere))
+        for index, (switch, move, sphere) in enumerate(self._grid_spheres):
+            if index < len(spheres):
+                move.translation.setValue(*spheres[index][0])
+                sphere.radius.setValue(spheres[index][1])
+                switch.whichChild = coin.SO_SWITCH_ALL
+            else:
+                switch.whichChild = coin.SO_SWITCH_NONE
+        self._grid.whichChild = coin.SO_SWITCH_ALL
+
+    def hide_grid_points(self):
+        self._grid.whichChild = coin.SO_SWITCH_NONE
+
     def show_guides(self, guides, half):
         """The alignment guides (`core.guides.Guide`): a line from the anchor to the point of every axis guide and a cross with arms of
         `half` millimetres on every anchor, a point guide is the cross alone. Nothing is drawn for an empty list."""
@@ -319,5 +369,6 @@ class Ghost:
         self.hide_shape()
         self.hide_marker()
         self.hide_guides()
+        self.hide_grid_points()
         self.hide_acquired()
         self.hide_feature()

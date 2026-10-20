@@ -105,6 +105,7 @@ class PrimitiveTool(Tool):
                 self._cancel()
                 return
             self.show_guides(guides, self.grid * 0.5)
+            self.show_grid_points(raw)
             self._drag(hand, point)
             return
         free = self._service("trigger_free", lambda: True)()
@@ -113,6 +114,7 @@ class PrimitiveTool(Tool):
             if free and not gripping and hand.aim.tracked:
                 ghost.show_marker(point, self.grid * 0.75)
                 self.show_guides(guides, self.grid * 0.5)
+                self.show_grid_points(raw)
             else:
                 ghost.hide_marker()
                 self.hide_guides()

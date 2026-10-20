@@ -17,8 +17,9 @@
 
 The tip of the tool hand is the cursor. What it touches (the nearest vertex, edge or face within reach, else the inside of a solid)
 is highlighted (`tools/touch.py`). The trigger pressed on it starts a grab in one transaction: the object follows the hand as a
-rigid body, free in position and angle (or only moved, by the option). While the A button (`button1`) is held the grab is locked: it moves by whole
-grid steps and turns by multiples of the angle step, and a padlock over the A button shows it. Releasing makes the change; one undo
+rigid body, free in position and angle (or only moved, by the option). While the A button (`button1`) is held the grab is locked: the object is put on the absolute
+grid (multiples of the grid step from the origin) and at angles that are multiples of the angle step, faint spheres show the grid points
+around the hand, and a padlock over the A button shows it. Releasing makes the change; one undo
 step takes it back. A press that does not move anything is a tap: it selects the touched element (the FreeCAD selection), a tap on
 nothing clears the selection. The trigger of the other hand pressed during a grab scales the object through the size properties of
 its feature (the distance between the hands sets the factor; locked, every size is rounded to the grid); only the primitives made
@@ -188,6 +189,10 @@ class MoveTool(TouchTool):
                 base = self._align(state, obj, base, rotation)
             else:
                 self.hide_guides()
+            if locked:                                      # the grid points the object may snap to, around where the hand holds it
+                self.show_grid_points(state["grab"].at(position, hand_rotation, rotate, None, self.angle)[0])
+            else:
+                self.hide_grid_points()
             if (base, rotation) != state["now"]:
                 edit.set_placement(obj, base, rotation)
                 state["now"] = (base, rotation)

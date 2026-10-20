@@ -368,6 +368,7 @@ class PointsTool(TouchTool):
             self.show_guides(guides, self.grid * 0.5)
         else:
             self.hide_guides()
+        self.show_grid_points(raw)
         if state.get("bend"):
             self._follow_bend(doc, obj, target)
             return

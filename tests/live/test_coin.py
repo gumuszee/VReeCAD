@@ -2923,6 +2923,26 @@ class MoveLiveTest(unittest.TestCase):
         ghost.show_guides([], 4.0)
         self.assertEqual(ghost._guides.whichChild.getValue(), coin.SO_SWITCH_NONE)
 
+    def test_the_ghost_draws_grid_point_spheres_sized_by_distance_and_hides_them(self):
+        from freecad.VReeCAD.core import snapping
+        from freecad.VReeCAD.render.ghost import Ghost
+        from pivy import coin
+        ghost = Ghost()
+        spheres = snapping.grid_anchors((13.0, -27.0, 4.0), 10.0)
+        ghost.show_grid_points(spheres)
+        self.assertEqual(ghost._grid.whichChild.getValue(), coin.SO_SWITCH_ALL)
+        shown = [s for s in ghost._grid_spheres if s[0].whichChild.getValue() == coin.SO_SWITCH_ALL]
+        self.assertEqual(len(shown), len(spheres))
+        self.assertAlmostEqual(shown[0][2].radius.getValue(), spheres[0][1], places=5)
+        self.assertGreater(shown[0][2].radius.getValue(), shown[-1][2].radius.getValue())
+        ghost.show_grid_points(spheres[:3])                                                   # fewer: the rest are switched off
+        self.assertEqual(sum(s[0].whichChild.getValue() == coin.SO_SWITCH_ALL for s in ghost._grid_spheres), 3)
+        ghost.show_grid_points([])
+        self.assertEqual(ghost._grid.whichChild.getValue(), coin.SO_SWITCH_NONE)
+        ghost.show_grid_points(spheres)
+        ghost.hide()
+        self.assertEqual(ghost._grid.whichChild.getValue(), coin.SO_SWITCH_NONE)
+
     def test_a_push_fuses_an_extrusion_of_the_face_a_pull_cuts_it_and_the_length_stays_editable(self):
         from freecad.VReeCAD.cad import pushpull
         self.box.setExpression("Height", "100 mm")                                           # a bound size is not changed directly
