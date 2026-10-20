@@ -42,6 +42,7 @@ import freecad.VReeCAD.tools.move  # noqa: F401
 import freecad.VReeCAD.tools.pushpull  # noqa: F401
 import freecad.VReeCAD.tools.points  # noqa: F401
 import freecad.VReeCAD.tools.sketch  # noqa: F401
+from freecad.VReeCAD import gpucheck
 from freecad.VReeCAD.backends.openxr_input import OpenXRInput
 from freecad.VReeCAD.backends.openxr_models import RuntimeModels
 from freecad.VReeCAD.render.gltf_coin import load_glb
@@ -67,7 +68,7 @@ import time
 import logging
 
 try:
-    from PySide6.QtWidgets import QDockWidget
+    from PySide6.QtWidgets import QDockWidget, QMessageBox
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
     from PySide6.QtOpenGL import QOpenGLDebugLogger, QOpenGLFunctions_4_5_Compatibility
     from PySide6.QtOpenGL import QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat, QOpenGLTexture
@@ -77,7 +78,7 @@ try:
     import shiboken6 as shiboken
 except ImportError:
     try:
-        from PySide2.QtWidgets import QOpenGLWidget, QDockWidget
+        from PySide2.QtWidgets import QOpenGLWidget, QDockWidget, QMessageBox
         from PySide2.QtGui import QOpenGLContext, QSurfaceFormat, QOpenGLDebugLogger, QOffscreenSurface
         from PySide2.QtGui import QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat, QOpenGLTexture
         from PySide2.QtOpenGLFunctions import QOpenGLFunctions_4_5_Compatibility
@@ -295,8 +296,10 @@ class XRwidget(QOpenGLWidget):
         self.projection_layer = xr.CompositionLayerProjection(
             views=self.projection_layer_views)
         self.swapchain_create_info = xr.SwapchainCreateInfo()
-        self.swapchain = None
-        self.swapchain_images = None
+        # one swapchain per eye: SteamVR on Linux shares one eye-sized texture per view, so the
+        # right half of a side-by-side swapchain never reaches the compositor (right eye black)
+        self.swapchains = [None, None]
+        self.swapchain_images = [None, None]
         self.fbo = None
         self.fbo_msaa = None
         self.fbo_texture = None
@@ -1119,15 +1122,16 @@ class XRwidget(QOpenGLWidget):
         self.swapchain_create_info.array_size = 1
         self.swapchain_create_info.face_count = 1
         self.swapchain_create_info.mip_count = 1
-        self.swapchain_create_info.width = self.render_target_size[0]
+        self.swapchain_create_info.width = self.render_target_size[0] // 2
         self.swapchain_create_info.height = self.render_target_size[1]
-        self.swapchain = xr.create_swapchain(
-            self.session, self.swapchain_create_info)
-        self.swapchain_images = xr.enumerate_swapchain_images(
-            self.swapchain, xr.SwapchainImageOpenGLKHR)
-        for i, si in enumerate(self.swapchain_images):
-            self.logger.debug(
-                f"Swapchain image {i} type = {xr.StructureType(si.type)}")
+        for eye_index in range(2):
+            self.swapchains[eye_index] = xr.create_swapchain(
+                self.session, self.swapchain_create_info)
+            self.swapchain_images[eye_index] = xr.enumerate_swapchain_images(
+                self.swapchains[eye_index], xr.SwapchainImageOpenGLKHR)
+            for i, si in enumerate(self.swapchain_images[eye_index]):
+                self.logger.debug(
+                    f"Swapchain {eye_index} image {i} type = {xr.StructureType(si.type)}")
         self.ctx.doneCurrent()
 
     def prepare_xr_composition_layers(self):
@@ -1135,13 +1139,11 @@ class XRwidget(QOpenGLWidget):
         self.projection_layer.views = self.projection_layer_views
         for eye_index in range(2):
             layer_view = self.projection_layer_views[eye_index]
-            layer_view.sub_image.swapchain = self.swapchain
+            layer_view.sub_image.swapchain = self.swapchains[eye_index]
             layer_view.sub_image.image_rect.extent = xr.Extent2Di(
                 self.render_target_size[0] // 2,
                 self.render_target_size[1],
             )
-            if eye_index == 1:
-                layer_view.sub_image.image_rect.offset.x = layer_view.sub_image.image_rect.extent.width
 
     def prepare_xr_controls(self):
         # the tracker actions live in their own action set; it is attached together with the input action set
@@ -1540,10 +1542,12 @@ class XRwidget(QOpenGLWidget):
                 ren_timer = QElapsedTimer()
                 ren_timer.start()
                 ai = xr.SwapchainImageAcquireInfo(None)
-                swapchain_index = xr.acquire_swapchain_image(
-                    self.swapchain, ai)
                 wi = xr.SwapchainImageWaitInfo(xr.INFINITE_DURATION)
-                xr.wait_swapchain_image(self.swapchain, wi)
+                swapchain_indices = []
+                for eye_index in range(2):
+                    swapchain_indices.append(xr.acquire_swapchain_image(
+                        self.swapchains[eye_index], ai))
+                    xr.wait_swapchain_image(self.swapchains[eye_index], wi)
                 self.fbo_msaa.bind()
                 w, h = self.render_target_size
                 # "render" to the swapchain image
@@ -1585,19 +1589,21 @@ class XRwidget(QOpenGLWidget):
                     self.gl_ofc.glFinish()
                 prof.lap("render_right")
 
+                # resolve the MSAA image into the own texture of the target FBO, then copy each
+                # half into the swapchain image of its eye (a plain texel copy, no FBO state)
                 self.fbo.bind()
-                sw_image = self.swapchain_images[swapchain_index]
-                self.gl_ofc.glFramebufferTexture(
-                    GL.GL_FRAMEBUFFER,
-                    GL.GL_COLOR_ATTACHMENT0,
-                    sw_image.image,
-                    0,
-                )
                 self.fbo.blitFramebuffer(self.fbo, self.fbo_msaa)
+                for eye_index in range(2):
+                    sw_image = self.swapchain_images[eye_index][swapchain_indices[eye_index]]
+                    self.gl_ofc.glCopyImageSubData(
+                        self.fbo.texture(), GL.GL_TEXTURE_2D, 0, eye_index * (w // 2), 0, 0,
+                        sw_image.image, GL.GL_TEXTURE_2D, 0, 0, 0, 0,
+                        w // 2, h, 1)
                 self.render_duration = ren_timer.nsecsElapsed()
 
                 ri = xr.SwapchainImageReleaseInfo()
-                xr.release_swapchain_image(self.swapchain, ri)
+                for eye_index in range(2):
+                    xr.release_swapchain_image(self.swapchains[eye_index], ri)
                 self.fbo.release()
                 self.fbo_msaa.release()
                 prof.lap("resolve")
@@ -1707,9 +1713,10 @@ class XRwidget(QOpenGLWidget):
             self.input.destroy()
             xr.destroy_action_set(self.input.action_set)
             self.input = None
-        if self.swapchain is not None:
-            xr.destroy_swapchain(self.swapchain)
-            self.swapchain = None
+        for eye_index in range(2):
+            if self.swapchains[eye_index] is not None:
+                xr.destroy_swapchain(self.swapchains[eye_index])
+                self.swapchains[eye_index] = None
         if self.session is not None:
             xr.destroy_session(self.session)
             self.session = None
@@ -1750,6 +1757,49 @@ class XRwidget(QOpenGLWidget):
 xr_dock_w = None
 
 
+def gl_renderer():
+    """GL_RENDERER of the context FreeCAD renders with, None when it cannot be read.
+
+    The GPU is chosen once per process, so a throwaway default context reports the same renderer as the 3D view; the context that
+    was current is made current again."""
+    try:
+        previous = QOpenGLContext.currentContext()
+        previous_surface = previous.surface() if previous is not None else None
+        context = QOpenGLContext()
+        context.create()
+        surface = QOffscreenSurface()
+        surface.create()
+        if not context.makeCurrent(surface):
+            return None
+        try:
+            renderer = GL.glGetString(GL.GL_RENDERER)
+        finally:
+            context.doneCurrent()
+            if previous is not None and previous_surface is not None:
+                previous.makeCurrent(previous_surface)
+        return renderer.decode() if isinstance(renderer, bytes) else str(renderer)
+    except Exception:
+        return None
+
+
+def confirm_gpu():
+    """True when the viewer may start: FreeCAD renders on the GPU of the compositor, or the user opens it anyway (gpucheck.py)."""
+    text = gpucheck.check(gl_renderer())
+    if text is None:
+        return True
+    print(text)
+    box = QMessageBox(Gui.getMainWindow())
+    box.setIcon(QMessageBox.Warning)
+    box.setWindowTitle("VReeCAD: FreeCAD renders on another GPU")
+    box.setText(text)
+    box.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    open_anyway = box.addButton("Open anyway", QMessageBox.AcceptRole)
+    cancel = box.addButton(QMessageBox.Cancel)
+    box.setDefaultButton(cancel)
+    (box.exec if hasattr(box, "exec") else box.exec_)()
+    return box.clickedButton() is open_anyway
+
+
 def open_xr_viewer():
     if Gui.ActiveDocument is None:
         print("No active view!")
@@ -1757,7 +1807,7 @@ def open_xr_viewer():
     global xr_dock_w
     if shiboken.isValid(xr_dock_w) and xr_dock_w is not None:
         print("XR already started, please close it before reopening")
-    else:
+    elif confirm_gpu():
         xr_dock_w = DockWidget()
 
 
