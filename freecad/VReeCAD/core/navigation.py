@@ -27,7 +27,9 @@ button is released. Gestures are computed from the pose at grab time and the han
 a change of the gripping hands or of the rotation mode starts a new gesture. When one grip of a two-grip gesture is released first, the
 other grip does nothing until both grips are released (so the model does not drift while the hands let go one after the other). The stick click of a gripping hand resets the view
 with a short animation to the home pose: the origin in front of the head. A navigator created with `start_home` puts the world at
-the home pose without animation on the first frame in which the head is tracked, so the model is in front of the user from the start.
+the home pose without animation on the first frame in which the head is tracked and at a height a head can have above the floor
+(`MIN_HEAD_HEIGHT`; a headset that has only just started reports poses at the origin of the room), so the model is in front of the
+user from the start and never on the floor; a head that stays lower than that for `START_WAIT` seconds is taken as it is.
 """
 
 import math
@@ -39,6 +41,8 @@ from freecad.VReeCAD.core import mathutil as mu
 UP = (0.0, 1.0, 0.0)
 HOME_DISTANCE = 0.3       # metres from the head to the origin, horizontally
 HOME_HEIGHT = 0.75        # origin height as a fraction of the head height above the floor (chest height when standing)
+MIN_HEAD_HEIGHT = 0.4     # metres: a head lower than this above the floor is the pose of a headset that has not found the room yet
+START_WAIT = 2.0          # seconds a navigator that starts at the home pose waits for a head that high before it takes the head it has
 
 
 @dataclass(frozen=True)
@@ -146,6 +150,7 @@ class Navigator:
     def __init__(self, world=IDENTITY, min_scale=0.01, max_scale=100.0, modifier_hand=1, start_home=False):
         self.world = world
         self._start_home = start_home   # place the world at the home pose on the first frame with a tracked head
+        self._start_wait = 0.0          # seconds a low head has been waited for
         self.min_scale, self.max_scale = min_scale, max_scale
         self.modifier_hand = modifier_hand   # the hand whose button1 levels the rotation and whose button2 snaps the scale
         self.gripping = (False, False)
@@ -218,8 +223,10 @@ class Navigator:
         modifier = hands[self.modifier_hand]
 
         if self._start_home and frame.head.tracked:
-            self._start_home = False
-            self.world = home_pose(frame.head)
+            self._start_wait += frame.dt
+            if frame.head.position[1] >= MIN_HEAD_HEIGHT or self._start_wait >= START_WAIT:
+                self._start_home = False
+                self.world = home_pose(frame.head)
 
         if self._reset_requested and not self.resetting:
             if self._begin_reset(frame.head):

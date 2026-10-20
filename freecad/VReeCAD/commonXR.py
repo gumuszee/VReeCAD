@@ -1506,7 +1506,9 @@ class XRwidget(QOpenGLWidget):
                     (eye0.position.y + eye1.position.y) / 2,
                     (eye0.position.z + eye1.position.z) / 2)
         o = eye0.orientation
-        self.head_pose = Pose(head_pos, (o.x, o.y, o.z, o.w), True)
+        needed = xr.ViewStateFlags.POSITION_VALID_BIT | xr.ViewStateFlags.ORIENTATION_VALID_BIT
+        located = (vs.view_state_flags & needed) == needed     # the runtime has not found the headset yet: the poses are placeholders
+        self.head_pose = Pose(head_pos, (o.x, o.y, o.z, o.w), located)
 
     def update_gui(self):
         if self.mirror_window:

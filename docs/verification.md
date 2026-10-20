@@ -54,7 +54,7 @@ Only the owner can verify in-headset behaviour. Update the table cells in place 
 | Panel arrangement: lifting a panel by its title bar, dropping it next to, above or below another panel, stacking on one side, saved layout | Verified | owner-confirmed |
 | Sliders in panels (trigger held on the row, drag along the track) | Verified | owner-confirmed with the pointer sliders |
 | Grip navigation: free orbit with one and two grips, level rotation while A is held, scale locked at 1 : 1 while B is held, reset to the home pose in front of the head | Verified | owner-confirmed; `core/navigation.py`, `tests/test_navigation.py` |
-| Home pose 30 cm in front of the head, and the viewer starting in the home pose on the first tracked frame | Unverified | unit tested with the Sim backend (`tests/test_navigation.py`); needs the headset |
+| Home pose 30 cm in front of the head, and the viewer starting in the home pose on the first frame with a valid head pose at least 40 cm above the floor, also when the viewer is opened again | Unverified | unit tested with the Sim backend (`tests/test_navigation.py`); the validity flags of the head pose (`commonXR.py`) and the start after reopening the viewer need the headset |
 | Scale ruler (document units, drawn over the model, interface font) and the scale plate with one grip | Verified | owner-confirmed; `core/units.py`, `ui/ruler.py` |
 | Pointer: laser, and tip on both controllers with a cone and a small sphere; angle 15 degrees and length 40 mm | Verified | owner-confirmed; the tip of the left controller hides while the carousel is shown |
 | Navigation in tip mode: the world is held at the tips, the ruler runs between the tips, both tips stay visible | Verified | owner-confirmed |
